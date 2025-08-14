@@ -82,6 +82,13 @@ class TTSManager {
   async analyzePageAndCreateTakes() {
     console.log('🔍 웹페이지 분석 시작...');
     
+    // 🔍 CNN 디버깅: URL 확인
+    const currentUrl = window.location.href;
+    const isCNN = currentUrl.includes('cnn.com');
+    if (isCNN) {
+      console.log('🎯 CNN 사이트 감지됨 - 상세 디버깅 모드 활성화');
+    }
+    
     // body 내부 구조 파악 (header, footer 제외)
     const bodyContent = this.extractMainContent();
     
@@ -186,11 +193,24 @@ class TTSManager {
       // 🎯 p 태그와 h# 태그는 우선적으로 처리 (직접 텍스트 여부와 관계없이)
       if (tagName === 'p' || tagName.match(/^h[1-6]$/)) {
         const fullText = this.extractAllTextFromElement(currentNode);
+        const elementType = tagName === 'p' ? 'P' : 'H';
+        
+        // 🔍 CNN 디버깅: P 태그 상세 분석
+        console.log(`🔍 ${elementType} 태그 분석:`, {
+          tagName: tagName,
+          textLength: fullText?.length || 0,
+          className: currentNode.className || '',
+          id: currentNode.id || '',
+          parentClass: currentNode.parentElement?.className || '',
+          text: fullText?.substring(0, 50) + '...'
+        });
+        
         if (fullText && fullText.length > 3) { // h# 태그는 더 짧아도 허용
-          const elementType = tagName === 'p' ? 'P' : 'H';
           console.log(`✅ ${elementType} 태그 테이크 추가: "${fullText.substring(0, 30)}..."`);
           contentElements.push(currentNode);
           processedElements.add(currentNode);
+        } else {
+          console.log(`❌ ${elementType} 태그 제외됨 - 텍스트 길이: ${fullText?.length || 0}`);
         }
         continue;
       }
@@ -229,8 +249,22 @@ class TTSManager {
   
   // 🎯 요소 제외 여부 판단
   shouldExcludeElement(element) {
-    // 기존 isExcludedElement 로직 재사용
-    return this.isExcludedElement(element) || !this.isVisibleElement(element);
+    const isExcluded = this.isExcludedElement(element);
+    const isVisible = this.isVisibleElement(element);
+    
+    // 🔍 CNN 디버깅: 제외 사유 상세 분석
+    if (isExcluded || !isVisible) {
+      console.log(`🚫 요소 제외됨:`, {
+        tagName: element.tagName.toLowerCase(),
+        className: element.className || '',
+        isExcluded: isExcluded,
+        isVisible: isVisible,
+        textLength: element.textContent?.length || 0,
+        text: element.textContent?.substring(0, 30) + '...'
+      });
+    }
+    
+    return isExcluded || !isVisible;
   }
   
   // 🎯 요소 가시성 확인
@@ -293,24 +327,12 @@ class TTSManager {
   
   // 🎯 테이크 목록 UI 업데이트
   updateTakeListUI() {
-    if (this.htmlViewer) {
-      let html = `<div style="color: #4CAF50; font-weight: bold; margin-bottom: 10px;">
-        📋 발견된 테이크: ${this.preTakes.length}개
-      </div>`;
-      
-      this.preTakes.slice(0, 5).forEach((take, index) => {
-        const preview = take.text.substring(0, 40);
-        const lang = take.language === 'ko' ? '🇰🇷' : '🇺🇸';
-        html += `<div style="margin: 5px 0; font-size: 10px; opacity: 0.8;">
-          ${index + 1}. ${lang} ${preview}...
-        </div>`;
-      });
-      
-      if (this.preTakes.length > 5) {
-        html += `<div style="opacity: 0.6; font-size: 9px;">...그외 ${this.preTakes.length - 5}개</div>`;
-      }
-      
-      this.htmlViewer.innerHTML = html;
+    console.log('🎯 테이크 목록 UI 업데이트 - 마우스 정보 표시 활성화');
+    
+    // 테이크 로딩 완료 후 마우스 위치 기반 정보 표시 시작
+    if (this.preTakes.length > 0) {
+      // 즉시 마우스 위치 정보 업데이트
+      this.updateMouseTakeInfo();
     }
   }
 
@@ -451,13 +473,23 @@ class TTSManager {
       }
     });
     
-    // 🎯 마우스 움직임 추적
+    // 🎯 마우스 움직임 추적 및 실시간 테이크 정보 표시
     this.currentMouseX = 0;
     this.currentMouseY = 0;
+    this.mouseUpdateThrottle = null;
     
     document.addEventListener('mousemove', (event) => {
       this.currentMouseX = event.clientX;
       this.currentMouseY = event.clientY;
+      
+      // 🎯 성능 최적화: 200ms 쓰로틀링
+      if (this.mouseUpdateThrottle) {
+        clearTimeout(this.mouseUpdateThrottle);
+      }
+      
+      this.mouseUpdateThrottle = setTimeout(() => {
+        this.updateMouseTakeInfo();
+      }, 200);
     });
   }
   
@@ -551,6 +583,79 @@ class TTSManager {
     const center2Y = rect2.top + rect2.height / 2;
     
     return Math.sqrt(Math.pow(center2X - center1X, 2) + Math.pow(center2Y - center1Y, 2));
+  }
+  
+  // 🎯 실시간 마우스 위치 테이크 정보 업데이트
+  updateMouseTakeInfo() {
+    if (!this.preTakes || this.preTakes.length === 0) {
+      if (this.htmlViewer) {
+        this.htmlViewer.innerHTML = `
+          <div style="color: #FF9800; font-weight: bold; margin-bottom: 10px;">
+            📋 테이크 로딩 중...
+          </div>
+          <div style="font-size: 10px; opacity: 0.8;">
+            페이지 분석이 완료되면 마우스 위치의 테이크가 표시됩니다.
+          </div>
+        `;
+      }
+      return;
+    }
+    
+    // 마우스 위치에서 테이크 찾기
+    const takeAtMouse = this.findTakeAtMousePosition();
+    
+    if (takeAtMouse) {
+      const takeIndex = this.preTakes.findIndex(take => take.id === takeAtMouse.id);
+      const takeNumber = takeIndex + 1;
+      const totalTakes = this.preTakes.length;
+      const language = takeAtMouse.language === 'ko' ? '🇰🇷' : '🇺🇸';
+      const elementType = takeAtMouse.element?.tagName.toLowerCase() || 'unknown';
+      const elementDesc = elementType === 'p' ? '📝' : elementType.match(/^h[1-6]$/) ? '📰' : '📦';
+      
+      // 텍스트 미리보기 (50자)
+      const preview = takeAtMouse.text.substring(0, 50);
+      
+      if (this.htmlViewer) {
+        this.htmlViewer.innerHTML = `
+          <div style="color: #4CAF50; font-weight: bold; margin-bottom: 10px;">
+            🎯 마우스 위치 테이크: ${takeNumber}/${totalTakes}
+          </div>
+          <div style="margin: 5px 0; font-size: 11px;">
+            ${elementDesc} <span style="color: #666;">&lt;${elementType}&gt;</span> ${language}
+          </div>
+          <div style="margin: 5px 0; font-size: 10px; color: #888; line-height: 1.4;">
+            "${preview}${takeAtMouse.text.length > 50 ? '...' : ''}"
+          </div>
+          <div style="margin-top: 8px; font-size: 9px; opacity: 0.7;">
+            💡 1~0번 키를 눌러 이 테이크부터 재생
+          </div>
+        `;
+      }
+      
+      // 상태 라벨도 업데이트
+      if (this.statusLabel && !this.isPlaying) {
+        this.statusLabel.textContent = `테이크 ${takeNumber}/${totalTakes} - ${elementType} ${language}`;
+      }
+    } else {
+      // 마우스 위치에 테이크가 없는 경우
+      if (this.htmlViewer) {
+        this.htmlViewer.innerHTML = `
+          <div style="color: #FF9800; font-weight: bold; margin-bottom: 10px;">
+            📋 총 ${this.preTakes.length}개 테이크
+          </div>
+          <div style="margin: 5px 0; font-size: 10px; color: #888;">
+            마우스 위치에 재생 가능한 테이크가 없습니다.
+          </div>
+          <div style="margin-top: 8px; font-size: 9px; opacity: 0.7;">
+            💡 텍스트 영역으로 마우스를 이동하세요
+          </div>
+        `;
+      }
+      
+      if (this.statusLabel && !this.isPlaying) {
+        this.statusLabel.textContent = `TTS 준비 완료 - 마우스를 텍스트에 올려주세요`;
+      }
+    }
   }
   
   // 🎯 테이크부터 순차적 재생 시작
@@ -1928,23 +2033,22 @@ class TTSManager {
       return true;
     }
 
-    // 3. 클래스명 기반 제외 (더 포괄적)
+    // 3. 클래스명 기반 제외 (CNN 본문 보호를 위해 완화)
     const excludedClasses = [
-      // 광고 관련
-      'ad', 'advertisement', 'banner', 'promo', 'sponsored',
-      // 네비게이션 관련
-      'menu', 'nav', 'navigation', 'header', 'footer', 'sidebar',
-      // 버튼 및 인터랙션 요소
-      'button', 'btn', 'link', 'tab', 'tabs', 'dropdown',
-      // 메타데이터 및 UI 요소
-      'metadata', 'byline', 'timestamp', 'tags', 'category', 'topic',
-      'share', 'social', 'feedback', 'comment', 'rating',
-      // CNN 특화
-      'cnn-poll', 'cnn-related', 'cnn-newsletter', 'live-story',
+      // 광고 관련 (CNN 광고 패턴)
+      'advertisement', 'ad-feedback', 'ad-', 'sponsored-content',
+      // 네비게이션 관련 (정확한 매칭만)
+      'navigation', 'navbar', 'header-nav', 'footer-nav', 'sidebar-nav',
+      // 버튼 및 인터랙션 요소 (정확한 매칭)
+      'button-', 'btn-', 'dropdown-', 'tabs-container',
+      // 메타데이터 및 UI 요소 (정확한 매칭)
+      'byline-', 'timestamp-', 'social-share', 'comment-section',
+      // CNN 특화 (정확한 매칭)
+      'cnn-poll', 'cnn-newsletter', 'live-blog-', 'breaking-news-banner',
       // 접근성 및 숨김 요소
-      'screen-reader', 'sr-only', 'visually-hidden', 'hidden',
-      // 기타 UI 요소
-      'widget', 'tooltip', 'popup', 'modal', 'overlay'
+      'screen-reader-only', 'sr-only', 'visually-hidden', 'hidden-',
+      // 기타 UI 요소 (정확한 매칭)
+      'modal-', 'popup-', 'overlay-', 'tooltip-'
     ];
 
     const className = (element.className || '').toLowerCase();
@@ -2022,8 +2126,21 @@ class TTSManager {
       level++;
     }
     
-    if (excludedClasses.some(cls => className.includes(cls))) {
+    // 🎯 CNN 본문 보호: 더 관대한 클래스 필터링
+    const stronglyExcludedClasses = ['advertisement', 'ad-feedback', 'navigation', 'header-nav', 'footer-nav'];
+    if (stronglyExcludedClasses.some(cls => className.includes(cls))) {
+      console.log(`🚫 강력 제외 클래스: ${className}`);
       return true;
+    }
+    
+    // 약한 제외: 'ad' 같은 짧은 단어는 정확한 매칭만
+    const weakExcludedClasses = ['ad', 'nav', 'menu', 'header', 'footer'];
+    for (const cls of weakExcludedClasses) {
+      const regex = new RegExp(`\\b${cls}\\b`);
+      if (regex.test(className)) {
+        console.log(`🚫 약한 제외 클래스: ${cls} in ${className}`);
+        return true;
+      }
     }
 
     // 4. ID 기반 제외
@@ -2076,7 +2193,9 @@ class TTSManager {
       const parentRole = currentElement.getAttribute('role');
       
       // 부모가 제외 대상이면 자식도 제외
-      if (excludedClasses.some(cls => parentClass.includes(cls)) ||
+      // 🎯 CNN 본문 보호: 부모 요소 체크도 관대하게
+      const strongParentExclusions = ['advertisement', 'navigation', 'header-nav', 'footer-nav'];
+      if (strongParentExclusions.some(cls => parentClass.includes(cls)) ||
           excludedIds.some(id => parentId.includes(id)) ||
           (parentRole && excludedRoles.includes(parentRole.toLowerCase()))) {
         return true;
