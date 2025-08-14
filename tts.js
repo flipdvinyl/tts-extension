@@ -14,14 +14,17 @@ class TTSManager {
       { name: '릭 루빈', id: 'nNkPFG9fioPzmsxGpawKbv', key: '0' }
     ];
 
-    // TTS 상태 관리
+    // 🎯 새로운 테이크 시스템 관련 상태
+    this.preTakes = [];  // 사전 생성된 테이크 목록
     this.currentAudio = null;
     this.audioBuffer = {};
     this.takes = [];
     this.currentTakeIndex = 0;
+    this.currentPlayingTakeId = null;
     this.isPlaying = false;
     this.isPaused = false;
     this.isGenerating = false;
+    this.bufferingTakes = new Set(); // 버퍼링 중인 테이크들
     this.abortController = null;
     
     // 현재 선택된 음성
@@ -33,14 +36,252 @@ class TTSManager {
     // 플로팅 UI 요소들
     this.floatingUI = null;
     this.statusLabel = null;
+    this.takeInfoLabel = null;
+    this.wordInfoLabel = null;
+    this.htmlViewer = null;
     
-    this.init();
+    // 단어 트래킹 관련 (App.js 스타일)
+    this.currentTakeWordElements = [];
+    this.currentTakeWords = [];
+    
+    // 🎯 페이지 로딩 완료 감지 및 초기화
+    this.initializeWhenReady();
   }
 
-  init() {
+  // 🎯 페이지 로딩 완료 시 초기화
+  async initializeWhenReady() {
+    // DOM이 완전히 로드될 때까지 대기
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => this.initializeAfterLoad());
+    } else if (document.readyState === 'interactive') {
+      // DOMContentLoaded는 이미 발생했지만 리소스가 아직 로딩 중
+      window.addEventListener('load', () => this.initializeAfterLoad());
+    } else {
+      // 이미 완전히 로드됨
+      setTimeout(() => this.initializeAfterLoad(), 500);
+    }
+  }
+  
+  // 🎯 페이지 로딩 완료 후 초기화
+  async initializeAfterLoad() {
+    console.log('🎯 페이지 로딩 완료 - TTS 시스템 초기화 시작');
+    
     this.createFloatingUI();
     this.setupKeyboardShortcuts();
+    
+    // 🎯 웹페이지 내용 분석 및 테이크 사전 생성
+    await this.analyzePageAndCreateTakes();
+    
+    // UI를 항상 표시
+    this.showUI();
+    this.updateStatus('TTS 준비 완료 - 마우스를 올리고 1~0번 키를 누르세요', '#4CAF50');
     console.log('TTS Manager 초기화 완료');
+  }
+  
+  // 🎯 웹페이지 분석 및 테이크 사전 생성
+  async analyzePageAndCreateTakes() {
+    console.log('🔍 웹페이지 분석 시작...');
+    
+    // body 내부 구조 파악 (header, footer 제외)
+    const bodyContent = this.extractMainContent();
+    
+    // div, p 기준으로 텍스트 정보가 있는 요소들을 순차적으로 찾기
+    const contentElements = this.findContentElements(bodyContent);
+    
+    console.log(`📄 발견된 콘텐츠 요소: ${contentElements.length}개`);
+    
+    // 각 요소를 테이크로 변환
+    this.preTakes = [];
+    for (let i = 0; i < contentElements.length; i++) {
+      const element = contentElements[i];
+      const text = this.extractTextFromElement(element);
+      
+      if (text && text.length > 10) { // 최소 길이 체크
+        const takeId = `take-${i + 1}`;
+        const language = await this.detectLanguage(text);
+        
+        const preTake = {
+          id: takeId,
+          index: i,
+          text: text,
+          language: language,
+          element: element,
+          selector: this.generateElementSelector(element),
+          isBuffered: false,
+          audioUrl: null
+        };
+        
+        this.preTakes.push(preTake);
+        console.log(`📝 테이크 ${i + 1} 생성: "${text.substring(0, 50)}..." (${language})`);
+      }
+    }
+    
+    console.log(`✅ 총 ${this.preTakes.length}개 테이크 사전 생성 완료`);
+    this.updateTakeListUI();
+  }
+  
+  // 🎯 body 내부 메인 콘텐츠 추출 (header, footer 제외)
+  extractMainContent() {
+    const body = document.body;
+    if (!body) return null;
+    
+    // header, footer, nav 등 제외
+    const excludeSelectors = [
+      'header', 'footer', 'nav', '[role="banner"]', '[role="contentinfo"]',
+      '[role="navigation"]', '.header', '.footer', '.nav', '.navigation',
+      '.sidebar', '.menu', '.breadcrumb'
+    ];
+    
+    // 메인 콘텐츠 영역 우선 찾기
+    let mainContent = body.querySelector('main, [role="main"], .main, .content, .container');
+    
+    if (!mainContent) {
+      // 메인 영역이 없으면 body 전체에서 제외 요소들 필터링
+      mainContent = body;
+    }
+    
+    console.log(`🎯 메인 콘텐츠 영역: <${mainContent.tagName.toLowerCase()}>`);
+    return mainContent;
+  }
+  
+  // 🎯 콘텐츠 요소들 찾기 (div, p 기준으로 순차적)
+  findContentElements(container) {
+    if (!container) return [];
+    
+    const contentElements = [];
+    
+    // TreeWalker로 모든 div, p 요소 순차 탐색
+    const walker = document.createTreeWalker(
+      container,
+      NodeFilter.SHOW_ELEMENT,
+      {
+        acceptNode: (node) => {
+          // div, p, article, section 등 블록 요소만
+          const validTags = ['div', 'p', 'article', 'section', 'blockquote', 'aside'];
+          if (!validTags.includes(node.tagName.toLowerCase())) {
+            return NodeFilter.FILTER_REJECT;
+          }
+          
+          // 제외 조건 확인
+          if (this.shouldExcludeElement(node)) {
+            return NodeFilter.FILTER_REJECT;
+          }
+          
+          return NodeFilter.FILTER_ACCEPT;
+        }
+      }
+    );
+    
+    let currentNode;
+    while (currentNode = walker.nextNode()) {
+      // 직접 텍스트가 있는지 확인 (하위 요소 제외)
+      const directText = this.getDirectTextContent(currentNode);
+      
+      if (directText && directText.length > 10) {
+        contentElements.push(currentNode);
+      } else {
+        // 직접 텍스트가 없으면 하위 p 태그들 확인
+        const subParagraphs = currentNode.querySelectorAll('p');
+        for (const p of subParagraphs) {
+          if (!this.shouldExcludeElement(p)) {
+            const pText = this.getDirectTextContent(p);
+            if (pText && pText.length > 10) {
+              contentElements.push(p);
+            }
+          }
+        }
+      }
+    }
+    
+    console.log(`🔍 콘텐츠 요소 탐색 완료: ${contentElements.length}개`);
+    return contentElements;
+  }
+  
+  // 🎯 요소 제외 여부 판단
+  shouldExcludeElement(element) {
+    // 기존 isExcludedElement 로직 재사용
+    return this.isExcludedElement(element) || !this.isVisibleElement(element);
+  }
+  
+  // 🎯 요소 가시성 확인
+  isVisibleElement(element) {
+    if (!element) return false;
+    
+    // 스타일 확인
+    const style = window.getComputedStyle(element);
+    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
+      return false;
+    }
+    
+    // 크기 확인
+    const rect = element.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) {
+      return false;
+    }
+    
+    return true;
+  }
+  
+  // 🎯 요소의 직접 텍스트 내용 추출 (하위 블록 요소 제외)
+  getDirectTextContent(element) {
+    let text = '';
+    
+    for (const child of element.childNodes) {
+      if (child.nodeType === Node.TEXT_NODE) {
+        text += child.textContent;
+      } else if (child.nodeType === Node.ELEMENT_NODE) {
+        // 인라인 요소들(span, strong, em 등)의 텍스트는 포함
+        const tagName = child.tagName.toLowerCase();
+        const inlineTags = ['span', 'strong', 'em', 'b', 'i', 'a', 'code', 'small', 'sub', 'sup'];
+        if (inlineTags.includes(tagName)) {
+          text += child.textContent;
+        }
+      }
+    }
+    
+    return text.trim();
+  }
+  
+  // 🎯 요소에서 전체 텍스트 추출 (테이크 생성용)
+  extractTextFromElement(element) {
+    return this.extractAllTextFromElement(element);
+  }
+  
+  // 🎯 요소 선택자 생성
+  generateElementSelector(element) {
+    let selector = element.tagName.toLowerCase();
+    
+    if (element.id) {
+      selector += `#${element.id}`;
+    } else if (element.className) {
+      const classes = element.className.trim().split(/\s+/).slice(0, 2);
+      selector += '.' + classes.join('.');
+    }
+    
+    return selector;
+  }
+  
+  // 🎯 테이크 목록 UI 업데이트
+  updateTakeListUI() {
+    if (this.htmlViewer) {
+      let html = `<div style="color: #4CAF50; font-weight: bold; margin-bottom: 10px;">
+        📋 발견된 테이크: ${this.preTakes.length}개
+      </div>`;
+      
+      this.preTakes.slice(0, 5).forEach((take, index) => {
+        const preview = take.text.substring(0, 40);
+        const lang = take.language === 'ko' ? '🇰🇷' : '🇺🇸';
+        html += `<div style="margin: 5px 0; font-size: 10px; opacity: 0.8;">
+          ${index + 1}. ${lang} ${preview}...
+        </div>`;
+      });
+      
+      if (this.preTakes.length > 5) {
+        html += `<div style="opacity: 0.6; font-size: 9px;">...그외 ${this.preTakes.length - 5}개</div>`;
+      }
+      
+      this.htmlViewer.innerHTML = html;
+    }
   }
 
   // 🎯 개선된 플로팅 UI 생성 (HTML 뷰어 포함)
@@ -152,7 +393,7 @@ class TTSManager {
     console.log('🎯 TTS UI 생성 완료:', this.floatingUI);
   }
 
-  // 키보드 단축키 설정
+  // 🎯 새로운 키보드 단축키 설정 (마우스 위치 기반)
   setupKeyboardShortcuts() {
     document.addEventListener('keydown', (event) => {
       // 입력 필드에서는 단축키 무시
@@ -162,16 +403,16 @@ class TTSManager {
 
       const key = event.key;
 
-      // 1~0 숫자키로 음성 선택
+      // 🎯 1~0 숫자키로 마우스 위치의 테이크부터 재생 시작
       if (key >= '1' && key <= '9') {
         const voiceIndex = parseInt(key) - 1;
         if (voiceIndex < this.VOICES.length) {
-          this.selectVoice(voiceIndex);
+          this.selectVoiceAndStartFromMousePosition(voiceIndex);
           event.preventDefault();
         }
       } else if (key === '0') {
-        // 0번키는 마지막 음성 (릭 루빈)
-        this.selectVoice(9);
+        // 0번키는 마지막 음성
+        this.selectVoiceAndStartFromMousePosition(9);
         event.preventDefault();
       } else if (key === 'Escape') {
         // ESC로 모든 재생 중지
@@ -179,6 +420,588 @@ class TTSManager {
         event.preventDefault();
       }
     });
+    
+    // 🎯 마우스 움직임 추적
+    this.currentMouseX = 0;
+    this.currentMouseY = 0;
+    
+    document.addEventListener('mousemove', (event) => {
+      this.currentMouseX = event.clientX;
+      this.currentMouseY = event.clientY;
+    });
+  }
+  
+  // 🎯 음성 선택 후 마우스 위치에서 테이크 재생 시작
+  async selectVoiceAndStartFromMousePosition(voiceIndex) {
+    // 음성 선택
+    if (voiceIndex >= 0 && voiceIndex < this.VOICES.length) {
+      this.selectedVoice = this.VOICES[voiceIndex];
+      console.log(`🎵 음성 선택: ${this.selectedVoice.name}`);
+      
+      // 🎯 마우스 위치에서 테이크 찾기
+      const takeAtMouse = this.findTakeAtMousePosition();
+      
+      if (takeAtMouse) {
+        console.log(`🎯 마우스 위치에서 테이크 발견: ${takeAtMouse.id}`);
+        await this.startPlaybackFromTake(takeAtMouse);
+      } else {
+        console.log('🚫 마우스 위치에 테이크가 없습니다');
+        this.updateStatus('마우스 위치에 재생할 콘텐츠가 없습니다', '#FF9800');
+      }
+    }
+  }
+  
+  // 🎯 마우스 위치에서 테이크 찾기
+  findTakeAtMousePosition() {
+    if (!this.preTakes || this.preTakes.length === 0) {
+      return null;
+    }
+    
+    // 마우스 위치의 요소 찾기
+    const elementAtMouse = document.elementFromPoint(this.currentMouseX, this.currentMouseY);
+    
+    if (!elementAtMouse) {
+      return null;
+    }
+    
+    console.log(`🔍 마우스 위치 요소: <${elementAtMouse.tagName.toLowerCase()}>`);
+    
+    // 해당 요소나 부모 요소가 테이크에 해당하는지 확인
+    let currentElement = elementAtMouse;
+    
+    while (currentElement && currentElement !== document.body) {
+      // 현재 요소가 테이크 요소인지 확인
+      const foundTake = this.preTakes.find(take => take.element === currentElement);
+      
+      if (foundTake) {
+        console.log(`✅ 테이크 발견: ${foundTake.id} (${foundTake.text.substring(0, 30)}...)`);
+        return foundTake;
+      }
+      
+      currentElement = currentElement.parentElement;
+    }
+    
+    // 직접 매칭되지 않으면 가장 가까운 테이크 찾기
+    return this.findClosestTake(elementAtMouse);
+  }
+  
+  // 🎯 가장 가까운 테이크 찾기
+  findClosestTake(targetElement) {
+    if (!this.preTakes || this.preTakes.length === 0) {
+      return null;
+    }
+    
+    let closestTake = null;
+    let minDistance = Infinity;
+    
+    for (const take of this.preTakes) {
+      const distance = this.calculateElementDistance(targetElement, take.element);
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestTake = take;
+      }
+    }
+    
+    if (closestTake && minDistance < 1000) { // 1000px 이내만
+      console.log(`📍 가장 가까운 테이크: ${closestTake.id} (거리: ${minDistance}px)`);
+      return closestTake;
+    }
+    
+    return null;
+  }
+  
+  // 🎯 두 요소 간 거리 계산
+  calculateElementDistance(element1, element2) {
+    const rect1 = element1.getBoundingClientRect();
+    const rect2 = element2.getBoundingClientRect();
+    
+    const center1X = rect1.left + rect1.width / 2;
+    const center1Y = rect1.top + rect1.height / 2;
+    const center2X = rect2.left + rect2.width / 2;
+    const center2Y = rect2.top + rect2.height / 2;
+    
+    return Math.sqrt(Math.pow(center2X - center1X, 2) + Math.pow(center2Y - center1Y, 2));
+  }
+  
+  // 🎯 테이크부터 순차적 재생 시작
+  async startPlaybackFromTake(startTake) {
+    console.log(`🎬 재생 시작: ${startTake.id} (${startTake.text.substring(0, 30)}...)`);
+    
+    // 이전 재생 중지
+    this.stopAll();
+    
+    // 재생할 테이크 목록 설정 (시작 테이크부터 끝까지)
+    const startIndex = this.preTakes.findIndex(take => take.id === startTake.id);
+    this.currentPlayList = this.preTakes.slice(startIndex);
+    this.currentTakeIndex = 0;
+    this.currentPlayingTakeId = startTake.id;
+    
+    console.log(`📋 재생 목록: ${this.currentPlayList.length}개 테이크 (${startIndex + 1}번째부터)`);
+    
+    // UI 업데이트
+    this.updateStatus(`재생 준비 중... (${startIndex + 1}/${this.preTakes.length})`, '#FF9800');
+    this.updatePlaybackUI(startTake);
+    
+    // 🎯 첫 번째 테이크 재생 시작
+    await this.playTakeAtIndex(0);
+    
+    // 🎯 다음 테이크들 백그라운드 버퍼링 시작
+    this.startBackgroundBuffering(1);
+  }
+  
+  // 🎯 인덱스에 해당하는 테이크 재생
+  async playTakeAtIndex(playListIndex) {
+    if (!this.currentPlayList || playListIndex >= this.currentPlayList.length) {
+      console.log('✅ 모든 테이크 재생 완료');
+      this.updateStatus('재생 완료', '#4CAF50');
+      return;
+    }
+    
+    const take = this.currentPlayList[playListIndex];
+    this.currentTakeIndex = playListIndex;
+    this.currentPlayingTakeId = take.id;
+    
+    console.log(`🎵 테이크 재생: ${take.id} (${playListIndex + 1}/${this.currentPlayList.length})`);
+    
+    // UI 업데이트
+    this.updatePlaybackUI(take);
+    this.updateStatus(`재생 중... (${playListIndex + 1}/${this.currentPlayList.length})`, '#4CAF50');
+    
+    try {
+      let audioUrl;
+      
+      // 🚀 이미 버퍼링된 경우 바로 재생
+      if (take.isBuffered && take.audioUrl) {
+        console.log(`🎯 버퍼링된 오디오 즉시 재생: ${take.id}`);
+        audioUrl = take.audioUrl;
+      } else {
+        // 버퍼링되지 않은 경우 생성
+        console.log(`🔄 테이크 실시간 생성: ${take.id}`);
+        this.updateStatus(`음성 생성 중... (${playListIndex + 1}/${this.currentPlayList.length})`, '#FF9800');
+        
+        audioUrl = await this.convertToSpeech(take);
+        if (audioUrl) {
+          take.audioUrl = audioUrl;
+          take.isBuffered = true;
+        }
+      }
+      
+      if (audioUrl) {
+        await this.playAudioWithTracking(audioUrl, take);
+      } else {
+        console.error(`❌ 테이크 재생 실패: ${take.id}`);
+        // 다음 테이크로 넘어가기
+        await this.playTakeAtIndex(playListIndex + 1);
+      }
+      
+    } catch (error) {
+      console.error(`❌ 테이크 재생 오류: ${take.id}`, error);
+      await this.playTakeAtIndex(playListIndex + 1);
+    }
+  }
+  
+  // 🎯 백그라운드 버퍼링 시작
+  async startBackgroundBuffering(startIndex) {
+    if (!this.currentPlayList || startIndex >= this.currentPlayList.length) {
+      return;
+    }
+    
+    console.log(`🔄 백그라운드 버퍼링 시작: ${startIndex}번째부터`);
+    
+    // 최대 3개까지 미리 버퍼링
+    const bufferCount = Math.min(3, this.currentPlayList.length - startIndex);
+    
+    for (let i = 0; i < bufferCount; i++) {
+      const bufferIndex = startIndex + i;
+      if (bufferIndex < this.currentPlayList.length) {
+        const take = this.currentPlayList[bufferIndex];
+        
+        if (!take.isBuffered) {
+          this.bufferTakeInBackground(take);
+        }
+      }
+    }
+  }
+  
+  // 🎯 백그라운드에서 테이크 버퍼링
+  async bufferTakeInBackground(take) {
+    if (this.bufferingTakes.has(take.id) || take.isBuffered) {
+      return;
+    }
+    
+    this.bufferingTakes.add(take.id);
+    console.log(`🔄 백그라운드 버퍼링: ${take.id}`);
+    
+    // 🎯 App.js 스타일 알파값 애니메이션 적용
+    this.applyBufferingAnimation(take.element);
+    
+    try {
+      const audioUrl = await this.convertToSpeech(take);
+      if (audioUrl) {
+        take.audioUrl = audioUrl;
+        take.isBuffered = true;
+        console.log(`✅ 버퍼링 완료: ${take.id}`);
+      }
+    } catch (error) {
+      console.error(`❌ 버퍼링 실패: ${take.id}`, error);
+    } finally {
+      this.bufferingTakes.delete(take.id);
+      this.removeBufferingAnimation(take.element);
+    }
+  }
+  
+  // 🎯 App.js 스타일 버퍼링 알파값 애니메이션 적용
+  applyBufferingAnimation(element) {
+    if (!element) return;
+    
+    // 기존 애니메이션 제거
+    element.style.animation = '';
+    
+    // App.js의 fadeInOut 애니메이션 적용
+    element.style.animation = 'tts-buffering 3s infinite';
+    
+    // CSS 애니메이션이 없으면 스타일시트에 추가
+    if (!document.querySelector('#tts-buffering-animation')) {
+      const style = document.createElement('style');
+      style.id = 'tts-buffering-animation';
+      style.textContent = `
+        @keyframes tts-buffering {
+          0% { opacity: 1; }
+          50% { opacity: 0.3; }
+          100% { opacity: 1; }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+  }
+  
+  // 🎯 버퍼링 애니메이션 제거
+  removeBufferingAnimation(element) {
+    if (!element) return;
+    
+    element.style.animation = '';
+    element.style.opacity = '';
+  }
+  
+  // 🎯 오디오 재생 + App.js 스타일 단어 트래킹
+  async playAudioWithTracking(audioUrl, take) {
+    return new Promise((resolve, reject) => {
+      this.currentAudio = new Audio(audioUrl);
+      this.isPlaying = true;
+      this.isPaused = false;
+      
+      console.log(`🎵 오디오 재생 시작: ${take.id}`);
+      
+      // 🎯 App.js 스타일 단어 트래킹 준비
+      this.prepareWordTracking(take);
+      
+      this.currentAudio.onloadedmetadata = () => {
+        console.log(`📊 오디오 메타데이터 로드 완료 - 길이: ${this.currentAudio.duration}초`);
+        this.startAppJsStyleWordTracking(take);
+      };
+      
+      this.currentAudio.ontimeupdate = () => {
+        if (this.currentAudio && this.currentAudio.duration) {
+          this.updateAppJsStyleWordTracking(take);
+          
+          // 진행률 업데이트
+          const progress = (this.currentAudio.currentTime / this.currentAudio.duration) * 100;
+          this.updateProgress(progress);
+        }
+      };
+      
+      this.currentAudio.onended = () => {
+        console.log(`✅ 테이크 재생 완료: ${take.id}`);
+        this.isPlaying = false;
+        
+        // 단어 트래킹 정리
+        this.cleanupWordTracking();
+        
+        // 다음 테이크 재생
+        const nextIndex = this.currentTakeIndex + 1;
+        if (nextIndex < this.currentPlayList.length) {
+          // 더 많은 테이크 버퍼링
+          this.startBackgroundBuffering(nextIndex + 1);
+          setTimeout(() => this.playTakeAtIndex(nextIndex), 100);
+        } else {
+          console.log('🎉 모든 테이크 재생 완료');
+          this.updateStatus('재생 완료', '#4CAF50');
+        }
+        
+        resolve();
+      };
+      
+      this.currentAudio.onerror = (error) => {
+        console.error(`❌ 오디오 재생 오류: ${take.id}`, error);
+        this.isPlaying = false;
+        reject(error);
+      };
+      
+      this.currentAudio.play().catch(reject);
+    });
+  }
+  
+  // 🎯 App.js 스타일 단어 트래킹 준비
+  prepareWordTracking(take) {
+    // 기존 트래킹 정리
+    this.cleanupWordTracking();
+    
+    // 텍스트를 단어별로 분할
+    this.currentTakeWords = this.splitIntoWords(take.text, take.language);
+    this.currentTakeWordElements = [];
+    
+    console.log(`🔤 단어 트래킹 준비: ${this.currentTakeWords.length}개 단어`);
+    
+    // DOM에서 해당 텍스트에 span 래핑
+    this.wrapWordsInElement(take.element, take.text);
+  }
+  
+  // 🎯 App.js 스타일 단어 분할 (언어별 가중치 적용)
+  splitIntoWords(text, language) {
+    const words = text.split(/\s+/).filter(word => word.length > 0);
+    
+    return words.map(word => ({
+      text: word,
+      weight: this.calculateWordWeight(word, language)
+    }));
+  }
+  
+  // 🎯 단어 가중치 계산 (App.js 로직)
+  calculateWordWeight(word, language) {
+    // 기본 가중치
+    let weight = 1;
+    
+    // 언어별 가중치 조정
+    if (language === 'ko') {
+      // 한국어: 글자 수 기반
+      weight = word.length * 0.3;
+    } else {
+      // 영어: 음절 수 추정
+      weight = this.estimateSyllables(word) * 0.2;
+    }
+    
+    // 구두점이 있으면 가중치 증가
+    if (/[.!?]/.test(word)) {
+      weight += 0.5;
+    }
+    
+    return Math.max(0.1, weight); // 최소 가중치 보장
+  }
+  
+  // 🎯 영어 음절 수 추정
+  estimateSyllables(word) {
+    const vowels = word.match(/[aeiouy]+/gi);
+    return vowels ? vowels.length : 1;
+  }
+  
+  // 🎯 App.js 스타일 단어 트래킹 시작
+  startAppJsStyleWordTracking(take) {
+    console.log(`🎯 App.js 스타일 단어 트래킹 시작: ${take.id}`);
+    
+    // 🎯 테이크 시작 시 한 번만 스크롤
+    if (take.element) {
+      console.log(`📜 테이크 시작 - 요소로 스크롤: <${take.element.tagName.toLowerCase()}>`);
+      take.element.scrollIntoView({ 
+        behavior: 'smooth', 
+        block: 'center',
+        inline: 'nearest'
+      });
+    }
+  }
+  
+  // 🎯 App.js 스타일 단어 트래킹 업데이트
+  updateAppJsStyleWordTracking(take) {
+    if (!this.currentAudio || !this.currentTakeWords || this.currentTakeWords.length === 0) {
+      return;
+    }
+    
+    const currentTime = this.currentAudio.currentTime;
+    const duration = this.currentAudio.duration;
+    
+    // App.js의 calculateCurrentWordIndex 로직
+    const currentWordIndex = this.calculateCurrentWordIndex(currentTime, duration, this.currentTakeWords);
+    
+    // 이전 하이라이트 제거
+    this.currentTakeWordElements.forEach(element => {
+      if (element && element.classList) {
+        element.classList.remove('tts-current-word-appjs');
+      }
+    });
+    
+    // 🎯 App.js 스타일 갈색 밑줄 하이라이트 적용
+    if (currentWordIndex >= 0 && currentWordIndex < this.currentTakeWordElements.length) {
+      const currentWordElement = this.currentTakeWordElements[currentWordIndex];
+      if (currentWordElement) {
+        currentWordElement.classList.add('tts-current-word-appjs');
+        
+        // UI 업데이트
+        const currentWord = this.currentTakeWords[currentWordIndex]?.text || '';
+        this.updateWordInfo(currentWordIndex + 1, this.currentTakeWords.length, currentWord);
+      }
+    }
+  }
+  
+  // 🎯 App.js의 calculateCurrentWordIndex 로직 재현
+  calculateCurrentWordIndex(currentTime, duration, words) {
+    if (!duration || !words || words.length === 0) return 0;
+    
+    const totalDuration = duration + 1;
+    const totalWeight = words.reduce((sum, word) => sum + word.weight, 0);
+    const timePerWeight = totalWeight > 0 ? totalDuration / totalWeight : 0;
+    
+    let accumulatedTime = 0;
+    for (let i = 0; i < words.length; i++) {
+      const wordDuration = words[i].weight * timePerWeight;
+      accumulatedTime += wordDuration;
+      if (currentTime < accumulatedTime) {
+        return i;
+      }
+    }
+    
+    return Math.max(0, words.length - 1);
+  }
+  
+  // 🎯 단어 래핑 (DOM에서 텍스트를 span으로 감싸기)
+  wrapWordsInElement(element, targetText) {
+    if (!element || !targetText) return;
+    
+    console.log(`🔤 단어 래핑 시작: ${targetText.substring(0, 50)}...`);
+    
+    // TreeWalker로 텍스트 노드들 찾기
+    const walker = document.createTreeWalker(
+      element,
+      NodeFilter.SHOW_TEXT,
+      null,
+      false
+    );
+    
+    const textNodes = [];
+    let node;
+    while (node = walker.nextNode()) {
+      if (node.textContent.trim().length > 0) {
+        textNodes.push(node);
+      }
+    }
+    
+    // 각 텍스트 노드에서 단어들을 span으로 래핑
+    for (const textNode of textNodes) {
+      this.wrapWordsInTextNode(textNode);
+    }
+    
+    console.log(`✅ 단어 래핑 완료: ${this.currentTakeWordElements.length}개 span 생성`);
+  }
+  
+  // 🎯 단일 텍스트 노드에서 단어 래핑
+  wrapWordsInTextNode(textNode) {
+    const text = textNode.textContent;
+    const words = text.split(/(\s+)/); // 공백도 보존
+    
+    if (words.length <= 1) return;
+    
+    const fragment = document.createDocumentFragment();
+    
+    for (const word of words) {
+      if (word.trim().length > 0) {
+        // 단어인 경우 span으로 감싸기
+        const span = document.createElement('span');
+        span.textContent = word;
+        span.className = 'tts-word-appjs';
+        this.currentTakeWordElements.push(span);
+        fragment.appendChild(span);
+      } else {
+        // 공백인 경우 그대로 추가
+        fragment.appendChild(document.createTextNode(word));
+      }
+    }
+    
+    // 원본 텍스트 노드를 새로운 구조로 교체
+    textNode.parentNode.replaceChild(fragment, textNode);
+  }
+  
+  // 🎯 단어 트래킹 정리
+  cleanupWordTracking() {
+    // 기존 래핑 제거
+    const wrappedWords = document.querySelectorAll('.tts-word-appjs, .tts-current-word-appjs');
+    wrappedWords.forEach(span => {
+      if (span.parentNode) {
+        span.parentNode.replaceChild(document.createTextNode(span.textContent), span);
+      }
+    });
+    
+    // 인접한 텍스트 노드들 병합
+    document.normalize && document.normalize();
+    
+    // 배열 초기화
+    this.currentTakeWords = [];
+    this.currentTakeWordElements = [];
+    
+    console.log('🧹 단어 트래킹 정리 완료');
+  }
+  
+  // 🎯 재생 UI 업데이트
+  updatePlaybackUI(take) {
+    if (!take) return;
+    
+    // 테이크 정보 업데이트
+    if (this.takeInfoLabel) {
+      const totalTakes = this.currentPlayList ? this.currentPlayList.length : this.preTakes.length;
+      const currentIndex = this.currentTakeIndex + 1;
+      const elementType = take.element?.tagName.toLowerCase() || 'unknown';
+      const elementDesc = elementType === 'p' ? '📝 문단' : '📦 영역';
+      const language = take.language === 'ko' ? '🇰🇷' : '🇺🇸';
+      
+      this.takeInfoLabel.textContent = `${elementDesc} ${currentIndex}/${totalTakes} | <${elementType}> ${language}`;
+    }
+    
+    // HTML 뷰어 업데이트
+    if (this.htmlViewer && take.element) {
+      const htmlCode = this.generateHighlightedHtml(take.element, take.text);
+      this.htmlViewer.innerHTML = htmlCode;
+    }
+    
+    // 음성 라벨 업데이트
+    if (this.voiceLabel) {
+      this.voiceLabel.textContent = `🎵 음성: ${this.selectedVoice.name}`;
+    }
+  }
+  
+  // 🎯 전체 정지 (새로운 로직에 맞게 수정)
+  stopAll() {
+    console.log('🛑 모든 재생 중지');
+    
+    // 오디오 정지
+    if (this.currentAudio) {
+      this.currentAudio.pause();
+      this.currentAudio = null;
+    }
+    
+    // 상태 초기화
+    this.isPlaying = false;
+    this.isPaused = false;
+    this.currentPlayList = [];
+    this.currentTakeIndex = 0;
+    this.currentPlayingTakeId = null;
+    
+    // 버퍼링 중지
+    if (this.abortController) {
+      this.abortController.abort();
+      this.abortController = null;
+    }
+    
+    // 버퍼링 애니메이션 제거
+    this.bufferingTakes.clear();
+    document.querySelectorAll('[style*="tts-buffering"]').forEach(element => {
+      this.removeBufferingAnimation(element);
+    });
+    
+    // 단어 트래킹 정리
+    this.cleanupWordTracking();
+    
+    // UI 업데이트
+    this.updateStatus('재생 중지됨', '#FF9800');
+    this.updateProgress(0);
+    
+    console.log('✅ 정지 완료');
   }
 
   // 음성 선택
@@ -188,10 +1011,9 @@ class TTSManager {
       this.updateUI();
       console.log(`음성 선택: ${this.selectedVoice.name}`);
       
-      // 선택된 텍스트가 있으면 TTS 시작
-      if (window.ttsSelector && window.ttsSelector.selectedText) {
-        this.startTTS(window.ttsSelector.selectedText);
-      }
+      // 새로운 시스템에서는 마우스 위치 기반으로 재생하므로 호환성만 유지
+      console.log(`음성 선택됨: ${this.selectedVoice.name} - 마우스를 올리고 다시 키를 누르세요`);
+      this.updateStatus(`음성 선택: ${this.selectedVoice.name}`, '#4CAF50');
     }
   }
 
@@ -332,62 +1154,18 @@ class TTSManager {
   }
 
   // TTS 시작
+  // 🎯 호환성을 위한 startTTS 래퍼 (레거시 시스템용)
   async startTTS(text, elementMetadata = null) {
-    if (!text || text.trim().length === 0) {
-      console.log('텍스트가 없습니다.');
-      return;
-    }
-
-    console.log('TTS 시작:', text.substring(0, 100) + '...');
-    console.log('DOM 메타데이터:', elementMetadata);
+    console.log('⚠️ 레거시 startTTS 호출됨 - 새로운 시스템은 마우스 위치 기반입니다');
+    console.log('텍스트:', text?.substring(0, 50) + '...');
     
-    // 📍 메타데이터 저장
-    this.sourceElementMetadata = elementMetadata;
+    // 새로운 시스템에서는 사용자에게 안내만 제공
+    this.updateStatus('마우스를 콘텐츠에 올리고 1-0번 키를 누르세요', '#FF9800');
     
-    // 이전 재생 중지
-    this.stopAll();
-    
-    // UI 표시
-    this.showUI();
-    this.updateStatus('텍스트 분석 중...', '#FF9800');
-    
-    // 📍 메타데이터 발화 (선택 사항)
-    if (elementMetadata && this.shouldSpeakMetadata()) {
-      const metadataText = this.generateMetadataText(elementMetadata);
-      if (metadataText) {
-        console.log('메타데이터 발화:', metadataText);
-        // 메타데이터를 첫 번째 테이크 앞에 추가
-        text = metadataText + ' ' + text;
-      }
-    }
-    
-    try {
-      // 텍스트를 테이크로 분할 (메타데이터 포함)
-      this.takes = await this.splitTextIntoTakes(text, elementMetadata);
-      console.log(`${this.takes.length}개 테이크로 분할됨`);
-      
-      // 첫 번째 테이크 생성 및 재생
-      this.currentTakeIndex = 0;
-      
-      // 🚀 첫 번째 테이크와 동시에 백그라운드에서 다음 테이크들 생성
-      const playFirstTake = this.generateAndPlayTake(0);
-      
-      // 백그라운드에서 다음 테이크들 미리 생성 (2-3개)
-      const bufferedTakePromises = [];
-      for (let i = 1; i < Math.min(this.takes.length, 4); i++) {
-        bufferedTakePromises.push(this.prepareNextTake(i));
-      }
-      
-      // 첫 번째 테이크 재생 완료까지 대기
-      await playFirstTake;
-      
-      console.log(`백그라운드 버퍼링 진행 중: ${bufferedTakePromises.length}개 테이크`);
-      
-    } catch (error) {
-      console.error('TTS 시작 실패:', error);
-      this.updateStatus('TTS 실패', '#F44336');
-      setTimeout(() => this.hideUI(), 3000);
-    }
+    // 5초 후에 안내 메시지 업데이트
+    setTimeout(() => {
+      this.updateStatus('TTS 준비 완료 - 마우스를 올리고 1~0번 키를 누르세요', '#4CAF50');
+    }, 5000);
   }
 
   // 텍스트를 테이크로 분할 (App.js 로직 참고)
