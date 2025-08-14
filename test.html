@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TTS Extension Test Page</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .header {
+            background-color: #f0f0f0;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+        .article {
+            background-color: #fff;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .paragraph {
+            margin-bottom: 15px;
+        }
+        .sidebar {
+            background-color: #f9f9f9;
+            padding: 15px;
+            border-left: 3px solid #007bff;
+            margin: 20px 0;
+        }
+        .footer {
+            background-color: #333;
+            color: white;
+            padding: 20px;
+            text-align: center;
+            border-radius: 5px;
+        }
+        .ad {
+            background-color: #ffebee;
+            padding: 10px;
+            border: 2px dashed #f44336;
+            margin: 10px 0;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>뉴스 웹사이트</h1>
+        <p>이것은 헤더 영역입니다. 네비게이션과 사이트 제목이 포함되어 있습니다.</p>
+    </div>
+
+    <div class="article">
+        <h2>주요 뉴스 기사</h2>
+        
+        <div class="paragraph">
+            <p>이것은 첫 번째 문단입니다. 여기에는 중요한 뉴스 내용이 포함되어 있습니다. 
+            이 문단은 독립적으로 선택할 수 있어야 합니다.</p>
+        </div>
+
+        <div class="paragraph">
+            <p>이것은 두 번째 문단입니다. 이 문단도 독립적으로 선택 가능해야 하며, 
+            오른쪽 화살표 키를 누르면 이전 문단과 함께 선택되어야 합니다.</p>
+        </div>
+
+        <div class="paragraph">
+            <p>이것은 세 번째 문단입니다. 이 문단까지 확장하면 전체 기사가 선택됩니다. 
+            오른쪽 화살표 키를 계속 누르면 상위 요소로 확장되고, 
+            왼쪽 화살표 키를 누르면 이전 선택 상태로 돌아갈 수 있습니다.</p>
+        </div>
+    </div>
+
+    <div class="sidebar">
+        <h3>관련 기사</h3>
+        <p>이것은 사이드바 영역입니다. 관련 기사들이 표시됩니다.</p>
+        <p>이 영역도 독립적으로 선택할 수 있어야 합니다.</p>
+    </div>
+
+    <div class="ad">
+        <p>광고 영역 - 이 영역은 선택되지 않아야 합니다</p>
+    </div>
+
+    <div class="article">
+        <h2>두 번째 기사</h2>
+        <div class="paragraph">
+            <p>이것은 다른 기사입니다. 각 기사는 독립적으로 선택할 수 있어야 합니다.</p>
+        </div>
+        <div class="paragraph">
+            <p>이 기사도 여러 문단으로 구성되어 있어서 확장 기능을 테스트할 수 있습니다.</p>
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>© 2024 뉴스 웹사이트. 모든 권리 보유.</p>
+        <p>이 영역은 푸터로 선택되지 않아야 합니다.</p>
+    </div>
+
+    <script>
+        // 테스트용 스크립트
+        console.log('테스트 페이지가 로드되었습니다.');
+        console.log('마우스를 텍스트 영역에 올려보세요.');
+        console.log('오른쪽/왼쪽 화살표 키로 영역을 확장/축소할 수 있습니다.');
+        console.log('오른쪽 화살표 키를 연속으로 누르면 상위 요소로 확장됩니다.');
+        console.log('마우스 위치를 바꾸고 오른쪽 화살표를 누르면 새로운 위치에서 확장을 시작합니다.');
+    </script>
+</body>
+</html>

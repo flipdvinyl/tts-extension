@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "TTS Text Reader",
+  "version": "1.0",
+  "description": "웹사이트의 텍스트를 선택하고 TTS로 읽어주는 익스텐션",
+  "permissions": [
+    "activeTab",
+    "scripting"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["tts.js", "content.js"],
+      "css": ["content.css"]
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "TTS Text Reader"
+  }
+}
