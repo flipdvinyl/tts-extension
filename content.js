@@ -135,9 +135,14 @@ class TTSSelector {
     // 요소에서 텍스트만 추출 (HTML 태그 제거)
     const clone = element.cloneNode(true);
     
-    // script, style 태그 제거
-    const scripts = clone.querySelectorAll('script, style, noscript');
-    scripts.forEach(script => script.remove());
+    // 🎯 불필요한 요소들 제거 (버튼 포함)
+    const unwantedElements = clone.querySelectorAll(`
+      script, style, noscript,
+      button, input, select, textarea,
+      [class*="btn"], [class*="button"],
+      [role="button"], [role="link"], [role="tab"]
+    `);
+    unwantedElements.forEach(el => el.remove());
     
     // 텍스트 추출
     let text = clone.textContent || clone.innerText || '';
@@ -384,13 +389,105 @@ class TTSSelector {
     return this.selectedText;
   }
 
-  // TTS 시작 (외부에서 호출 가능)
+  // TTS 시작 (외부에서 호출 가능) - 메타데이터 포함
   startTTS() {
-    if (this.selectedText && window.ttsManager) {
-      window.ttsManager.startTTS(this.selectedText);
+    if (this.selectedText && this.currentElement && window.ttsManager) {
+      // 📍 DOM 요소 메타데이터 생성
+      const elementMetadata = this.generateElementMetadata(this.currentElement);
+      
+      console.log('TTS 시작 - 요소 메타데이터:', elementMetadata);
+      window.ttsManager.startTTS(this.selectedText, elementMetadata);
     } else {
       console.log('선택된 텍스트가 없거나 TTS Manager가 로드되지 않았습니다.');
     }
+  }
+  
+  // 📍 DOM 요소 메타데이터 생성
+  generateElementMetadata(element) {
+    const metadata = {
+      // 기본 요소 정보
+      tagName: element.tagName.toLowerCase(),
+      className: element.className || '',
+      id: element.id || '',
+      
+      // CSS 선택자 (나중에 요소를 찾기 위함)
+      selector: this.generateUniqueSelector(element),
+      
+      // 계층 구조 정보
+      depth: this.getElementDepth(element),
+      
+      // 위치 정보
+      boundingRect: element.getBoundingClientRect(),
+      
+      // 부모 요소 정보 (백업용)
+      parentInfo: element.parentElement ? {
+        tagName: element.parentElement.tagName.toLowerCase(),
+        className: element.parentElement.className || '',
+        id: element.parentElement.id || ''
+      } : null,
+      
+      // DOM 참조 (직접 저장 - 주의: 메모리 누수 방지 필요)
+      domElement: element
+    };
+    
+    return metadata;
+  }
+  
+  // 🎯 고유한 CSS 선택자 생성
+  generateUniqueSelector(element) {
+    const path = [];
+    let current = element;
+    
+    while (current && current.nodeType === Node.ELEMENT_NODE) {
+      let selector = current.tagName.toLowerCase();
+      
+      // ID가 있으면 사용 (가장 고유함)
+      if (current.id) {
+        selector += `#${current.id}`;
+        path.unshift(selector);
+        break; // ID가 있으면 더 이상 올라가지 않음
+      }
+      
+      // 클래스가 있으면 사용
+      if (current.className) {
+        const classes = current.className.trim().split(/\s+/);
+        selector += '.' + classes.join('.');
+      }
+      
+      // 형제 중 몇 번째인지 확인
+      if (current.parentElement) {
+        const siblings = Array.from(current.parentElement.children);
+        const sameTagSiblings = siblings.filter(sibling => 
+          sibling.tagName === current.tagName
+        );
+        
+        if (sameTagSiblings.length > 1) {
+          const index = sameTagSiblings.indexOf(current) + 1;
+          selector += `:nth-of-type(${index})`;
+        }
+      }
+      
+      path.unshift(selector);
+      current = current.parentElement;
+      
+      // 너무 깊어지면 중단
+      if (path.length > 8) break;
+    }
+    
+    return path.join(' > ');
+  }
+  
+  // 요소의 깊이 계산
+  getElementDepth(element) {
+    let depth = 0;
+    let current = element;
+    
+    while (current.parentElement) {
+      depth++;
+      current = current.parentElement;
+    }
+    
+    return depth;
   }
 
   enable() {
