@@ -151,6 +151,10 @@ class TTSManager {
   async analyzePageAndCreateTakes() {
     console.log('🔍 웹페이지 분석 시작...');
     
+    // 🔍 클리앙 디버깅: 현재 URL 확인
+    console.log(`🌐 현재 URL: ${window.location.href}`);
+    console.log(`🌐 도메인: ${window.location.hostname}`);
+    
     // body 내부 구조 파악 (header, footer 제외)
     const bodyContent = this.extractMainContent();
     
@@ -165,7 +169,7 @@ class TTSManager {
       const element = contentElements[i];
       const text = this.extractTextFromElement(element);
       
-      if (text && text.length > 10) { // 최소 길이 체크
+      if (text && text.length > 3) { // 최소 길이 체크 (한글 3자)
         const takeId = `take-${i + 1}`;
         const language = await this.detectLanguage(text);
         
@@ -201,12 +205,23 @@ class TTSManager {
       '.sidebar', '.menu', '.breadcrumb'
     ];
     
-    // 메인 콘텐츠 영역 우선 찾기
-    let mainContent = body.querySelector('main, [role="main"], .main, .content, .container');
+    // 메인 콘텐츠 영역 우선 찾기 (대형 사이트 호환성 강화)
+    let mainContent = body.querySelector('main, [role="main"], .main, .content, .container, .board_view, .article, .post, .view_content, .content_view');
+    
+    if (!mainContent) {
+      // CNN/BBC/Google 등 대형 사이트 특화 셀렉터
+      mainContent = body.querySelector('[data-module="ArticleBody"], .article-body, .story-body, .entry-content, .post-body, .article-content, .page-content, .main-content, [class*="article"], [class*="story"], [class*="page-"]');
+    }
+    
+    if (!mainContent) {
+      // 클리앙 및 기타 사이트: 게시글 본문 영역 탐지
+      mainContent = body.querySelector('.view_content, .content_view, .board_content, .post_content, [class*="content"], [class*="view"]');
+    }
     
     if (!mainContent) {
       // 메인 영역이 없으면 body 전체에서 제외 요소들 필터링
       mainContent = body;
+      console.log('⚠️ 메인 콘텐츠 영역을 찾지 못해 body 전체를 사용합니다.');
     }
     
     console.log(`🎯 메인 콘텐츠 영역: <${mainContent.tagName.toLowerCase()}>`);
@@ -252,12 +267,23 @@ class TTSManager {
       const tagName = currentNode.tagName.toLowerCase();
       console.log(`🔍 요소 검사: <${tagName}> (${currentNode.textContent?.length || 0}자)`);
       
+      // 🔍 클리앙 디버깅: p 태그 상세 분석
+      if (tagName === 'p') {
+        console.log(`🟢 P 태그 상세:`, {
+          innerHTML: currentNode.innerHTML,
+          textContent: `"${currentNode.textContent}"`,
+          textLength: currentNode.textContent?.length || 0,
+          hasOnlyBr: currentNode.innerHTML === '<br>' || currentNode.innerHTML === '<br/>',
+          hasNbsp: currentNode.innerHTML.includes('&nbsp;')
+        });
+      }
+      
       // 🎯 모든 태그를 DOM 순서대로 동일하게 처리
       const directText = this.getDirectTextContent(currentNode);
       const fullText = this.extractAllTextFromElement(currentNode);
       const isHeading = tagName.match(/^h[1-6]$/);
       const isParagraph = tagName === 'p';
-      const minLength = isHeading ? 3 : 10;
+      const minLength = isHeading ? 2 : 3; // p태그 3자, h태그 2자 (한글 기준)
       
       if (isParagraph || isHeading) {
         // p 태그나 헤딩 태그는 항상 개별 처리 (전체 텍스트 사용)
@@ -266,8 +292,16 @@ class TTSManager {
           console.log(`✅ ${elementType} 태그 테이크 추가: "${fullText.substring(0, 30)}..."`);
           contentElements.push(currentNode);
           processedElements.add(currentNode);
+        } else if (isParagraph) {
+          // p 태그 디버깅: 왜 추가되지 않았는지 로그
+          console.log(`❌ P 태그 제외됨:`, {
+            fullTextLength: fullText?.length || 0,
+            minLength: minLength,
+            fullText: `"${fullText}"`,
+            reason: !fullText ? '텍스트 없음' : fullText.length <= minLength ? '길이 부족' : '기타'
+          });
         }
-      } else if (directText && directText.length > 10) {
+      } else if (directText && directText.length > 3) { // div도 3자로 완화 (한글 기준)
         // div 등에서 직접 텍스트가 있는 경우 (직접 텍스트만 사용)
         console.log(`✅ 직접 텍스트 테이크 추가: <${tagName}> "${directText.substring(0, 30)}..."`);
         contentElements.push(currentNode);
@@ -279,6 +313,26 @@ class TTSManager {
     }
     
     console.log(`🔍 콘텐츠 요소 탐색 완료: ${contentElements.length}개`);
+    
+    // 🔍 대형 사이트 디버깅: 발견된 요소들 요약
+    const hostname = window.location.hostname;
+    const isProblematicSite = hostname.includes('cnn.com') || hostname.includes('bbc.com') || hostname.includes('google.com') || hostname.includes('clien.net');
+    
+    if (isProblematicSite || contentElements.length === 0) {
+      console.log(`🔍 ${hostname} 디버깅 - 발견된 콘텐츠 요소들:`);
+      contentElements.slice(0, 5).forEach((el, idx) => {
+        const text = el.textContent?.trim().substring(0, 50) || '';
+        console.log(`  ${idx + 1}. <${el.tagName.toLowerCase()}> "${text}..."`);
+        console.log(`    클래스: ${el.className || '없음'}`);
+        console.log(`    ID: ${el.id || '없음'}`);
+      });
+      if (contentElements.length === 0) {
+        console.log(`⚠️ ${hostname}에서 콘텐츠 요소를 하나도 찾지 못했습니다!`);
+        console.log(`📊 메인 콘텐츠 영역: ${mainContent?.tagName || '없음'}`);
+        console.log(`📊 메인 콘텐츠 클래스: ${mainContent?.className || '없음'}`);
+      }
+    }
+    
     return contentElements;
   }
   
@@ -2295,10 +2349,19 @@ class TTSManager {
     return maxLength;
   }
 
-  // 🆕 선택된 요소의 모든 텍스트 추출 (본문만, UI 요소 제외)
+  // 🆕 선택된 요소의 모든 텍스트 추출 (DOM 탐색에서 이미 검증된 요소용)
   extractAllTextFromElement(element) {
     if (!element) return '';
 
+    // p, h 태그 등 이미 검증된 요소는 직접 textContent 사용
+    const tagName = element.tagName.toLowerCase();
+    if (['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tagName)) {
+      const text = element.textContent?.trim() || '';
+      console.log(`📝 ${tagName.toUpperCase()} 태그 직접 추출: "${text}" (${text.length}자)`);
+      return text;
+    }
+
+    // 다른 요소들은 기존 로직 사용
     const allTexts = [];
     const walker = document.createTreeWalker(
       element,
@@ -2391,8 +2454,8 @@ class TTSManager {
       return false;
     }
     
-    // 한 문장이라도 10글자 이상이면 본문으로 간주
-    const hasSubstantialSentence = sentences.some(sentence => sentence.trim().length >= 10);
+    // 한 문장이라도 3글자 이상이면 본문으로 간주 (한글 3자 기준)
+    const hasSubstantialSentence = sentences.some(sentence => sentence.trim().length >= 3);
     if (!hasSubstantialSentence) {
       return false;
     }
@@ -2427,8 +2490,8 @@ class TTSManager {
   isImportantContent(element, text) {
     const textLength = text.length;
     
-    // 너무 짧은 텍스트는 제외 (단, 제목은 예외)
-    if (textLength < 3) {
+    // 너무 짧은 텍스트는 제외 (한글은 2자도 의미 있음)
+    if (textLength < 2) {
       return false;
     }
 
@@ -2529,11 +2592,11 @@ class TTSManager {
       return true;
     }
 
-    // 2. Role 기반 제외 (접근성 속성)
+    // 2. Role 기반 제외 (대형 사이트 호환성을 위해 최소화)
     const excludedRoles = [
-      'button', 'link', 'menu', 'menubar', 'menuitem', 'tab', 'tabpanel',
-      'toolbar', 'navigation', 'banner', 'contentinfo', 'complementary',
-      'form', 'search', 'dialog', 'alertdialog', 'alert', 'status'
+      'button', 'menu', 'menubar', 'menuitem', 'toolbar', 'navigation', 
+      'banner', 'contentinfo', 'form', 'search', 'dialog', 'alertdialog'
+      // 'complementary', 'tab', 'tabpanel', 'alert', 'status' 제거 (너무 광범위)
     ];
     
     const role = element.getAttribute('role');
@@ -2541,29 +2604,24 @@ class TTSManager {
       return true;
     }
 
-    // 3. 클래스명 기반 제외 (Daum 뉴스 호환성을 위해 더 관대하게)
+    // 3. 클래스명 기반 제외 (클리앙 호환성을 위해 매우 관대하게)
     const excludedClasses = [
       // 광고 관련 (정확한 매칭만)
       'advertisement', 'ad-banner', 'ad-container', 'sponsored-content',
-      // 네비게이션 관련 (정확한 매칭만)
-      'navigation', 'navbar', 'header-nav', 'footer-nav', 'sidebar-nav',
-      // 버튼 및 인터랙션 요소 (btn은 별도 처리)
-      'button-container', 'dropdown-menu', 'tab-container',
-      // 메타데이터 및 UI 요소 (정확한 매칭만)
-      'metadata-container', 'byline-info', 'timestamp-container',
-      'social-share', 'comment-section', 'feedback-form',
-      // CNN/Daum 특화 (정확한 매칭만)
-      'cnn-poll', 'cnn-newsletter', 'live-story-banner',
-      // 접근성 및 숨김 요소
-      'screen-reader-only', 'sr-only', 'visually-hidden',
-      // 기타 UI 요소 (정확한 매칭만)
-      'tooltip-container', 'popup-overlay', 'modal-backdrop'
+      // 명확한 네비게이션만 제외 (navigation은 너무 광범위)
+      'navbar', 'header-nav', 'footer-nav', 'sidebar-nav',
+      // 명확한 버튼만 제외
+      'button-container', 'btn-container',
+      // 숨김 요소만 제외
+      'screen-reader-only', 'sr-only', 'visually-hidden', 'hidden',
+      // 팝업/모달만 제외
+      'popup-overlay', 'modal-backdrop', 'overlay'
     ];
 
     const className = (element.className || '').toLowerCase();
     
-    // 🎯 버튼 관련 div 및 하위 요소 강력 제외
-    if (className.includes('btn')) {
+    // 🎯 버튼 관련 div 및 하위 요소 제외 (클리앙 호환성 고려)
+    if (className.includes('btn') && (className.includes('button') || className.includes('click'))) {
       console.log(`🚫 버튼 div 제외: <${element.tagName.toLowerCase()}> class="${element.className}"`);
       return true;
     }
@@ -2621,9 +2679,9 @@ class TTSManager {
 
     // 7. 텍스트 길이 기반 필터링 (너무 짧은 텍스트는 버튼일 가능성)
     const textContent = element.textContent?.trim() || '';
-    if (textContent.length > 0 && textContent.length < 4) {
-      // 3글자 이하의 짧은 텍스트는 버튼이나 라벨일 가능성
-      const shortButtonTexts = ['edit', 'more', 'menu', 'close', 'ok', 'yes', 'no', 'add', 'new'];
+    if (textContent.length > 0 && textContent.length < 3) {
+      // 2글자 이하의 아주 짧은 텍스트만 버튼으로 간주 (한글 호환성)
+      const shortButtonTexts = ['ok', 'no'];
       if (shortButtonTexts.includes(textContent.toLowerCase())) {
         return true;
       }
@@ -2820,7 +2878,7 @@ class TTSManager {
       voice_settings: {
         pitch_shift: 0,
         pitch_variance: 1,
-        speed: take.language === 'ko' ? 1.2 : 1  // 한국어는 1.2, 영어는 1.0
+        speed: take.language === 'ko' ? 1.3 : 1.1  // 한국어는 1.3, 영어는 1.1
       }
     };
 
