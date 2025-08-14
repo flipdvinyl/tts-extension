@@ -157,8 +157,8 @@ class TTSManager {
       NodeFilter.SHOW_ELEMENT,
       {
         acceptNode: (node) => {
-          // div, p, article, section 등 블록 요소만
-          const validTags = ['div', 'p', 'article', 'section', 'blockquote', 'aside'];
+          // 🎯 div, p, h# 태그 등 블록 요소만
+          const validTags = ['div', 'p', 'article', 'section', 'blockquote', 'aside', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
           if (!validTags.includes(node.tagName.toLowerCase())) {
             return NodeFilter.FILTER_REJECT;
           }
@@ -183,11 +183,12 @@ class TTSManager {
       const tagName = currentNode.tagName.toLowerCase();
       console.log(`🔍 요소 검사: <${tagName}> (${currentNode.textContent?.length || 0}자)`);
       
-      // 🎯 p 태그는 우선적으로 처리 (직접 텍스트 여부와 관계없이)
-      if (tagName === 'p') {
+      // 🎯 p 태그와 h# 태그는 우선적으로 처리 (직접 텍스트 여부와 관계없이)
+      if (tagName === 'p' || tagName.match(/^h[1-6]$/)) {
         const fullText = this.extractAllTextFromElement(currentNode);
-        if (fullText && fullText.length > 10) {
-          console.log(`✅ P 태그 테이크 추가: "${fullText.substring(0, 30)}..."`);
+        if (fullText && fullText.length > 3) { // h# 태그는 더 짧아도 허용
+          const elementType = tagName === 'p' ? 'P' : 'H';
+          console.log(`✅ ${elementType} 태그 테이크 추가: "${fullText.substring(0, 30)}..."`);
           contentElements.push(currentNode);
           processedElements.add(currentNode);
         }
@@ -1952,6 +1953,60 @@ class TTSManager {
     if (className.includes('btn')) {
       console.log(`🚫 버튼 div 제외: <${element.tagName.toLowerCase()}> class="${element.className}"`);
       return true;
+    }
+    
+    // 🎯 네이버/포털 사이트 가상 버튼 및 복사 방지 요소 제외
+    const virtualButtonPatterns = [
+      // 네이버 특화
+      'copy', 'clipboard', 'share', 'sns', 'naver', 'social',
+      // 복사 방지/보안 관련
+      'selection', 'protect', 'guard', 'prevent', 'block',
+      // 가상 버튼/오버레이
+      'virtual', 'overlay', 'floating', 'popup', 'tooltip',
+      // 광고/프로모션
+      'promo', 'promotion', 'advertisement', 'sponsored',
+      // 기타 UI 방해 요소
+      'widget', 'gadget', 'embed', 'iframe-wrap'
+    ];
+    
+    for (const pattern of virtualButtonPatterns) {
+      if (className.includes(pattern)) {
+        console.log(`🚫 가상 버튼/방해 요소 제외: <${element.tagName.toLowerCase()}> class="${element.className}"`);
+        return true;
+      }
+    }
+    
+    // 🎯 가상 버튼 스타일 기반 감지 (네이버 등 포털사이트 대응)
+    const computedStyle = window.getComputedStyle && window.getComputedStyle(element);
+    if (computedStyle) {
+      // 절대 위치로 배치된 가상 버튼들
+      const position = computedStyle.position;
+      const zIndex = parseInt(computedStyle.zIndex) || 0;
+      
+      if ((position === 'absolute' || position === 'fixed') && zIndex > 100) {
+        // 크기가 매우 작거나 투명한 요소들 (가상 버튼일 가능성)
+        const opacity = parseFloat(computedStyle.opacity) || 1;
+        const width = parseFloat(computedStyle.width) || 0;
+        const height = parseFloat(computedStyle.height) || 0;
+        
+        if (opacity < 0.1 || (width < 10 && height < 10)) {
+          console.log(`🚫 가상 버튼 스타일 감지: 투명/소형 요소 (opacity: ${opacity}, size: ${width}x${height})`);
+          return true;
+        }
+      }
+    }
+    
+    // 🎯 데이터 속성 기반 감지
+    const dataAttributes = element.dataset || {};
+    const suspiciousDataKeys = ['track', 'ga', 'analytics', 'event', 'action', 'copy', 'share'];
+    
+    for (const key of Object.keys(dataAttributes)) {
+      for (const suspicious of suspiciousDataKeys) {
+        if (key.toLowerCase().includes(suspicious)) {
+          console.log(`🚫 가상 버튼 데이터 속성 감지: data-${key}="${dataAttributes[key]}"`);
+          return true;
+        }
+      }
     }
     
     // 부모 요소 중에 btn 클래스가 있는지 확인 (최대 3레벨까지)
