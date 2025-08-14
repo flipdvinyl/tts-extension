@@ -38,6 +38,25 @@
   background-color: rgba(0, 123, 255, 0.1) !important;
 }
 
+/* 🎯 App.js 스타일 갈색 밑줄 효과 */
+.tts-current-word-appjs {
+  text-decoration: underline !important;
+  text-underline-position: under !important;
+  text-decoration-color: rgba(139, 69, 19, 0.8) !important; /* 갈색 밑줄 */
+  text-underline-offset: 5% !important;
+  transition: all 0.3s ease !important;
+  padding: 0 !important;
+  margin-right: auto !important;
+  border-radius: 2px !important;
+}
+
+/* 🎯 버퍼링 중 알파값 애니메이션 */
+@keyframes tts-buffering {
+  0% { opacity: 1; }
+  50% { opacity: 0.3; }
+  100% { opacity: 1; }
+}
+
 /* 🎯 TTS 플로팅 UI - HTML 뷰어 포함 */
 #tts-floating-ui {
   position: fixed !important;

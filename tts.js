@@ -149,6 +149,7 @@ class TTSManager {
     if (!container) return [];
     
     const contentElements = [];
+    const processedElements = new Set(); // 중복 방지
     
     // TreeWalker로 모든 div, p 요소 순차 탐색
     const walker = document.createTreeWalker(
@@ -174,19 +175,47 @@ class TTSManager {
     
     let currentNode;
     while (currentNode = walker.nextNode()) {
-      // 직접 텍스트가 있는지 확인 (하위 요소 제외)
+      // 이미 처리된 요소는 건너뛰기
+      if (processedElements.has(currentNode)) {
+        continue;
+      }
+      
+      const tagName = currentNode.tagName.toLowerCase();
+      console.log(`🔍 요소 검사: <${tagName}> (${currentNode.textContent?.length || 0}자)`);
+      
+      // 🎯 p 태그는 우선적으로 처리 (직접 텍스트 여부와 관계없이)
+      if (tagName === 'p') {
+        const fullText = this.extractAllTextFromElement(currentNode);
+        if (fullText && fullText.length > 10) {
+          console.log(`✅ P 태그 테이크 추가: "${fullText.substring(0, 30)}..."`);
+          contentElements.push(currentNode);
+          processedElements.add(currentNode);
+        }
+        continue;
+      }
+      
+      // 🎯 div 등 다른 블록 요소 처리
       const directText = this.getDirectTextContent(currentNode);
       
       if (directText && directText.length > 10) {
+        // 직접 텍스트가 있는 div 등
+        console.log(`✅ 직접 텍스트 테이크 추가: <${tagName}> "${directText.substring(0, 30)}..."`);
         contentElements.push(currentNode);
+        processedElements.add(currentNode);
+        
+        // 하위 p 태그들도 처리됨으로 표시 (중복 방지)
+        const subParagraphs = currentNode.querySelectorAll('p');
+        subParagraphs.forEach(p => processedElements.add(p));
       } else {
-        // 직접 텍스트가 없으면 하위 p 태그들 확인
+        // 직접 텍스트가 없으면 하위 p 태그들 개별 확인
         const subParagraphs = currentNode.querySelectorAll('p');
         for (const p of subParagraphs) {
-          if (!this.shouldExcludeElement(p)) {
-            const pText = this.getDirectTextContent(p);
-            if (pText && pText.length > 10) {
+          if (!processedElements.has(p) && !this.shouldExcludeElement(p)) {
+            const fullText = this.extractAllTextFromElement(p);
+            if (fullText && fullText.length > 10) {
+              console.log(`✅ 하위 P 태그 테이크 추가: "${fullText.substring(0, 30)}..."`);
               contentElements.push(p);
+              processedElements.add(p);
             }
           }
         }
