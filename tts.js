@@ -64,18 +64,45 @@ class TTSManager {
   
   // 🎯 페이지 로딩 완료 후 초기화
   async initializeAfterLoad() {
-    console.log('🎯 페이지 로딩 완료 - TTS 시스템 초기화 시작');
-    
-    this.createFloatingUI();
-    this.setupKeyboardShortcuts();
-    
-    // 🎯 웹페이지 내용 분석 및 테이크 사전 생성
-    await this.analyzePageAndCreateTakes();
-    
-    // UI를 항상 표시
-    this.showUI();
-    this.updateStatus('TTS 준비 완료 - 마우스를 올리고 1~0번 키를 누르세요', '#4CAF50');
-    console.log('TTS Manager 초기화 완료');
+    try {
+      console.log('🎯 페이지 로딩 완료 - TTS 시스템 초기화 시작');
+      
+      // 1. UI 생성
+      console.log('📋 1. 플로팅 UI 생성 중...');
+      this.createFloatingUI();
+      
+      // 2. 키보드 설정
+      console.log('⌨️ 2. 키보드 단축키 설정 중...');
+      this.setupKeyboardShortcuts();
+      
+      // 3. UI 표시 확인
+      console.log('👀 3. UI 표시 확인 중...');
+      this.showUI();
+      this.updateStatus('초기화 중...', '#FF9800');
+      
+      // 4. 웹페이지 분석
+      console.log('🔍 4. 웹페이지 내용 분석 시작...');
+      await this.analyzePageAndCreateTakes();
+      
+      // 5. 최종 상태 업데이트
+      console.log('✅ 5. 초기화 완료 - UI 최종 업데이트');
+      this.updateStatus('TTS 준비 완료 - 마우스를 올리고 1~0번 키를 누르세요', '#4CAF50');
+      
+      console.log('🎉 TTS Manager 초기화 완료');
+      
+    } catch (error) {
+      console.error('❌ TTS Manager 초기화 실패:', error);
+      console.error('Stack trace:', error.stack);
+      
+      // 에러 발생 시 기본 UI라도 표시
+      try {
+        this.createFloatingUI();
+        this.showUI();
+        this.updateStatus('초기화 오류 발생 - 다시 로드해주세요', '#F44336');
+      } catch (uiError) {
+        console.error('❌ UI 생성도 실패:', uiError);
+      }
+    }
   }
   
   // 🎯 웹페이지 분석 및 테이크 사전 생성
@@ -338,11 +365,15 @@ class TTSManager {
 
   // 🎯 개선된 플로팅 UI 생성 (HTML 뷰어 포함)
   createFloatingUI() {
-    // 기존 UI 제거
-    const existingUI = document.getElementById('tts-floating-ui');
-    if (existingUI) {
-      existingUI.remove();
-    }
+    try {
+      console.log('📋 플로팅 UI 생성 시작...');
+      
+      // 기존 UI 제거
+      const existingUI = document.getElementById('tts-floating-ui');
+      if (existingUI) {
+        console.log('🗑️ 기존 UI 제거');
+        existingUI.remove();
+      }
 
     // 플로팅 컨테이너 생성 (CSS로 스타일링)
     this.floatingUI = document.createElement('div');
@@ -440,9 +471,21 @@ class TTSManager {
     this.floatingUI.appendChild(this.htmlViewer);
     this.floatingUI.appendChild(shortcutInfo);
 
-    document.body.appendChild(this.floatingUI);
-    
-    console.log('🎯 TTS UI 생성 완료:', this.floatingUI);
+      document.body.appendChild(this.floatingUI);
+      
+      console.log('✅ 플로팅 UI 생성 완료:', this.floatingUI);
+      console.log('📍 UI 요소들:', {
+        floatingUI: !!this.floatingUI,
+        statusLabel: !!this.statusLabel,
+        htmlViewer: !!this.htmlViewer,
+        display: this.floatingUI.style.display
+      });
+      
+    } catch (error) {
+      console.error('❌ 플로팅 UI 생성 실패:', error);
+      console.error('Stack trace:', error.stack);
+      throw error; // 상위로 에러 전달
+    }
   }
 
   // 🎯 새로운 키보드 단축키 설정 (마우스 위치 기반)
@@ -3171,6 +3214,55 @@ class TTSManager {
 }
 
 // TTS Manager 전역 인스턴스 생성
-window.ttsManager = new TTSManager();
+try {
+  console.log('🚀 TTS Manager 인스턴스 생성 시작...');
+  window.ttsManager = new TTSManager();
+  console.log('✅ TTS Manager 인스턴스 생성 완료');
+} catch (error) {
+  console.error('❌ TTS Manager 인스턴스 생성 실패:', error);
+  console.error('Stack trace:', error.stack);
+  
+  // fallback: 간단한 에러 표시
+  const errorDiv = document.createElement('div');
+  errorDiv.style.cssText = `
+    position: fixed; bottom: 20px; right: 20px; z-index: 10000;
+    background: #F44336; color: white; padding: 10px; border-radius: 5px;
+    font-family: Arial, sans-serif; font-size: 12px; max-width: 300px;
+  `;
+  errorDiv.textContent = 'TTS 확장 프로그램 로드 실패 - 페이지를 새로고침해주세요';
+  document.body?.appendChild(errorDiv);
+}
 
-console.log('TTS 모듈 로드 완료');
+console.log('🎯 TTS 모듈 로드 완료');
+
+// 🔧 디버깅 도구: 콘솔에서 window.debugTTS() 호출 가능
+window.debugTTS = function() {
+  console.log('🔧 TTS 디버깅 정보:');
+  console.log('📋 TTS Manager:', !!window.ttsManager);
+  
+  if (window.ttsManager) {
+    const ui = document.getElementById('tts-floating-ui');
+    console.log('🎨 플로팅 UI:', {
+      exists: !!ui,
+      display: ui?.style.display,
+      visible: ui?.offsetWidth > 0,
+      position: ui ? `${ui.style.bottom}, ${ui.style.right}` : 'N/A'
+    });
+    
+    console.log('📊 테이크 상태:', {
+      preTakes: window.ttsManager.preTakes?.length || 0,
+      isPlaying: window.ttsManager.isPlaying,
+      currentTakeIndex: window.ttsManager.currentTakeIndex
+    });
+    
+    console.log('⌨️ 이벤트 리스너:', {
+      mousemove: !!window.ttsManager.mouseUpdateThrottle,
+      keydown: 'addEventListener 확인 필요'
+    });
+  }
+  
+  console.log('💡 해결 방법:');
+  console.log('1. 페이지 새로고침 (Ctrl+R)');
+  console.log('2. 확장 프로그램 재로드');
+  console.log('3. 콘솔 에러 확인');
+};
