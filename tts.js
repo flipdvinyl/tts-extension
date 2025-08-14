@@ -48,73 +48,108 @@ class TTSManager {
     this.initializeWhenReady();
   }
 
-  // 🎯 페이지 로딩 완료 시 초기화
+  // 🎯 페이지 로딩 완료 시 초기화 (다단계 시점 확보)
   async initializeWhenReady() {
-    // DOM이 완전히 로드될 때까지 대기
+    console.log(`📊 페이지 상태: ${document.readyState}`);
+    
+    // 🎯 1차: 최초 시점 - 본문 텍스트 로드 완료 시점
     if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', () => this.initializeAfterLoad());
+      document.addEventListener('DOMContentLoaded', () => this.tryInitializeAtOptimalTiming());
     } else if (document.readyState === 'interactive') {
-      // DOMContentLoaded는 이미 발생했지만 리소스가 아직 로딩 중
-      window.addEventListener('load', () => this.initializeAfterLoad());
+      // DOM은 준비됨, 리소스 로딩 중
+      setTimeout(() => this.tryInitializeAtOptimalTiming(), 200);
     } else {
       // 이미 완전히 로드됨
-      setTimeout(() => this.initializeAfterLoad(), 500);
+      setTimeout(() => this.tryInitializeAtOptimalTiming(), 100);
     }
   }
   
-  // 🎯 페이지 로딩 완료 후 초기화
-  async initializeAfterLoad() {
+  // 🎯 최적 타이밍에서 초기화 시도 (다단계 접근)
+  async tryInitializeAtOptimalTiming() {
+    console.log('🎯 최적 타이밍 초기화 시작');
+    
+    // UI 먼저 생성 (사용자 피드백)
+    this.createFloatingUI();
+    this.setupKeyboardShortcuts();
+    this.showUI();
+    this.updateStatus('페이지 분석 중...', '#FF9800');
+    
+    // 🎯 1차: 최초 시점 - 기본 본문 텍스트 확보
+    let bestTakeCount = 0;
     try {
-      console.log('🎯 페이지 로딩 완료 - TTS 시스템 초기화 시작');
-      
-      // 1. UI 생성
-      console.log('📋 1. 플로팅 UI 생성 중...');
-      this.createFloatingUI();
-      
-      // 2. 키보드 설정
-      console.log('⌨️ 2. 키보드 단축키 설정 중...');
-      this.setupKeyboardShortcuts();
-      
-      // 3. UI 표시 확인
-      console.log('👀 3. UI 표시 확인 중...');
-      this.showUI();
-      this.updateStatus('초기화 중...', '#FF9800');
-      
-      // 4. 웹페이지 분석
-      console.log('🔍 4. 웹페이지 내용 분석 시작...');
       await this.analyzePageAndCreateTakes();
+      bestTakeCount = this.preTakes.length;
+      console.log(`📊 1차 시점 결과: ${bestTakeCount}개 테이크`);
       
-      // 5. 최종 상태 업데이트
-      console.log('✅ 5. 초기화 완료 - UI 최종 업데이트');
-      this.updateStatus('TTS 준비 완료 - 마우스를 올리고 1~0번 키를 누르세요', '#4CAF50');
-      
-      console.log('🎉 TTS Manager 초기화 완료');
-      
-    } catch (error) {
-      console.error('❌ TTS Manager 초기화 실패:', error);
-      console.error('Stack trace:', error.stack);
-      
-      // 에러 발생 시 기본 UI라도 표시
-      try {
-        this.createFloatingUI();
-        this.showUI();
-        this.updateStatus('초기화 오류 발생 - 다시 로드해주세요', '#F44336');
-      } catch (uiError) {
-        console.error('❌ UI 생성도 실패:', uiError);
+      if (bestTakeCount >= 3) {
+        console.log('✅ 1차 시점에서 충분한 테이크 확보');
+        this.updateStatus('TTS 준비 완료 - 마우스를 올리고 1~0번 키를 누르세요', '#4CAF50');
+        return;
       }
+    } catch (error) {
+      console.log('⚠️ 1차 시점 실패:', error.message);
+    }
+    
+    // 🎯 2차: 추가 확보 시점 - 외부 솔루션 로딩 직전
+    console.log('🔄 2차 시점 시도 중... (외부 솔루션 로딩 전)');
+    this.updateStatus('추가 콘텐츠 분석 중...', '#FF9800');
+    
+    await new Promise(resolve => setTimeout(resolve, 800)); // 외부 솔루션 로딩 전 대기
+    
+    try {
+      await this.analyzePageAndCreateTakes();
+      const secondTakeCount = this.preTakes.length;
+      console.log(`📊 2차 시점 결과: ${secondTakeCount}개 테이크 (이전: ${bestTakeCount}개)`);
+      
+      if (secondTakeCount > bestTakeCount) {
+        bestTakeCount = secondTakeCount;
+        console.log(`📈 2차 시점에서 개선: ${secondTakeCount}개`);
+      }
+      
+      if (bestTakeCount >= 2) {
+        console.log('✅ 2차 시점에서 최소 테이크 확보');
+        this.updateStatus('TTS 준비 완료 - 마우스를 올리고 1~0번 키를 누르세요', '#4CAF50');
+        return;
+      }
+    } catch (error) {
+      console.log('⚠️ 2차 시점 실패:', error.message);
+    }
+    
+    // 🎯 3차: 최종 확보 시점 - 모든 로딩 완료 후
+    console.log('🔄 3차 시점 시도 중... (최종 로딩 완료 후)');
+    this.updateStatus('최종 콘텐츠 분석 중...', '#FF9800');
+    
+    // window.load 이벤트 대기 또는 추가 시간 대기
+    if (document.readyState !== 'complete') {
+      await new Promise(resolve => {
+        window.addEventListener('load', resolve, { once: true });
+        setTimeout(resolve, 2000); // 최대 2초 대기
+      });
+    } else {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    
+    try {
+      await this.analyzePageAndCreateTakes();
+      const finalTakeCount = this.preTakes.length;
+      console.log(`📊 3차 시점 결과: ${finalTakeCount}개 테이크 (이전: ${bestTakeCount}개)`);
+      
+      if (finalTakeCount > 0) {
+        console.log(`✅ 최종 시점에서 ${finalTakeCount}개 테이크 확보`);
+        this.updateStatus('TTS 준비 완료 - 마우스를 올리고 1~0번 키를 누르세요', '#4CAF50');
+      } else {
+        console.log('❌ 모든 시점에서 테이크 생성 실패');
+        this.updateStatus('테이크 생성 실패 - 페이지를 새로고침해주세요', '#F44336');
+      }
+    } catch (error) {
+      console.error('❌ 3차 시점 실패:', error);
+      this.updateStatus('초기화 오류 - 페이지를 새로고침해주세요', '#F44336');
     }
   }
   
   // 🎯 웹페이지 분석 및 테이크 사전 생성
   async analyzePageAndCreateTakes() {
     console.log('🔍 웹페이지 분석 시작...');
-    
-    // 🔍 CNN 디버깅: URL 확인
-    const currentUrl = window.location.href;
-    const isCNN = currentUrl.includes('cnn.com');
-    if (isCNN) {
-      console.log('🎯 CNN 사이트 감지됨 - 상세 디버깅 모드 활성화');
-    }
     
     // body 내부 구조 파악 (header, footer 제외)
     const bodyContent = this.extractMainContent();
@@ -178,21 +213,21 @@ class TTSManager {
     return mainContent;
   }
   
-  // 🎯 콘텐츠 요소들 찾기 (div, p 기준으로 순차적)
+  // 🎯 콘텐츠 요소들 찾기 (DOM 순서대로 순차적 처리)
   findContentElements(container) {
     if (!container) return [];
     
     const contentElements = [];
     const processedElements = new Set(); // 중복 방지
     
-    // TreeWalker로 모든 div, p 요소 순차 탐색
+    // TreeWalker로 DOM 순서대로 모든 블록 요소 탐색
     const walker = document.createTreeWalker(
       container,
       NodeFilter.SHOW_ELEMENT,
       {
         acceptNode: (node) => {
-          // 🎯 div, p, h# 태그 등 블록 요소만
-          const validTags = ['div', 'p', 'article', 'section', 'blockquote', 'aside', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
+          // div, p, h#, article, section 등 블록 요소만
+          const validTags = ['div', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'article', 'section', 'blockquote', 'aside'];
           if (!validTags.includes(node.tagName.toLowerCase())) {
             return NodeFilter.FILTER_REJECT;
           }
@@ -217,56 +252,29 @@ class TTSManager {
       const tagName = currentNode.tagName.toLowerCase();
       console.log(`🔍 요소 검사: <${tagName}> (${currentNode.textContent?.length || 0}자)`);
       
-      // 🎯 p 태그와 h# 태그는 우선적으로 처리 (직접 텍스트 여부와 관계없이)
-      if (tagName === 'p' || tagName.match(/^h[1-6]$/)) {
-        const fullText = this.extractAllTextFromElement(currentNode);
-        const elementType = tagName === 'p' ? 'P' : 'H';
-        
-        // 🔍 CNN 디버깅: P 태그 상세 분석
-        console.log(`🔍 ${elementType} 태그 분석:`, {
-          tagName: tagName,
-          textLength: fullText?.length || 0,
-          className: currentNode.className || '',
-          id: currentNode.id || '',
-          parentClass: currentNode.parentElement?.className || '',
-          text: fullText?.substring(0, 50) + '...'
-        });
-        
-        if (fullText && fullText.length > 3) { // h# 태그는 더 짧아도 허용
+      // 🎯 모든 태그를 DOM 순서대로 동일하게 처리
+      const directText = this.getDirectTextContent(currentNode);
+      const fullText = this.extractAllTextFromElement(currentNode);
+      const isHeading = tagName.match(/^h[1-6]$/);
+      const isParagraph = tagName === 'p';
+      const minLength = isHeading ? 3 : 10;
+      
+      if (isParagraph || isHeading) {
+        // p 태그나 헤딩 태그는 항상 개별 처리 (전체 텍스트 사용)
+        if (fullText && fullText.length > minLength) {
+          const elementType = isHeading ? 'H' : 'P';
           console.log(`✅ ${elementType} 태그 테이크 추가: "${fullText.substring(0, 30)}..."`);
           contentElements.push(currentNode);
           processedElements.add(currentNode);
-        } else {
-          console.log(`❌ ${elementType} 태그 제외됨 - 텍스트 길이: ${fullText?.length || 0}`);
         }
-        continue;
-      }
-      
-      // 🎯 div 등 다른 블록 요소 처리
-      const directText = this.getDirectTextContent(currentNode);
-      
-      if (directText && directText.length > 10) {
-        // 직접 텍스트가 있는 div 등
+      } else if (directText && directText.length > 10) {
+        // div 등에서 직접 텍스트가 있는 경우 (직접 텍스트만 사용)
         console.log(`✅ 직접 텍스트 테이크 추가: <${tagName}> "${directText.substring(0, 30)}..."`);
         contentElements.push(currentNode);
         processedElements.add(currentNode);
         
-        // 하위 p 태그들도 처리됨으로 표시 (중복 방지)
-        const subParagraphs = currentNode.querySelectorAll('p');
-        subParagraphs.forEach(p => processedElements.add(p));
-      } else {
-        // 직접 텍스트가 없으면 하위 p 태그들 개별 확인
-        const subParagraphs = currentNode.querySelectorAll('p');
-        for (const p of subParagraphs) {
-          if (!processedElements.has(p) && !this.shouldExcludeElement(p)) {
-            const fullText = this.extractAllTextFromElement(p);
-            if (fullText && fullText.length > 10) {
-              console.log(`✅ 하위 P 태그 테이크 추가: "${fullText.substring(0, 30)}..."`);
-              contentElements.push(p);
-              processedElements.add(p);
-            }
-          }
-        }
+        // ⚠️ 중요: 하위 요소들은 별도로 처리되도록 processedElements에 추가하지 않음
+        // 각각이 독립적인 테이크가 될 수 있도록 함
       }
     }
     
@@ -274,20 +282,22 @@ class TTSManager {
     return contentElements;
   }
   
-  // 🎯 요소 제외 여부 판단
+  // 🎯 요소 제외 여부 판단 (Daum 뉴스 디버깅 강화)
   shouldExcludeElement(element) {
     const isExcluded = this.isExcludedElement(element);
     const isVisible = this.isVisibleElement(element);
+    const textContent = element.textContent?.trim() || '';
     
-    // 🔍 CNN 디버깅: 제외 사유 상세 분석
+    // 🔍 Daum 뉴스 디버깅: 제외 사유 상세 분석
     if (isExcluded || !isVisible) {
       console.log(`🚫 요소 제외됨:`, {
         tagName: element.tagName.toLowerCase(),
         className: element.className || '',
+        id: element.id || '',
         isExcluded: isExcluded,
         isVisible: isVisible,
-        textLength: element.textContent?.length || 0,
-        text: element.textContent?.substring(0, 30) + '...'
+        textLength: textContent.length,
+        textPreview: textContent.substring(0, 50) + '...'
       });
     }
     
@@ -354,26 +364,34 @@ class TTSManager {
   
   // 🎯 테이크 목록 UI 업데이트
   updateTakeListUI() {
-    console.log('🎯 테이크 목록 UI 업데이트 - 마우스 정보 표시 활성화');
-    
-    // 테이크 로딩 완료 후 마우스 위치 기반 정보 표시 시작
-    if (this.preTakes.length > 0) {
-      // 즉시 마우스 위치 정보 업데이트
-      this.updateMouseTakeInfo();
+    if (this.htmlViewer) {
+      let html = `<div style="color: #4CAF50; font-weight: bold; margin-bottom: 10px;">
+        📋 발견된 테이크: ${this.preTakes.length}개
+      </div>`;
+      
+      this.preTakes.slice(0, 5).forEach((take, index) => {
+        const preview = take.text.substring(0, 40);
+        const lang = take.language === 'ko' ? '🇰🇷' : '🇺🇸';
+        html += `<div style="margin: 5px 0; font-size: 10px; opacity: 0.8;">
+          ${index + 1}. ${lang} ${preview}...
+        </div>`;
+      });
+      
+      if (this.preTakes.length > 5) {
+        html += `<div style="opacity: 0.6; font-size: 9px;">...그외 ${this.preTakes.length - 5}개</div>`;
+      }
+      
+      this.htmlViewer.innerHTML = html;
     }
   }
 
   // 🎯 개선된 플로팅 UI 생성 (HTML 뷰어 포함)
   createFloatingUI() {
-    try {
-      console.log('📋 플로팅 UI 생성 시작...');
-      
-      // 기존 UI 제거
-      const existingUI = document.getElementById('tts-floating-ui');
-      if (existingUI) {
-        console.log('🗑️ 기존 UI 제거');
-        existingUI.remove();
-      }
+    // 기존 UI 제거
+    const existingUI = document.getElementById('tts-floating-ui');
+    if (existingUI) {
+      existingUI.remove();
+    }
 
     // 플로팅 컨테이너 생성 (CSS로 스타일링)
     this.floatingUI = document.createElement('div');
@@ -471,21 +489,9 @@ class TTSManager {
     this.floatingUI.appendChild(this.htmlViewer);
     this.floatingUI.appendChild(shortcutInfo);
 
-      document.body.appendChild(this.floatingUI);
-      
-      console.log('✅ 플로팅 UI 생성 완료:', this.floatingUI);
-      console.log('📍 UI 요소들:', {
-        floatingUI: !!this.floatingUI,
-        statusLabel: !!this.statusLabel,
-        htmlViewer: !!this.htmlViewer,
-        display: this.floatingUI.style.display
-      });
-      
-    } catch (error) {
-      console.error('❌ 플로팅 UI 생성 실패:', error);
-      console.error('Stack trace:', error.stack);
-      throw error; // 상위로 에러 전달
-    }
+    document.body.appendChild(this.floatingUI);
+    
+    console.log('🎯 TTS UI 생성 완료:', this.floatingUI);
   }
 
   // 🎯 새로운 키보드 단축키 설정 (마우스 위치 기반)
@@ -516,23 +522,13 @@ class TTSManager {
       }
     });
     
-    // 🎯 마우스 움직임 추적 및 실시간 테이크 정보 표시
+    // 🎯 마우스 움직임 추적
     this.currentMouseX = 0;
     this.currentMouseY = 0;
-    this.mouseUpdateThrottle = null;
     
     document.addEventListener('mousemove', (event) => {
       this.currentMouseX = event.clientX;
       this.currentMouseY = event.clientY;
-      
-      // 🎯 성능 최적화: 200ms 쓰로틀링
-      if (this.mouseUpdateThrottle) {
-        clearTimeout(this.mouseUpdateThrottle);
-      }
-      
-      this.mouseUpdateThrottle = setTimeout(() => {
-        this.updateMouseTakeInfo();
-      }, 200);
     });
   }
   
@@ -628,79 +624,6 @@ class TTSManager {
     return Math.sqrt(Math.pow(center2X - center1X, 2) + Math.pow(center2Y - center1Y, 2));
   }
   
-  // 🎯 실시간 마우스 위치 테이크 정보 업데이트
-  updateMouseTakeInfo() {
-    if (!this.preTakes || this.preTakes.length === 0) {
-      if (this.htmlViewer) {
-        this.htmlViewer.innerHTML = `
-          <div style="color: #FF9800; font-weight: bold; margin-bottom: 10px;">
-            📋 테이크 로딩 중...
-          </div>
-          <div style="font-size: 10px; opacity: 0.8;">
-            페이지 분석이 완료되면 마우스 위치의 테이크가 표시됩니다.
-          </div>
-        `;
-      }
-      return;
-    }
-    
-    // 마우스 위치에서 테이크 찾기
-    const takeAtMouse = this.findTakeAtMousePosition();
-    
-    if (takeAtMouse) {
-      const takeIndex = this.preTakes.findIndex(take => take.id === takeAtMouse.id);
-      const takeNumber = takeIndex + 1;
-      const totalTakes = this.preTakes.length;
-      const language = takeAtMouse.language === 'ko' ? '🇰🇷' : '🇺🇸';
-      const elementType = takeAtMouse.element?.tagName.toLowerCase() || 'unknown';
-      const elementDesc = elementType === 'p' ? '📝' : elementType.match(/^h[1-6]$/) ? '📰' : '📦';
-      
-      // 텍스트 미리보기 (50자)
-      const preview = takeAtMouse.text.substring(0, 50);
-      
-      if (this.htmlViewer) {
-        this.htmlViewer.innerHTML = `
-          <div style="color: #4CAF50; font-weight: bold; margin-bottom: 10px;">
-            🎯 마우스 위치 테이크: ${takeNumber}/${totalTakes}
-          </div>
-          <div style="margin: 5px 0; font-size: 11px;">
-            ${elementDesc} <span style="color: #666;">&lt;${elementType}&gt;</span> ${language}
-          </div>
-          <div style="margin: 5px 0; font-size: 10px; color: #888; line-height: 1.4;">
-            "${preview}${takeAtMouse.text.length > 50 ? '...' : ''}"
-          </div>
-          <div style="margin-top: 8px; font-size: 9px; opacity: 0.7;">
-            💡 1~0번 키를 눌러 이 테이크부터 재생
-          </div>
-        `;
-      }
-      
-      // 상태 라벨도 업데이트
-      if (this.statusLabel && !this.isPlaying) {
-        this.statusLabel.textContent = `테이크 ${takeNumber}/${totalTakes} - ${elementType} ${language}`;
-      }
-    } else {
-      // 마우스 위치에 테이크가 없는 경우
-      if (this.htmlViewer) {
-        this.htmlViewer.innerHTML = `
-          <div style="color: #FF9800; font-weight: bold; margin-bottom: 10px;">
-            📋 총 ${this.preTakes.length}개 테이크
-          </div>
-          <div style="margin: 5px 0; font-size: 10px; color: #888;">
-            마우스 위치에 재생 가능한 테이크가 없습니다.
-          </div>
-          <div style="margin-top: 8px; font-size: 9px; opacity: 0.7;">
-            💡 텍스트 영역으로 마우스를 이동하세요
-          </div>
-        `;
-      }
-      
-      if (this.statusLabel && !this.isPlaying) {
-        this.statusLabel.textContent = `TTS 준비 완료 - 마우스를 텍스트에 올려주세요`;
-      }
-    }
-  }
-  
   // 🎯 테이크부터 순차적 재생 시작
   async startPlaybackFromTake(startTake) {
     console.log(`🎬 재생 시작: ${startTake.id} (${startTake.text.substring(0, 30)}...)`);
@@ -720,11 +643,8 @@ class TTSManager {
     this.updateStatus(`재생 준비 중... (${startIndex + 1}/${this.preTakes.length})`, '#FF9800');
     this.updatePlaybackUI(startTake);
     
-    // 🎯 첫 번째 테이크 재생 시작
+    // 🎯 첫 번째 테이크 재생 시작 (버퍼링은 생성 완료 후)
     await this.playTakeAtIndex(0);
-    
-    // 🎯 다음 테이크들 백그라운드 버퍼링 시작
-    this.startBackgroundBuffering(1);
   }
   
   // 🎯 인덱스에 해당하는 테이크 재생
@@ -757,10 +677,26 @@ class TTSManager {
         console.log(`🔄 테이크 실시간 생성: ${take.id}`);
         this.updateStatus(`음성 생성 중... (${playListIndex + 1}/${this.currentPlayList.length})`, '#FF9800');
         
-        audioUrl = await this.convertToSpeech(take);
+        // 🎯 현재 재생 테이크에도 버퍼링 애니메이션 적용
+        console.log(`🎭 현재 재생 테이크 애니메이션 시작: ${take.id}`);
+        this.applyBufferingAnimation(take.element);
+        
+        try {
+          audioUrl = await this.convertToSpeech(take);
+          if (audioUrl) {
+            take.audioUrl = audioUrl;
+            take.isBuffered = true;
+          }
+        } finally {
+          // 🎯 생성 완료 후 애니메이션 제거
+          console.log(`🎭 현재 재생 테이크 애니메이션 종료: ${take.id}`);
+          this.removeBufferingAnimation(take.element);
+        }
+        
+        // 🎯 현재 테이크 생성 완료 후 연속적 버퍼링 확인
         if (audioUrl) {
-          take.audioUrl = audioUrl;
-          take.isBuffered = true;
+          console.log(`✅ ${playListIndex + 1}번째 테이크 생성 완료 - 연속적 버퍼링 확인`);
+          this.maintainContinuousBuffering(playListIndex);
         }
       }
       
@@ -778,39 +714,64 @@ class TTSManager {
     }
   }
   
-  // 🎯 백그라운드 버퍼링 시작
-  async startBackgroundBuffering(startIndex) {
-    if (!this.currentPlayList || startIndex >= this.currentPlayList.length) {
-      return;
+  // 🎯 연속적 버퍼링 유지 (현재 테이크 기준 뒤 3개 항상 유지)
+  maintainContinuousBuffering(currentIndex) {
+    console.log(`🔄 연속적 버퍼링 확인: ${currentIndex + 1}번째 테이크 기준`);
+    
+    const bufferAhead = 3; // 현재 테이크 뒤로 3개 유지
+    const maxBufferIndex = Math.min(currentIndex + bufferAhead, this.currentPlayList.length - 1);
+    
+    console.log(`📊 버퍼링 확인 범위: ${currentIndex + 1} ~ ${maxBufferIndex + 1}번째 테이크`);
+    
+    // 🎯 현재 테이크 뒤 3개 중 버퍼링되지 않은 것들 찾기
+    const unbufferedTakes = [];
+    
+    for (let i = currentIndex + 1; i <= maxBufferIndex; i++) {
+      const take = this.currentPlayList[i];
+      
+      if (!take.isBuffered && !this.bufferingTakes.has(take.id)) {
+        unbufferedTakes.push({
+          take: take,
+          index: i
+        });
+        console.log(`🔍 버퍼링 필요: ${i + 1}번째 테이크 "${take.id}"`);
+      } else {
+        console.log(`✅ 이미 버퍼링됨: ${i + 1}번째 테이크 "${take.id}"`);
+      }
     }
     
-    console.log(`🔄 백그라운드 버퍼링 시작: ${startIndex}번째부터`);
-    
-    // 최대 3개까지 미리 버퍼링
-    const bufferCount = Math.min(3, this.currentPlayList.length - startIndex);
-    
-    for (let i = 0; i < bufferCount; i++) {
-      const bufferIndex = startIndex + i;
-      if (bufferIndex < this.currentPlayList.length) {
-        const take = this.currentPlayList[bufferIndex];
-        
-        if (!take.isBuffered) {
-          this.bufferTakeInBackground(take);
-        }
-      }
+    // 🎯 필요한 테이크들만 순차적으로 버퍼링
+    if (unbufferedTakes.length > 0) {
+      console.log(`🔄 ${unbufferedTakes.length}개 테이크 순차 버퍼링 시작`);
+      this.bufferTakesSequentially(unbufferedTakes, 0);
+    } else {
+      console.log(`✅ 모든 필요한 테이크가 이미 버퍼링됨`);
     }
   }
   
-  // 🎯 백그라운드에서 테이크 버퍼링
-  async bufferTakeInBackground(take) {
-    if (this.bufferingTakes.has(take.id) || take.isBuffered) {
+  // 🎯 테이크들을 순차적으로 버퍼링 (연속적)
+  async bufferTakesSequentially(unbufferedTakes, index) {
+    if (index >= unbufferedTakes.length) {
+      console.log(`✅ 순차 버퍼링 완료: ${unbufferedTakes.length}개 테이크`);
       return;
     }
     
-    this.bufferingTakes.add(take.id);
-    console.log(`🔄 백그라운드 버퍼링: ${take.id}`);
+    const { take, index: takeIndex } = unbufferedTakes[index];
     
-    // 🎯 App.js 스타일 알파값 애니메이션 적용
+    // 이미 버퍼링 중이거나 완료된 경우 스킵
+    if (take.isBuffered || this.bufferingTakes.has(take.id)) {
+      console.log(`⏭️ 버퍼링 스킵: ${takeIndex + 1}번째 테이크 "${take.id}" (이미 처리됨)`);
+      setTimeout(() => {
+        this.bufferTakesSequentially(unbufferedTakes, index + 1);
+      }, 50);
+      return;
+    }
+    
+    // 버퍼링 시작
+    this.bufferingTakes.add(take.id);
+    console.log(`🔄 순차 버퍼링: ${takeIndex + 1}번째 테이크 "${take.id}" (${index + 1}/${unbufferedTakes.length})`);
+    
+    // 🎯 버퍼링 애니메이션 적용
     this.applyBufferingAnimation(take.element);
     
     try {
@@ -818,28 +779,40 @@ class TTSManager {
       if (audioUrl) {
         take.audioUrl = audioUrl;
         take.isBuffered = true;
-        console.log(`✅ 버퍼링 완료: ${take.id}`);
+        console.log(`✅ 순차 버퍼링 완료: ${takeIndex + 1}번째 "${take.id}" → 다음 테이크`);
+      } else {
+        console.error(`❌ 순차 버퍼링 실패: ${takeIndex + 1}번째 "${take.id}"`);
       }
     } catch (error) {
-      console.error(`❌ 버퍼링 실패: ${take.id}`, error);
+      console.error(`❌ 순차 버퍼링 오류: ${takeIndex + 1}번째 "${take.id}"`, error);
     } finally {
       this.bufferingTakes.delete(take.id);
       this.removeBufferingAnimation(take.element);
     }
+    
+    // 🔗 다음 테이크 버퍼링 (짧은 간격 후)
+    setTimeout(() => {
+      this.bufferTakesSequentially(unbufferedTakes, index + 1);
+    }, 100);
   }
+  
+
   
   // 🎯 App.js 스타일 버퍼링 알파값 애니메이션 적용
   applyBufferingAnimation(element) {
-    if (!element) return;
+    if (!element) {
+      console.warn('⚠️ 애니메이션 적용 실패: 요소가 없음');
+      return;
+    }
+    
+    console.log(`🎭 버퍼링 애니메이션 적용 시작: <${element.tagName.toLowerCase()}> ${element.className || 'no-class'}`);
     
     // 기존 애니메이션 제거
     element.style.animation = '';
     
-    // App.js의 fadeInOut 애니메이션 적용
-    element.style.animation = 'tts-buffering 3s infinite';
-    
     // CSS 애니메이션이 없으면 스타일시트에 추가
     if (!document.querySelector('#tts-buffering-animation')) {
+      console.log('📝 CSS 애니메이션 스타일시트 추가');
       const style = document.createElement('style');
       style.id = 'tts-buffering-animation';
       style.textContent = `
@@ -851,14 +824,33 @@ class TTSManager {
       `;
       document.head.appendChild(style);
     }
+    
+    // App.js의 fadeInOut 애니메이션 적용
+    element.style.animation = 'tts-buffering 3s infinite';
+    console.log(`✅ 애니메이션 적용 완료: ${element.style.animation}`);
+    
+    // 실제 적용 확인 (약간 지연 후)
+    setTimeout(() => {
+      const computedStyle = window.getComputedStyle(element);
+      const appliedAnimation = computedStyle.animation;
+      console.log(`🔍 애니메이션 적용 확인: ${appliedAnimation !== 'none' ? '✅ 성공' : '❌ 실패'}`);
+      console.log(`📊 현재 opacity: ${computedStyle.opacity}`);
+    }, 100);
   }
   
   // 🎯 버퍼링 애니메이션 제거
   removeBufferingAnimation(element) {
-    if (!element) return;
+    if (!element) {
+      console.warn('⚠️ 애니메이션 제거 실패: 요소가 없음');
+      return;
+    }
+    
+    console.log(`🎭 버퍼링 애니메이션 제거: <${element.tagName.toLowerCase()}> ${element.className || 'no-class'}`);
     
     element.style.animation = '';
     element.style.opacity = '';
+    
+    console.log(`✅ 애니메이션 제거 완료`);
   }
   
   // 🎯 오디오 재생 + App.js 스타일 단어 트래킹
@@ -895,12 +887,14 @@ class TTSManager {
         // 단어 트래킹 정리
         this.cleanupWordTracking();
         
-        // 다음 테이크 재생
+        // 다음 테이크 재생 및 연속적 버퍼링 확인
         const nextIndex = this.currentTakeIndex + 1;
         if (nextIndex < this.currentPlayList.length) {
-          // 더 많은 테이크 버퍼링
-          this.startBackgroundBuffering(nextIndex + 1);
-          setTimeout(() => this.playTakeAtIndex(nextIndex), 100);
+          setTimeout(() => {
+            this.playTakeAtIndex(nextIndex);
+            // 🎯 다음 테이크 재생 시작과 동시에 연속적 버퍼링 확인
+            this.maintainContinuousBuffering(nextIndex);
+          }, 100);
         } else {
           console.log('🎉 모든 테이크 재생 완료');
           this.updateStatus('재생 완료', '#4CAF50');
@@ -919,19 +913,120 @@ class TTSManager {
     });
   }
   
-  // 🎯 App.js 스타일 단어 트래킹 준비
+  // 🎯 오버레이 단어 트래킹 준비 (모든 사이트 공통)
   prepareWordTracking(take) {
+    console.log(`🎨 오버레이 단어 트래킹 준비 시작: ${take.id}`);
+    
     // 기존 트래킹 정리
     this.cleanupWordTracking();
     
-    // 텍스트를 단어별로 분할
+    // 🎯 모든 사이트에서 오버레이 모드 사용 (DOM 조작 없음)
     this.currentTakeWords = this.splitIntoWords(take.text, take.language);
-    this.currentTakeWordElements = [];
+    this.currentTakeWordElements = []; // DOM 조작 없으므로 항상 빈 배열
     
-    console.log(`🔤 단어 트래킹 준비: ${this.currentTakeWords.length}개 단어`);
+    // 오버레이 트래킹 설정
+    this.setupOverlayWordTracking(take);
     
-    // DOM에서 해당 텍스트에 span 래핑
-    this.wrapWordsInElement(take.element, take.text);
+    console.log(`🎨 오버레이 트래킹 준비 완료: ${this.currentTakeWords.length}개 단어`);
+  }
+  
+  // 🛡️ DOM 조작이 안전한지 체크하는 메서드 (BBC 예외 처리 포함)
+  isSafeForDOMManipulation() {
+    const hostname = window.location.hostname.toLowerCase();
+    
+    // 🎯 BBC 사이트는 특별 처리 - 제한적 DOM 조작 허용
+    const isBBC = hostname.includes('bbc.com') || hostname.includes('bbc.co.uk');
+    if (isBBC) {
+      console.log(`🔵 BBC 사이트 감지: 제한적 DOM 조작 모드 사용`);
+      return this.isSafeForBBCManipulation();
+    }
+    
+    // 🎯 매우 복잡한 레이아웃만 제한 (기준 완화됨)
+    const hasVeryComplexLayout = this.detectComplexLayout();
+    if (hasVeryComplexLayout) {
+      console.log(`🚫 매우 복잡한 CSS 레이아웃 감지: DOM 조작 비활성화`);
+      return false;
+    }
+    
+    // 🎯 기본적으로 DOM 조작 허용 (안전한 방향으로 변경)
+    console.log(`✅ DOM 조작 허용: ${hostname}`);
+    return true;
+  }
+  
+  // 🔵 BBC 사이트용 안전한 DOM 조작 체크
+  isSafeForBBCManipulation() {
+    try {
+      // BBC 페이지에서 텍스트 콘텐츠 영역만 대상으로 제한
+      const articleContent = document.querySelector('article, [data-component="text-block"], .story-body, .gel-body-copy');
+      
+      if (!articleContent) {
+        console.log('🔵 BBC: 안전한 텍스트 영역을 찾을 수 없음 - 오버레이 모드 사용');
+        return false; // DOM 조작 차단, 오버레이 모드로 전환
+      }
+      
+      // 🚫 BBC에서는 DOM 조작 완전 차단, 대신 오버레이 사용
+      console.log('🔵 BBC: DOM 조작 차단 - 오버레이 모드로 전환');
+      return false;
+      
+    } catch (error) {
+      console.warn('🔵 BBC: 안전성 체크 실패:', error);
+      return false;
+    }
+  }
+  
+  // 🔍 복잡한 CSS 레이아웃 감지 (완화된 기준)
+  detectComplexLayout() {
+    try {
+      // 🎯 더 관대한 기준으로 수정
+      
+      // 1. 매우 복잡한 Grid 레이아웃 체크 (기준 완화)
+      const complexGridElements = document.querySelectorAll('[style*="grid-template"], [class*="grid-container"], [class*="grid-system"]');
+      if (complexGridElements.length > 15) { // 5 → 15로 완화
+        console.log('매우 복잡한 Grid 레이아웃 감지');
+        return true;
+      }
+      
+      // 2. CSS Flexbox는 일반적이므로 더 관대하게
+      const complexFlexElements = document.querySelectorAll('[style*="flex-direction"], [style*="flex-wrap"], [class*="flex-container"]');
+      if (complexFlexElements.length > 25) { // 10 → 25로 완화
+        console.log('매우 복잡한 Flexbox 레이아웃 감지');
+        return true;
+      }
+      
+      // 3. CSS 변수 체크 제거 (너무 일반적임)
+      // CSS 변수는 현재 거의 모든 사이트에서 사용되므로 체크 제거
+      
+      // 4. 특정 문제가 되는 CSS 프레임워크 감지
+      const hasProblematicFramework = this.detectProblematicFrameworks();
+      if (hasProblematicFramework) {
+        console.log('문제가 되는 CSS 프레임워크 감지');
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      console.warn('레이아웃 감지 실패:', error);
+      // 에러 시 안전하게 false 반환 (DOM 조작 허용)
+      return false;
+    }
+  }
+  
+  // 🔍 문제가 되는 CSS 프레임워크 감지
+  detectProblematicFrameworks() {
+    try {
+      // Bootstrap Grid의 복잡한 버전
+      const hasComplexBootstrap = document.querySelectorAll('.container-fluid, .row-cols-, .g-').length > 20;
+      
+      // Tailwind CSS의 복잡한 Grid 시스템
+      const hasComplexTailwind = document.querySelectorAll('[class*="grid-cols-"], [class*="grid-rows-"]').length > 15;
+      
+      // CSS-in-JS 라이브러리 (Styled Components 등)
+      const hasCSSinJS = document.querySelectorAll('[data-styled], [class^="sc-"]').length > 10;
+      
+      return hasComplexBootstrap || hasComplexTailwind || hasCSSinJS;
+    } catch (error) {
+      return false;
+    }
   }
   
   // 🎯 App.js 스타일 단어 분할 (언어별 가중치 적용)
@@ -987,7 +1082,7 @@ class TTSManager {
     }
   }
   
-  // 🎯 App.js 스타일 단어 트래킹 업데이트
+  // 🎯 오버레이 단어 트래킹 업데이트 (모든 사이트 공통)
   updateAppJsStyleWordTracking(take) {
     if (!this.currentAudio || !this.currentTakeWords || this.currentTakeWords.length === 0) {
       return;
@@ -999,6 +1094,20 @@ class TTSManager {
     // App.js의 calculateCurrentWordIndex 로직
     const currentWordIndex = this.calculateCurrentWordIndex(currentTime, duration, this.currentTakeWords);
     
+    // 🎯 오버레이 모드로 단어 하이라이트 (모든 사이트)
+    if (this.overlayHighlight) {
+      this.updateOverlayWordHighlight(currentWordIndex);
+    }
+    
+    // UI 업데이트
+    if (currentWordIndex >= 0 && currentWordIndex < this.currentTakeWords.length) {
+      const currentWord = this.currentTakeWords[currentWordIndex]?.text || '';
+      this.updateWordInfo(currentWordIndex + 1, this.currentTakeWords.length, currentWord);
+    }
+  }
+  
+  // 🎯 DOM 모드에서 단어 하이라이트 업데이트
+  updateDOMWordHighlight(currentWordIndex) {
     // 이전 하이라이트 제거
     this.currentTakeWordElements.forEach(element => {
       if (element && element.classList) {
@@ -1011,10 +1120,6 @@ class TTSManager {
       const currentWordElement = this.currentTakeWordElements[currentWordIndex];
       if (currentWordElement) {
         currentWordElement.classList.add('tts-current-word-appjs');
-        
-        // UI 업데이트
-        const currentWord = this.currentTakeWords[currentWordIndex]?.text || '';
-        this.updateWordInfo(currentWordIndex + 1, this.currentTakeWords.length, currentWord);
       }
     }
   }
@@ -1096,24 +1201,384 @@ class TTSManager {
     textNode.parentNode.replaceChild(fragment, textNode);
   }
   
-  // 🎯 단어 트래킹 정리
-  cleanupWordTracking() {
-    // 기존 래핑 제거
-    const wrappedWords = document.querySelectorAll('.tts-word-appjs, .tts-current-word-appjs');
-    wrappedWords.forEach(span => {
-      if (span.parentNode) {
-        span.parentNode.replaceChild(document.createTextNode(span.textContent), span);
-      }
-    });
+  // 🔵 BBC 전용 안전한 단어 래핑 메서드
+  wrapWordsInElementSafely(element, targetText) {
+    if (!element || !targetText) return;
     
-    // 인접한 텍스트 노드들 병합
-    document.normalize && document.normalize();
+    console.log(`🔵 BBC 안전 래핑 시작: ${targetText.substring(0, 50)}...`);
+    
+    try {
+      // BBC 페이지에서 안전한 텍스트 노드만 선택
+      const safeTextNodes = this.findSafeBBCTextNodes(element, targetText);
+      console.log(`🔵 BBC: ${safeTextNodes.length}개 안전한 텍스트 노드 발견`);
+      
+      // 각 텍스트 노드를 안전하게 래핑
+      for (const textNode of safeTextNodes) {
+        this.wrapSingleTextNodeSafely(textNode);
+      }
+      
+      console.log(`🔵 BBC 안전 래핑 완료: ${this.currentTakeWordElements.length}개 span 생성`);
+      
+    } catch (error) {
+      console.error('🔵 BBC 안전 래핑 실패:', error);
+      this.currentTakeWordElements = [];
+    }
+  }
+  
+  // 🔵 BBC에서 안전한 텍스트 노드 찾기
+  findSafeBBCTextNodes(element, targetText) {
+    const safeNodes = [];
+    
+    // BBC 특화 안전 영역들
+    const bbcSafeSelectors = [
+      'p', // 문단
+      '[data-component="text-block"] p',
+      '.story-body p',
+      '.gel-body-copy p',
+      'article p',
+      '.qa-story-body p'
+    ];
+    
+    // 안전한 문단들만 선택
+    for (const selector of bbcSafeSelectors) {
+      try {
+        const safeParagraphs = element.querySelectorAll ? 
+          element.querySelectorAll(selector) : 
+          [element].filter(el => el.matches && el.matches(selector));
+          
+        for (const paragraph of safeParagraphs) {
+          // 각 문단의 텍스트 노드들 수집
+          const walker = document.createTreeWalker(
+            paragraph,
+            NodeFilter.SHOW_TEXT,
+            {
+              acceptNode: (node) => {
+                // 텍스트가 있고, BBC 위험 요소가 아닌 노드만
+                if (node.textContent.trim().length === 0) return NodeFilter.FILTER_REJECT;
+                
+                // 부모가 버튼이나 링크가 아닌지 확인
+                const parent = node.parentElement;
+                if (!parent) return NodeFilter.FILTER_REJECT;
+                
+                const parentTag = parent.tagName.toLowerCase();
+                if (['button', 'a', 'nav', 'header', 'footer'].includes(parentTag)) {
+                  return NodeFilter.FILTER_REJECT;
+                }
+                
+                return NodeFilter.FILTER_ACCEPT;
+              }
+            }
+          );
+          
+          let textNode;
+          while (textNode = walker.nextNode()) {
+            safeNodes.push(textNode);
+          }
+        }
+      } catch (error) {
+        console.warn(`🔵 BBC 선택자 "${selector}" 처리 실패:`, error);
+      }
+    }
+    
+    return safeNodes;
+  }
+  
+  // 🔵 BBC용 안전한 단일 텍스트 노드 래핑
+  wrapSingleTextNodeSafely(textNode) {
+    try {
+      const text = textNode.textContent;
+      const words = text.split(/(\s+)/);
+      
+      if (words.length <= 1) return;
+      
+      const fragment = document.createDocumentFragment();
+      
+      for (const word of words) {
+        if (word.trim().length > 0) {
+          const span = document.createElement('span');
+          span.textContent = word;
+          // BBC용 특별 클래스 (더 안전한 스타일 적용)
+          span.className = 'tts-word-appjs tts-word-bbc-safe';
+          this.currentTakeWordElements.push(span);
+          fragment.appendChild(span);
+        } else {
+          fragment.appendChild(document.createTextNode(word));
+        }
+      }
+      
+      // 안전한 교체
+      if (textNode.parentNode) {
+        textNode.parentNode.replaceChild(fragment, textNode);
+      }
+      
+    } catch (error) {
+      console.warn('🔵 BBC 텍스트 노드 래핑 실패:', error);
+    }
+  }
+  
+  // 🎯 오버레이 단어 트래킹 정리 (모든 사이트 공통)
+  cleanupWordTracking() {
+    console.log('🧹 오버레이 트래킹 정리 시작');
+    
+    // 🛡️ 매우 엄격한 DOM 정리 - 우리가 생성한 요소만 정리
+    this.safeCleanupTTSElements();
+    
+    // 🎯 오버레이 하이라이트 제거
+    this.removeOverlayHighlight();
     
     // 배열 초기화
     this.currentTakeWords = [];
     this.currentTakeWordElements = [];
     
-    console.log('🧹 단어 트래킹 정리 완료');
+    console.log('✅ 오버레이 트래킹 정리 완료');
+  }
+  
+  // 🛡️ 매우 안전한 TTS 요소 정리 (엄격한 검증)
+  safeCleanupTTSElements() {
+    try {
+      // 🔍 우리가 생성한 TTS 요소들만 엄격하게 선별
+      const ttsElements = document.querySelectorAll('[class*="tts-"]');
+      console.log(`🔍 발견된 TTS 관련 요소: ${ttsElements.length}개`);
+      
+      let cleanedCount = 0;
+      
+      ttsElements.forEach((element, index) => {
+        try {
+          // 🛡️ 엄격한 검증: 우리가 생성한 요소인지 확인
+          if (this.isSafeTTSElement(element)) {
+            const parent = element.parentNode;
+            const textContent = element.textContent;
+            
+            if (parent && textContent) {
+              // 🔄 안전한 텍스트 노드로 교체
+              const textNode = document.createTextNode(textContent);
+              parent.replaceChild(textNode, element);
+              cleanedCount++;
+              
+              console.log(`🧹 안전하게 정리됨 ${cleanedCount}: "${textContent.substring(0, 20)}..."`);
+            }
+          } else {
+            console.warn(`⚠️ 안전하지 않은 요소 발견, 건너뛰기: ${element.className}`);
+          }
+          
+        } catch (elementError) {
+          console.warn(`⚠️ 요소 ${index + 1} 정리 중 오류 (안전하게 건너뛰기):`, elementError);
+        }
+      });
+      
+      console.log(`✅ 총 ${cleanedCount}개 TTS 요소 안전하게 정리됨`);
+      
+    } catch (error) {
+      console.error('🚨 DOM 정리 중 치명적 오류 (안전하게 무시):', error);
+    }
+  }
+  
+  // 🔍 안전한 TTS 요소인지 엄격하게 검증
+  isSafeTTSElement(element) {
+    if (!element || !element.className) {
+      return false;
+    }
+    
+    // 🛡️ 우리가 생성한 TTS 클래스만 허용
+    const safeTTSClasses = [
+      'tts-word-appjs',
+      'tts-current-word-appjs', 
+      'tts-word-bbc-safe'
+    ];
+    
+    // 정확한 클래스 매칭 (부분 매칭 방지)
+    const elementClasses = element.className.split(/\s+/);
+    const hasSafeTTSClass = elementClasses.some(cls => safeTTSClasses.includes(cls));
+    
+    if (!hasSafeTTSClass) {
+      return false;
+    }
+    
+    // 🔍 추가 안전성 검사
+    const tagName = element.tagName.toLowerCase();
+    if (tagName !== 'span') {
+      console.warn(`⚠️ 예상치 못한 태그: ${tagName}, TTS span이어야 함`);
+      return false;
+    }
+    
+    // 🔍 부모 요소 검증
+    const parent = element.parentNode;
+    if (!parent || parent === document) {
+      console.warn(`⚠️ 잘못된 부모 요소 구조`);
+      return false;
+    }
+    
+    // 🔍 텍스트 콘텐츠 검증
+    const textContent = element.textContent;
+    if (!textContent || textContent.length === 0) {
+      console.warn(`⚠️ 빈 텍스트 콘텐츠`);
+      return false;
+    }
+    
+    return true;
+  }
+  
+  // 🎯 오버레이 모드 단어 트래킹 설정 (DOM 조작 없음)
+  setupOverlayWordTracking(take) {
+    console.log(`🎨 오버레이 모드 단어 트래킹 설정: ${take.id}`);
+    
+    this.currentOverlayTake = take;
+    this.overlayWordIndex = 0;
+    
+    // 오버레이 하이라이트 엘리먼트 생성
+    this.createOverlayHighlight();
+    
+    console.log(`🎨 오버레이 모드 준비 완료: ${this.currentTakeWords.length}개 단어`);
+  }
+  
+  // 🎨 오버레이 하이라이트 엘리먼트 생성
+  createOverlayHighlight() {
+    // 기존 오버레이 제거
+    this.removeOverlayHighlight();
+    
+    this.overlayHighlight = document.createElement('div');
+    this.overlayHighlight.id = 'tts-overlay-highlight';
+    this.overlayHighlight.style.cssText = `
+      position: absolute !important;
+      pointer-events: none !important;
+      z-index: 999999 !important;
+      background: rgba(139, 69, 19, 0.1) !important;
+      border-bottom: 2px solid rgba(139, 69, 19, 0.8) !important;
+      border-radius: 0px !important;
+      transition: all 0.2s ease !important;
+      display: none !important;
+    `;
+    
+    document.body.appendChild(this.overlayHighlight);
+    console.log('🎨 오버레이 하이라이트 엘리먼트 생성');
+  }
+  
+  // 🎨 오버레이 하이라이트 제거
+  removeOverlayHighlight() {
+    if (this.overlayHighlight) {
+      this.overlayHighlight.remove();
+      this.overlayHighlight = null;
+      console.log('🎨 오버레이 하이라이트 제거');
+    }
+  }
+  
+  // 🎯 오버레이 모드에서 현재 단어 하이라이트
+  updateOverlayWordHighlight(wordIndex) {
+    if (!this.overlayHighlight || !this.currentOverlayTake || !this.currentTakeWords) {
+      return;
+    }
+    
+    if (wordIndex < 0 || wordIndex >= this.currentTakeWords.length) {
+      this.overlayHighlight.style.display = 'none';
+      return;
+    }
+    
+    try {
+      // 🎯 현재 단어의 위치를 텍스트에서 찾기
+      const wordPosition = this.findWordPositionInText(wordIndex);
+      
+      if (wordPosition) {
+        // 🎨 박스를 좌우상으로 2px씩 확장 (레이아웃 영향 없이)
+        this.overlayHighlight.style.left = (wordPosition.left - 2) + 'px';
+        this.overlayHighlight.style.top = (wordPosition.top - 2) + 'px';
+        this.overlayHighlight.style.width = (wordPosition.width + 4) + 'px'; // 좌우 2px씩 = 총 4px 추가
+        this.overlayHighlight.style.height = (wordPosition.height + 2) + 'px'; // 상단 2px 추가
+        this.overlayHighlight.style.display = 'block';
+        
+        console.log(`🎨 오버레이 하이라이트 업데이트: 단어 ${wordIndex + 1} "${this.currentTakeWords[wordIndex]?.text}"`);
+      } else {
+        this.overlayHighlight.style.display = 'none';
+      }
+      
+    } catch (error) {
+      console.warn('🎨 오버레이 하이라이트 업데이트 실패:', error);
+      this.overlayHighlight.style.display = 'none';
+    }
+  }
+  
+  // 🔍 텍스트에서 단어 위치 찾기 (오버레이용)
+  findWordPositionInText(wordIndex) {
+    if (!this.currentOverlayTake || !this.currentTakeWords) {
+      return null;
+    }
+    
+    try {
+      // 현재 테이크의 텍스트에서 해당 단어까지의 텍스트 추출
+      const wordsUpToIndex = this.currentTakeWords.slice(0, wordIndex + 1);
+      const textUpToWord = wordsUpToIndex.map(w => w.text).join(' ');
+      const currentWord = this.currentTakeWords[wordIndex]?.text || '';
+      
+      // 테이크 엘리먼트에서 텍스트 찾기
+      const takeElement = this.currentOverlayTake.element;
+      
+      if (!takeElement) {
+        return null;
+      }
+      
+      // Range API를 사용해서 단어 위치 찾기
+      const range = this.findTextRangeInElement(takeElement, textUpToWord, currentWord);
+      
+      if (range) {
+        const rect = range.getBoundingClientRect();
+        
+        return {
+          left: rect.left + window.scrollX,
+          top: rect.top + window.scrollY,
+          width: rect.width,
+          height: rect.height
+        };
+      }
+      
+    } catch (error) {
+      console.warn('🔍 단어 위치 찾기 실패:', error);
+    }
+    
+    return null;
+  }
+  
+  // 🔍 엘리먼트에서 텍스트 범위 찾기
+  findTextRangeInElement(element, textUpToWord, currentWord) {
+    try {
+      const walker = document.createTreeWalker(
+        element,
+        NodeFilter.SHOW_TEXT,
+        null,
+        false
+      );
+      
+      let textNode;
+      let accumulatedText = '';
+      
+      while (textNode = walker.nextNode()) {
+        const nodeText = textNode.textContent;
+        const newAccumulatedText = accumulatedText + nodeText;
+        
+        // 현재 단어가 이 텍스트 노드에 있는지 확인
+        const targetText = textUpToWord;
+        const startIndex = newAccumulatedText.indexOf(targetText);
+        
+        if (startIndex !== -1) {
+          // 텍스트 노드에서 단어의 정확한 위치 계산
+          const nodeStartIndex = startIndex - accumulatedText.length;
+          const wordStart = Math.max(0, nodeStartIndex + targetText.length - currentWord.length);
+          const wordEnd = wordStart + currentWord.length;
+          
+          if (wordStart >= 0 && wordEnd <= nodeText.length) {
+            const range = document.createRange();
+            range.setStart(textNode, wordStart);
+            range.setEnd(textNode, wordEnd);
+            return range;
+          }
+        }
+        
+        accumulatedText = newAccumulatedText + ' ';
+      }
+      
+    } catch (error) {
+      console.warn('🔍 텍스트 범위 찾기 실패:', error);
+    }
+    
+    return null;
   }
   
   // 🎯 재생 UI 업데이트
@@ -1913,8 +2378,8 @@ class TTSManager {
       return false;
     }
     
-    // 너무 짧은 텍스트 (버튼, 라벨 등) 제외
-    if (textLength < 8) {  // 5자 → 8자로 더 엄격하게
+    // 🎯 Daum 뉴스: 더 짧은 텍스트도 허용 (뉴스 본문 보호)
+    if (textLength < 5) {  // 8자 → 5자로 완화
       return false;
     }
     
@@ -2076,22 +2541,23 @@ class TTSManager {
       return true;
     }
 
-    // 3. 클래스명 기반 제외 (CNN 본문 보호를 위해 완화)
+    // 3. 클래스명 기반 제외 (Daum 뉴스 호환성을 위해 더 관대하게)
     const excludedClasses = [
-      // 광고 관련 (CNN 광고 패턴)
-      'advertisement', 'ad-feedback', 'ad-', 'sponsored-content',
+      // 광고 관련 (정확한 매칭만)
+      'advertisement', 'ad-banner', 'ad-container', 'sponsored-content',
       // 네비게이션 관련 (정확한 매칭만)
       'navigation', 'navbar', 'header-nav', 'footer-nav', 'sidebar-nav',
-      // 버튼 및 인터랙션 요소 (정확한 매칭)
-      'button-', 'btn-', 'dropdown-', 'tabs-container',
-      // 메타데이터 및 UI 요소 (정확한 매칭)
-      'byline-', 'timestamp-', 'social-share', 'comment-section',
-      // CNN 특화 (정확한 매칭)
-      'cnn-poll', 'cnn-newsletter', 'live-blog-', 'breaking-news-banner',
+      // 버튼 및 인터랙션 요소 (btn은 별도 처리)
+      'button-container', 'dropdown-menu', 'tab-container',
+      // 메타데이터 및 UI 요소 (정확한 매칭만)
+      'metadata-container', 'byline-info', 'timestamp-container',
+      'social-share', 'comment-section', 'feedback-form',
+      // CNN/Daum 특화 (정확한 매칭만)
+      'cnn-poll', 'cnn-newsletter', 'live-story-banner',
       // 접근성 및 숨김 요소
-      'screen-reader-only', 'sr-only', 'visually-hidden', 'hidden-',
-      // 기타 UI 요소 (정확한 매칭)
-      'modal-', 'popup-', 'overlay-', 'tooltip-'
+      'screen-reader-only', 'sr-only', 'visually-hidden',
+      // 기타 UI 요소 (정확한 매칭만)
+      'tooltip-container', 'popup-overlay', 'modal-backdrop'
     ];
 
     const className = (element.className || '').toLowerCase();
@@ -2100,60 +2566,6 @@ class TTSManager {
     if (className.includes('btn')) {
       console.log(`🚫 버튼 div 제외: <${element.tagName.toLowerCase()}> class="${element.className}"`);
       return true;
-    }
-    
-    // 🎯 네이버/포털 사이트 가상 버튼 및 복사 방지 요소 제외
-    const virtualButtonPatterns = [
-      // 네이버 특화
-      'copy', 'clipboard', 'share', 'sns', 'naver', 'social',
-      // 복사 방지/보안 관련
-      'selection', 'protect', 'guard', 'prevent', 'block',
-      // 가상 버튼/오버레이
-      'virtual', 'overlay', 'floating', 'popup', 'tooltip',
-      // 광고/프로모션
-      'promo', 'promotion', 'advertisement', 'sponsored',
-      // 기타 UI 방해 요소
-      'widget', 'gadget', 'embed', 'iframe-wrap'
-    ];
-    
-    for (const pattern of virtualButtonPatterns) {
-      if (className.includes(pattern)) {
-        console.log(`🚫 가상 버튼/방해 요소 제외: <${element.tagName.toLowerCase()}> class="${element.className}"`);
-        return true;
-      }
-    }
-    
-    // 🎯 가상 버튼 스타일 기반 감지 (네이버 등 포털사이트 대응)
-    const computedStyle = window.getComputedStyle && window.getComputedStyle(element);
-    if (computedStyle) {
-      // 절대 위치로 배치된 가상 버튼들
-      const position = computedStyle.position;
-      const zIndex = parseInt(computedStyle.zIndex) || 0;
-      
-      if ((position === 'absolute' || position === 'fixed') && zIndex > 100) {
-        // 크기가 매우 작거나 투명한 요소들 (가상 버튼일 가능성)
-        const opacity = parseFloat(computedStyle.opacity) || 1;
-        const width = parseFloat(computedStyle.width) || 0;
-        const height = parseFloat(computedStyle.height) || 0;
-        
-        if (opacity < 0.1 || (width < 10 && height < 10)) {
-          console.log(`🚫 가상 버튼 스타일 감지: 투명/소형 요소 (opacity: ${opacity}, size: ${width}x${height})`);
-          return true;
-        }
-      }
-    }
-    
-    // 🎯 데이터 속성 기반 감지
-    const dataAttributes = element.dataset || {};
-    const suspiciousDataKeys = ['track', 'ga', 'analytics', 'event', 'action', 'copy', 'share'];
-    
-    for (const key of Object.keys(dataAttributes)) {
-      for (const suspicious of suspiciousDataKeys) {
-        if (key.toLowerCase().includes(suspicious)) {
-          console.log(`🚫 가상 버튼 데이터 속성 감지: data-${key}="${dataAttributes[key]}"`);
-          return true;
-        }
-      }
     }
     
     // 부모 요소 중에 btn 클래스가 있는지 확인 (최대 3레벨까지)
@@ -2169,21 +2581,12 @@ class TTSManager {
       level++;
     }
     
-    // 🎯 CNN 본문 보호: 더 관대한 클래스 필터링
-    const stronglyExcludedClasses = ['advertisement', 'ad-feedback', 'navigation', 'header-nav', 'footer-nav'];
-    if (stronglyExcludedClasses.some(cls => className.includes(cls))) {
-      console.log(`🚫 강력 제외 클래스: ${className}`);
+    // 🔍 Daum 뉴스 디버깅: 클래스 기반 제외 상세 분석
+    const matchedClass = excludedClasses.find(cls => className.includes(cls));
+    if (matchedClass) {
+      console.log(`🚫 클래스 제외: "${matchedClass}" in "${className}" - 요소: <${element.tagName.toLowerCase()}>`);
+      console.log(`📝 요소 텍스트: "${element.textContent?.substring(0, 50)}..."`);
       return true;
-    }
-    
-    // 약한 제외: 'ad' 같은 짧은 단어는 정확한 매칭만
-    const weakExcludedClasses = ['ad', 'nav', 'menu', 'header', 'footer'];
-    for (const cls of weakExcludedClasses) {
-      const regex = new RegExp(`\\b${cls}\\b`);
-      if (regex.test(className)) {
-        console.log(`🚫 약한 제외 클래스: ${cls} in ${className}`);
-        return true;
-      }
     }
 
     // 4. ID 기반 제외
@@ -2236,9 +2639,7 @@ class TTSManager {
       const parentRole = currentElement.getAttribute('role');
       
       // 부모가 제외 대상이면 자식도 제외
-      // 🎯 CNN 본문 보호: 부모 요소 체크도 관대하게
-      const strongParentExclusions = ['advertisement', 'navigation', 'header-nav', 'footer-nav'];
-      if (strongParentExclusions.some(cls => parentClass.includes(cls)) ||
+      if (excludedClasses.some(cls => parentClass.includes(cls)) ||
           excludedIds.some(id => parentId.includes(id)) ||
           (parentRole && excludedRoles.includes(parentRole.toLowerCase()))) {
         return true;
@@ -2405,6 +2806,11 @@ class TTSManager {
 
   // 음성 변환
   async convertToSpeech(take) {
+    console.log(`🎵 TTS 음성 생성 시작: ${take.id}`);
+    console.log(`📝 텍스트 미리보기: "${take.text.substring(0, 50)}..."`);
+    console.log(`🗣️ 선택된 음성: ${this.selectedVoice.name} (${this.selectedVoice.id})`);
+    console.log(`🌍 언어: ${take.language}`);
+    
     const requestData = {
       text: take.text,
       voice_id: this.selectedVoice.id,
@@ -2414,7 +2820,7 @@ class TTSManager {
       voice_settings: {
         pitch_shift: 0,
         pitch_variance: 1,
-        speed: 1
+        speed: take.language === 'ko' ? 1.2 : 1  // 한국어는 1.2, 영어는 1.0
       }
     };
 
@@ -3214,55 +3620,6 @@ class TTSManager {
 }
 
 // TTS Manager 전역 인스턴스 생성
-try {
-  console.log('🚀 TTS Manager 인스턴스 생성 시작...');
-  window.ttsManager = new TTSManager();
-  console.log('✅ TTS Manager 인스턴스 생성 완료');
-} catch (error) {
-  console.error('❌ TTS Manager 인스턴스 생성 실패:', error);
-  console.error('Stack trace:', error.stack);
-  
-  // fallback: 간단한 에러 표시
-  const errorDiv = document.createElement('div');
-  errorDiv.style.cssText = `
-    position: fixed; bottom: 20px; right: 20px; z-index: 10000;
-    background: #F44336; color: white; padding: 10px; border-radius: 5px;
-    font-family: Arial, sans-serif; font-size: 12px; max-width: 300px;
-  `;
-  errorDiv.textContent = 'TTS 확장 프로그램 로드 실패 - 페이지를 새로고침해주세요';
-  document.body?.appendChild(errorDiv);
-}
+window.ttsManager = new TTSManager();
 
-console.log('🎯 TTS 모듈 로드 완료');
-
-// 🔧 디버깅 도구: 콘솔에서 window.debugTTS() 호출 가능
-window.debugTTS = function() {
-  console.log('🔧 TTS 디버깅 정보:');
-  console.log('📋 TTS Manager:', !!window.ttsManager);
-  
-  if (window.ttsManager) {
-    const ui = document.getElementById('tts-floating-ui');
-    console.log('🎨 플로팅 UI:', {
-      exists: !!ui,
-      display: ui?.style.display,
-      visible: ui?.offsetWidth > 0,
-      position: ui ? `${ui.style.bottom}, ${ui.style.right}` : 'N/A'
-    });
-    
-    console.log('📊 테이크 상태:', {
-      preTakes: window.ttsManager.preTakes?.length || 0,
-      isPlaying: window.ttsManager.isPlaying,
-      currentTakeIndex: window.ttsManager.currentTakeIndex
-    });
-    
-    console.log('⌨️ 이벤트 리스너:', {
-      mousemove: !!window.ttsManager.mouseUpdateThrottle,
-      keydown: 'addEventListener 확인 필요'
-    });
-  }
-  
-  console.log('💡 해결 방법:');
-  console.log('1. 페이지 새로고침 (Ctrl+R)');
-  console.log('2. 확장 프로그램 재로드');
-  console.log('3. 콘솔 에러 확인');
-};
+console.log('TTS 모듈 로드 완료');

@@ -184,8 +184,8 @@ class TTSSelector {
       this.currentElement = element;
       this.selectedText = text;
       
-      // 선택된 요소에 클래스 추가
-      element.classList.add('tts-selected');
+      // 파란색 투명 박스 표시 - 주석 처리됨 (나중에 다시 사용 가능)
+      // element.classList.add('tts-selected');
       
       // 히스토리에 추가
       this.addToHistory(element);
@@ -218,7 +218,8 @@ class TTSSelector {
 
   clearSelection() {
     if (this.currentElement) {
-      this.currentElement.classList.remove('tts-selected');
+      // 파란색 투명 박스 제거 - 주석 처리됨 (나중에 다시 사용 가능)
+      // this.currentElement.classList.remove('tts-selected');
       this.currentElement = null;
       this.selectedText = '';
     }
