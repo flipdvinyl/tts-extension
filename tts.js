@@ -1,17 +1,23 @@
 class TTSManager {
   constructor() {
     // VOICES 배열 (audiobook-ui에서 가져옴)
+    // 🎵 사용 가능한 음성 목록 (app.js와 동일)
     this.VOICES = [
-      { name: '루시안 프로이드', id: 'hQqi26RFdZ59x3bGR2Bnoj', key: '1' },
-      { name: '귀찮은 고양이', id: 'ad67887f07639d2973f48a', key: '2' },
-      { name: '책뚫남', id: 'a213ca3c004c21da52d35d', key: '3' },
-      { name: '제너레이션 MG', id: '4404f9613ff506ebd6daee', key: '4' },
-      { name: '차분한 그녀', id: '26dbddbce9113c14a6822c', key: '5' },
-      { name: '미술관 도슨트', id: '0f7ccb849f108608620302', key: '6' },
-      { name: '박물관 사서', id: 'eb5e0f9308248300915305', key: '7' },
-      { name: '진지한 케일리', id: 'weKbNjMh2V5MuXziwHwjoT', key: '8' },
-      { name: 'Holy molly', id: '6151a25f6a7f5b1e000023', key: '9' },
-      { name: '릭 루빈', id: 'nNkPFG9fioPzmsxGpawKbv', key: '0' }
+      { name: '루시안 프로이드', id: 'hQqi26RFdZ59x3bGR2Bnoj', key: '1', description: `는 고독과 친밀한 화가였어요. 조용하지만 단단한 목소리로 마음을 전했죠. 한때, 프랜시스 베이컨의 절친이었다지요.` },
+      { name: '귀찮은 고양이', id: 'ad67887f07639d2973f48a', key: '2', description: `를 소개하는 건 정말 너무 귀찮네요.` },
+      { name: '책뚫남', id: 'a213ca3c004c21da52d35d', key: '3', description: `이 읽어 주는 책은 멈출 수 없어요. 잠들기 전 옆에서 책 읽어 주었으면 하는 사람 콘테스트에서 우승했거든요.` },
+      { name: '제너레이션 MG', id: '4404f9613ff506ebd6daee', key: '4', description: `는 부장님을 이해할 수 없어요. 부장님도 그녀를 이해할 수 없지요. 그러면 어때요? 젊고 쿨한걸요.` },
+      { name: '차분한 그녀', id: '26dbddbce9113c14a6822c', key: '5', description: `는 글을 읽으며 꾸미지 않아요. 가끔은 읽던 곳을 놓치기도 하지만, 그러면 어때요. 친근한걸요.` },
+      { name: '미술관 도슨트', id: '0f7ccb849f108608620302', key: '6', description: `는 예술과 당신 사이의 안내자예요. 자연과 예술, 시간과 사유를 연결하는 자리에 늘 함께 있어요.` },
+      { name: '박물관 사서', id: 'eb5e0f9308248300915305', key: '7', description: `눈에 띄지 않게 조용히 책 사이를 오가며, 누군가의 하루에 맞는 문장을 골라줘요.` },
+      { name: '진지한 케일리', id: 'weKbNjMh2V5MuXziwHwjoT', key: '8', description: `는 회사 스튜디오에서 우연히 목소리를 녹음 했어요. 연기엔 자신 있었다지만 누가 봐도 또박또박 읽고 있지요.` },
+      { name: 'Holy molly', id: '6151a25f6a7f5b1e000023', key: '9', description: `! 나 어메리칸이에요? K-POP 때문에 한국어가 조큼 배우기 시작했어요. 그래서 한국어는… 어… not perfect, but 영어는 완전 confident 있어요!` },
+      { name: '릭 루빈', id: 'nNkPFG9fioPzmsxGpawKbv', key: '0', description: `은 화려한 테크닉보다 감각과 직관을 믿는 사람이에요. 명상으로 마음을 비우고, 음악의 본질만을 담아내는 전설적인 프로듀서죠.` },
+      { name: '소년', id: '4MvvJLQnDUoBMojLQ8YhTW', key: null, description: `은 개울가 징검다리에서 소녀를 기다리고, 그녀가 건넌 흰 조약돌을 소중히 간직하는 조심스러운 아이예요.` },
+      { name: '소녀', id: 'd1pREPnx17ahNcRvUfdhR8', key: null, description: `는 '이 바보'라며 웃으며 조약돌을 던지고, 수숫단 속에서 소년에게 몸을 기댄 채 조용히 따뜻함을 나누는 섬세한 아이예요.` },
+      { name: '이석원', id: '6ay4URFxK9bry6z7zMDBLP', key: null, description: `은 말보다 침묵에 가까운 사람이지요. 그의 시선엔 쓸쓸함과 따뜻함이 함께 있고, 목소리는 그의 노래처럼 차분하고 조용하지만 오래 남거든요.` },
+      { name: '출판사 『무제』 사장', id: 'k3nWGietavXL1CA7oksXZ9', key: null, description: `은 베일에 싸여 있어요. 배우라는 설도 있지만 낭설일 뿐이지요. 『쓸 만한 인간』이라는 말도 들어요.` },
+      { name: '송골매 기타리스트', id: '9BxbNLZ349CPuYpLUmBDYa', key: null, description: `가 누구인지 아는사람들 모여라~! 세상만사 모든일이 뜻대로야 되겠소만 어쩌다 마주친 그대처럼 우리 모두 다 사랑하리~` }
     ];
 
     // 🎯 새로운 테이크 시스템 관련 상태
@@ -27,8 +33,31 @@ class TTSManager {
     this.bufferingTakes = new Set(); // 버퍼링 중인 테이크들
     this.abortController = null;
     
-    // 현재 선택된 음성
-    this.selectedVoice = this.VOICES[2]; // 기본값: 책뚫남
+    // 현재 선택된 음성 (저장된 설정 불러오기)
+    this.selectedVoice = this.loadVoiceSetting();
+    
+    // TTS 재생 속도 (저장된 설정 불러오기)
+    this.playbackSpeed = this.loadSpeedSetting();
+    this.minSpeed = 0.6;
+    this.maxSpeed = 1.8;
+    this.speedStep = 0.2;
+    
+    // 속도 선택 목록
+    this.SPEED_OPTIONS = [
+      { speed: 0.6, text: '정말 느리게' },
+      { speed: 0.8, text: '조금 느리게' },
+      { speed: 1.0, text: '보통 빠르기로' },
+      { speed: 1.2, text: '조금 빠르게' },
+      { speed: 1.4, text: '빠르게' },
+      { speed: 1.6, text: '제법 빠르게' },
+      { speed: 1.8, text: '정말 빠르게' }
+    ];
+    
+    // UI 폰트 크기 설정
+    this.UI_FONT_SIZE = '16px';
+    
+    // 플러그인 활성화 상태
+    this.isPluginEnabled = true;
     
     // API URL
     this.apiUrl = 'https://quiet-ink-groq.vercel.app';
@@ -46,6 +75,140 @@ class TTSManager {
     
     // 🎯 페이지 로딩 완료 감지 및 초기화
     this.initializeWhenReady();
+    
+    // 테마 감지 및 적용
+    this.currentTheme = 'light'; // 기본값
+    
+    // 하단 플로팅 UI 즉시 생성
+    this.createBottomFloatingUI();
+    
+    // 테마 감지 후 UI 업데이트
+    this.detectAndApplyTheme();
+    
+    // 백그라운드 스크립트 메시지 리스너 설정
+    this.setupMessageListener();
+  }
+
+  // 📨 백그라운드 스크립트 메시지 리스너 설정
+  setupMessageListener() {
+    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+      if (request.action === 'toggle') {
+        this.togglePlugin();
+        sendResponse({ success: true, enabled: this.isPluginEnabled });
+      }
+      return true; // 비동기 응답을 위해 true 반환
+    });
+  }
+
+  // 🔄 플러그인 on/off 토글
+  togglePlugin() {
+    this.isPluginEnabled = !this.isPluginEnabled;
+    
+    if (this.isPluginEnabled) {
+      console.log('🟢 TTS 플러그인 활성화');
+      this.showUI();
+      // 기존 상태 복원
+      if (this.bottomFloatingUI) {
+        this.bottomFloatingUI.style.display = 'block';
+      }
+    } else {
+      console.log('🔴 TTS 플러그인 비활성화');
+      this.stopAll();
+      this.hideUI();
+      // 하단 플로팅 UI도 완전히 숨기기
+      if (this.bottomFloatingUI) {
+        this.bottomFloatingUI.style.display = 'none';
+      }
+      // 플로팅 아이콘도 숨기기
+      this.hideTakeHoverIcon();
+      // 모든 오버레이 제거
+      this.removeAllHighlights();
+    }
+    
+    console.log(`🔄 플러그인 상태: ${this.isPluginEnabled ? '활성화' : '비활성화'}`);
+    
+    // 백그라운드 스크립트에 아이콘 업데이트 요청
+    chrome.runtime.sendMessage({ 
+      action: 'updateIcon', 
+      enabled: this.isPluginEnabled 
+    });
+  }
+
+  // 🧹 모든 하이라이트 제거
+  removeAllHighlights() {
+    // 기존 App.js 스타일 단어 하이라이트 제거
+    const existingHighlights = document.querySelectorAll('.tts-current-word-appjs');
+    existingHighlights.forEach(highlight => {
+      highlight.classList.remove('tts-current-word-appjs');
+    });
+
+    // 오버레이 하이라이트 제거
+    const overlayHighlight = document.getElementById('tts-overlay-highlight');
+    if (overlayHighlight) {
+      overlayHighlight.remove();
+    }
+    
+    // 테이크 호버 아이콘 제거
+    this.hideTakeHoverIcon();
+  }
+
+  // 💾 화자 설정 저장 및 불러오기
+  saveVoiceSetting(voice) {
+    try {
+      localStorage.setItem('tts-extension-voice', JSON.stringify({
+        id: voice.id,
+        name: voice.name,
+        key: voice.key
+      }));
+      console.log(`💾 화자 설정 저장: ${voice.name}`);
+    } catch (error) {
+      console.warn('화자 설정 저장 실패:', error);
+    }
+  }
+
+  loadVoiceSetting() {
+    try {
+      const saved = localStorage.getItem('tts-extension-voice');
+      if (saved) {
+        const voiceData = JSON.parse(saved);
+        const voice = this.VOICES.find(v => v.id === voiceData.id);
+        if (voice) {
+          console.log(`💾 화자 설정 불러오기: ${voice.name}`);
+          return voice;
+        }
+      }
+    } catch (error) {
+      console.warn('화자 설정 불러오기 실패:', error);
+    }
+    // 기본값: 책뚫남
+    return this.VOICES[2];
+  }
+
+  // 💾 속도 설정 저장 및 불러오기
+  saveSpeedSetting(speed) {
+    try {
+      localStorage.setItem('tts-extension-speed', speed.toString());
+      console.log(`💾 속도 설정 저장: ${speed}x`);
+    } catch (error) {
+      console.warn('속도 설정 저장 실패:', error);
+    }
+  }
+
+  loadSpeedSetting() {
+    try {
+      const saved = localStorage.getItem('tts-extension-speed');
+      if (saved) {
+        const speed = parseFloat(saved);
+        if (speed >= this.minSpeed && speed <= this.maxSpeed) {
+          console.log(`💾 속도 설정 불러오기: ${speed}x`);
+          return speed;
+        }
+      }
+    } catch (error) {
+      console.warn('속도 설정 불러오기 실패:', error);
+    }
+    // 기본값: 1.2
+    return 1.2;
   }
 
   // 🎯 페이지 로딩 완료 시 초기화 (다단계 시점 확보)
@@ -83,7 +246,8 @@ class TTSManager {
       
       if (bestTakeCount >= 3) {
         console.log('✅ 1차 시점에서 충분한 테이크 확보');
-        this.updateStatus('TTS 준비 완료 - 마우스를 올리고 1~0번 키를 누르세요', '#4CAF50');
+        this.updateTakeCount();
+        this.showUI();
         return;
       }
     } catch (error) {
@@ -108,7 +272,8 @@ class TTSManager {
       
       if (bestTakeCount >= 2) {
         console.log('✅ 2차 시점에서 최소 테이크 확보');
-        this.updateStatus('TTS 준비 완료 - 마우스를 올리고 1~0번 키를 누르세요', '#4CAF50');
+        this.updateTakeCount();
+        this.showUI();
         return;
       }
     } catch (error) {
@@ -136,7 +301,8 @@ class TTSManager {
       
       if (finalTakeCount > 0) {
         console.log(`✅ 최종 시점에서 ${finalTakeCount}개 테이크 확보`);
-        this.updateStatus('TTS 준비 완료 - 마우스를 올리고 1~0번 키를 누르세요', '#4CAF50');
+        this.updateTakeCount();
+        this.showUI();
       } else {
         console.log('❌ 모든 시점에서 테이크 생성 실패');
         this.updateStatus('테이크 생성 실패 - 페이지를 새로고침해주세요', '#F44336');
@@ -201,7 +367,456 @@ class TTSManager {
     
     console.log(`✅ 총 ${this.preTakes.length}개 테이크 사전 생성 완료`);
     this.updateTakeListUI();
+    this.updateTakeCount();
+    
+    // 테이크 호버 아이콘 설정
+    this.setupTakeHoverIcons();
   }
+
+  // 🎯 테이크 호버 아이콘 설정
+  setupTakeHoverIcons() {
+    if (!this.preTakes || this.preTakes.length === 0) return;
+    
+    this.preTakes.forEach((take, index) => {
+      if (take.element) {
+        // 가장 작은 텍스트 포함 요소 찾기
+        const smallestElement = this.findSmallestTextContainer(take.element, take.text);
+        
+        // 마우스 진입 시 아이콘 표시
+        smallestElement.addEventListener('mouseenter', (event) => {
+          this.currentHoverTake = take;
+          this.showTakeHoverIcon(take, smallestElement);
+        });
+        
+        // 마우스 이탈 시에는 아이콘을 즉시 숨기지 않음 (다른 테이크로 이동할 때만 변경)
+        smallestElement.addEventListener('mouseleave', (event) => {
+          // 다른 테이크 요소로 이동하는지 확인
+          setTimeout(() => {
+            const hoveredElement = document.elementFromPoint(event.clientX, event.clientY);
+            const newTake = this.findTakeFromElement(hoveredElement);
+            
+            if (newTake && newTake !== this.currentHoverTake) {
+              // 다른 테이크로 이동
+              this.currentHoverTake = newTake;
+              const newSmallestElement = this.findSmallestTextContainer(newTake.element, newTake.text);
+              this.showTakeHoverIcon(newTake, newSmallestElement);
+            }
+            // 테이크가 없는 곳으로 이동하면 아이콘 유지 (마지막 위치)
+          }, 10);
+        });
+      }
+    });
+  }
+
+  // 🎯 테이크 호버 아이콘 표시
+  showTakeHoverIcon(take, element) {
+    // 플러그인이 비활성화된 경우 아이콘 표시하지 않음
+    if (!this.isPluginEnabled) {
+      return;
+    }
+    
+    // 기존 아이콘 제거
+    this.hideTakeHoverIcon();
+    
+    // 현재 테이크와 요소 저장
+    this.currentIconTake = take;
+    this.currentIconElement = element;
+    
+    const isDark = this.currentTheme === 'dark';
+    const iconSize = 19;
+    
+    // 아이콘 생성
+    this.takeHoverIcon = this.createTakeIcon(iconSize, isDark);
+    
+    // 초기 위치 설정 및 스타일 적용
+    this.setupIconPositionAndStyle(iconSize);
+    
+    // 이벤트 리스너 설정
+    this.setupIconEventListeners(take);
+    
+    // DOM에 추가
+    document.body.appendChild(this.takeHoverIcon);
+    
+    // 애니메이션 트리거 (DOM 추가 후 바로)
+    this.triggerIconAnimation();
+    
+    // 스크롤 이벤트 리스너 설정
+    this.setupIconScrollListener();
+    
+    // 현재 테이크 호버 추적 설정
+    this.setupCurrentTakeHoverTracking();
+    
+    // 3초 후 자동 페이드아웃 타이머 설정
+    this.setupIconAutoHideTimer();
+  }
+
+  // 🎯 아이콘 DOM 요소 생성
+  createTakeIcon(iconSize, isDark) {
+    const icon = document.createElement('div');
+    icon.id = 'tts-take-hover-icon';
+    icon.innerHTML = `
+      <svg width="${iconSize}" height="${iconSize}" viewBox="0 0 152 152" xmlns="http://www.w3.org/2000/svg">
+        <style>
+          .tts-icon-blue { fill: #007AFF; }
+          .tts-icon-white { fill: #fff; }
+          
+          /* 애니메이션 요소들 초기 상태: 투명 */
+          .tts-icon-element {
+            opacity: 0;
+          }
+          
+          /* 순차 애니메이션 지연 - 단순히 opacity만 변경 */
+          .tts-icon-animate .tts-icon-element-1 { 
+            animation: ttsIconShow 0.1s ease 0.1s forwards; 
+          }
+          .tts-icon-animate .tts-icon-element-2 { 
+            animation: ttsIconShow 0.1s ease 0.15s forwards; 
+          }
+          .tts-icon-animate .tts-icon-element-3 { 
+            animation: ttsIconShow 0.1s ease 0.20s forwards; 
+          }
+          .tts-icon-animate .tts-icon-element-4 { 
+            animation: ttsIconShow 0.1s ease 0.25s forwards; 
+          }
+          
+          /* 단순 표시 애니메이션 */
+          @keyframes ttsIconShow {
+            from { opacity: 0; }
+            to { opacity: 1; }
+          }
+        </style>
+        <g>
+          <circle class="tts-icon-white" cx="76" cy="76" r="72"/>
+          <path class="tts-icon-blue" d="M76,152C34.1,152,0,117.9,0,76S34.1,0,76,0s76,34.1,76,76-34.1,76-76,76ZM76,8C38.5,8,8,38.5,8,76s30.5,68,68,68,68-30.5,68-68S113.5,8,76,8Z"/>
+        </g>
+        <!-- 1. 왼쪽 작은 원 -->
+        <circle class="tts-icon-blue tts-icon-element tts-icon-element-1" cx="51.3" cy="76" r="10.8"/>
+        <!-- 2-1. 위쪽 사선 -->
+        <rect class="tts-icon-blue tts-icon-element tts-icon-element-2" x="77" y="41.2" width="23.3" height="8" transform="translate(-8.5 66.6) rotate(-39.4)"/>
+        <!-- 2-2. 가운데 직선 -->
+        <rect class="tts-icon-blue tts-icon-element tts-icon-element-3" x="83" y="72" width="22.8" height="8"/>
+        <!-- 2-3. 아래쪽 사선 -->
+        <rect class="tts-icon-blue tts-icon-element tts-icon-element-4" x="84.7" y="95.1" width="8" height="23.3" transform="translate(-50.1 107.5) rotate(-50.6)"/>
+      </svg>
+    `;
+    return icon;
+  }
+
+  // 🎯 아이콘 위치 및 스타일 설정
+  setupIconPositionAndStyle(iconSize) {
+    this.takeHoverIcon.style.cssText = `
+      position: fixed !important;
+      z-index: 100001 !important;
+      pointer-events: auto !important;
+      cursor: pointer !important;
+      background: rgba(255, 255, 255, 0.9) !important;
+      border-radius: 50% !important;
+      padding: 0 !important;
+      box-shadow: 0 2px 8px #227cff40 !important;
+      transition: transform 0.2s ease, opacity 0.5s ease !important;
+      width: ${iconSize}px !important;
+      height: ${iconSize}px !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      opacity: 1 !important;
+    `;
+    
+    // 초기 위치 설정
+    this.updateIconPosition();
+  }
+
+  // 🎯 아이콘 이벤트 리스너 설정
+  setupIconEventListeners(take) {
+    // 클릭 이벤트
+    this.takeHoverIcon.addEventListener('click', async (event) => {
+      event.stopPropagation();
+      await this.startPlaybackFromTake(take);
+    });
+    
+    // 호버 효과
+    this.takeHoverIcon.addEventListener('mouseenter', () => {
+      this.takeHoverIcon.style.transform = 'scale(1.1)';
+    });
+    
+    this.takeHoverIcon.addEventListener('mouseleave', () => {
+      this.takeHoverIcon.style.transform = 'scale(1.0)';
+    });
+  }
+
+  // 🎯 테이크 호버 아이콘 숨김
+  hideTakeHoverIcon() {
+    if (this.takeHoverIcon) {
+      this.takeHoverIcon.remove();
+      this.takeHoverIcon = null;
+    }
+    
+    // 스크롤 이벤트 리스너 제거
+    this.removeIconScrollListener();
+    
+    // 자동 숨김 타이머 제거
+    this.clearIconAutoHideTimer();
+    
+    // 호버 추적 정리
+    this.cleanupCurrentTakeHoverTracking();
+    
+    // 저장된 요소 정보 초기화
+    this.currentIconTake = null;
+    this.currentIconElement = null;
+  }
+
+  // 🎯 아이콘 자동 숨김 타이머 설정
+  setupIconAutoHideTimer() {
+    // 기존 타이머 제거
+    this.clearIconAutoHideTimer();
+    
+    // 3초 후 페이드아웃 시작 (호버 상태 확인)
+    this.iconAutoHideTimer = setTimeout(() => {
+      this.checkAndFadeOutIcon();
+    }, 3000);
+  }
+
+  // 🎯 호버 상태 확인 후 페이드아웃
+  checkAndFadeOutIcon() {
+    // 마우스가 현재 테이크 위에 있으면 타이머 재설정
+    if (this.isCurrentTakeHovered()) {
+      this.setupIconAutoHideTimer();
+      return;
+    }
+    
+    // 호버 상태가 아니면 페이드아웃
+    this.fadeOutIcon();
+  }
+
+  // 🎯 현재 테이크가 호버 상태인지 확인
+  isCurrentTakeHovered() {
+    if (!this.currentIconElement) return false;
+    
+    // 마우스 이벤트 기반 호버 상태 확인
+    return this.isMouseOverCurrentTake;
+  }
+
+  // 🎯 현재 테이크에 마우스 이벤트 리스너 설정
+  setupCurrentTakeHoverTracking() {
+    if (!this.currentIconElement) return;
+    
+    // 초기 상태 설정
+    this.isMouseOverCurrentTake = false;
+    
+    // 마우스 엔터 이벤트
+    const handleMouseEnter = () => {
+      this.isMouseOverCurrentTake = true;
+    };
+    
+    // 마우스 리브 이벤트
+    const handleMouseLeave = () => {
+      this.isMouseOverCurrentTake = false;
+    };
+    
+    // 이벤트 리스너 추가
+    this.currentIconElement.addEventListener('mouseenter', handleMouseEnter);
+    this.currentIconElement.addEventListener('mouseleave', handleMouseLeave);
+    
+    // 정리를 위해 저장
+    this.currentTakeHoverListeners = {
+      element: this.currentIconElement,
+      enter: handleMouseEnter,
+      leave: handleMouseLeave
+    };
+  }
+
+  // 🎯 현재 테이크 호버 추적 정리
+  cleanupCurrentTakeHoverTracking() {
+    if (this.currentTakeHoverListeners) {
+      const { element, enter, leave } = this.currentTakeHoverListeners;
+      element.removeEventListener('mouseenter', enter);
+      element.removeEventListener('mouseleave', leave);
+      this.currentTakeHoverListeners = null;
+    }
+    this.isMouseOverCurrentTake = false;
+  }
+
+  // 🎯 아이콘 자동 숨김 타이머 제거
+  clearIconAutoHideTimer() {
+    if (this.iconAutoHideTimer) {
+      clearTimeout(this.iconAutoHideTimer);
+      this.iconAutoHideTimer = null;
+    }
+  }
+
+  // 🎯 아이콘 페이드아웃 애니메이션
+  fadeOutIcon() {
+    if (!this.takeHoverIcon) return;
+    
+    // 페이드아웃 시작
+    this.takeHoverIcon.style.opacity = '0';
+    
+    // 0.5초 후 완전히 제거
+    setTimeout(() => {
+      this.hideTakeHoverIcon();
+    }, 500);
+  }
+
+  // 🎯 아이콘 자동 숨김 타이머 리셋 (새로운 테이크 선택 시)
+  resetIconAutoHideTimer() {
+    if (this.takeHoverIcon) {
+      // 투명도 복원 (페이드아웃 중이었다면)
+      this.takeHoverIcon.style.opacity = '1';
+      
+      // 타이머 재설정
+      this.setupIconAutoHideTimer();
+    }
+  }
+
+  // 🎯 아이콘 순차 애니메이션 트리거
+  triggerIconAnimation() {
+    if (!this.takeHoverIcon) return;
+    
+    // 아이콘에 애니메이션 클래스 추가 (약간 지연 후)
+    requestAnimationFrame(() => {
+      this.takeHoverIcon.classList.add('tts-icon-animate');
+    });
+  }
+
+  // 🎯 아이콘 위치 업데이트 (뷰포트 기준)
+  updateIconPosition() {
+    if (!this.takeHoverIcon || !this.currentIconElement) return;
+    
+    const rect = this.currentIconElement.getBoundingClientRect();
+    
+    // 요소가 화면에서 완전히 벗어났는지 확인
+    if (this.isElementOutOfView(rect)) {
+      this.hideTakeHoverIcon();
+      return;
+    }
+    
+    // 뷰포트 기준 위치 계산 (position: fixed이므로 스크롤 값 불필요)
+    const iconPosition = this.calculateIconViewportPosition(rect);
+    
+    // 위치 업데이트 (뷰포트 좌표)
+    this.takeHoverIcon.style.top = `${iconPosition.top}px`;
+    this.takeHoverIcon.style.left = `${iconPosition.left}px`;
+  }
+
+  // 🎯 요소가 화면 밖에 있는지 확인
+  isElementOutOfView(rect) {
+    return rect.bottom < -50 || rect.top > window.innerHeight + 50;
+  }
+
+  // 🎯 뷰포트 기준 아이콘 위치 계산
+  calculateIconViewportPosition(rect) {
+    const computedStyle = window.getComputedStyle(this.currentIconElement);
+    const tagName = this.currentIconElement.tagName.toLowerCase();
+    
+    let topOffset = rect.top;
+    
+    // 태그별 텍스트 베이스라인 조정
+    if (tagName === 'p') {
+      const paddingTop = parseFloat(computedStyle.paddingTop) || 0;
+      const lineHeight = parseFloat(computedStyle.lineHeight) || parseFloat(computedStyle.fontSize) * 1.2;
+      const fontSize = parseFloat(computedStyle.fontSize) || 16;
+      topOffset += paddingTop + (lineHeight - fontSize) / 2;
+    } else if (['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tagName)) {
+      const paddingTop = parseFloat(computedStyle.paddingTop) || 0;
+      topOffset += paddingTop + 2;
+    } else if (tagName === 'div') {
+      const paddingTop = parseFloat(computedStyle.paddingTop) || 0;
+      topOffset += paddingTop;
+    }
+    
+    return {
+      top: topOffset - 2, // 미세 조정
+      left: rect.left - 30  // 좌측으로 30px
+    };
+  }
+
+  // 🎯 스크롤 이벤트 리스너 설정
+  setupIconScrollListener() {
+    this.removeIconScrollListener();
+    
+    // 쓰로틀링으로 성능 최적화
+    this.iconScrollHandler = this.throttle(() => {
+      this.updateIconPosition();
+    }, 16); // 60fps
+    
+    window.addEventListener('scroll', this.iconScrollHandler, { passive: true });
+    window.addEventListener('resize', this.iconScrollHandler, { passive: true });
+  }
+
+  // 🎯 스크롤 이벤트 리스너 제거
+  removeIconScrollListener() {
+    if (this.iconScrollHandler) {
+      window.removeEventListener('scroll', this.iconScrollHandler);
+      window.removeEventListener('resize', this.iconScrollHandler);
+      this.iconScrollHandler = null;
+    }
+  }
+
+  // 🎯 쓰로틀링 유틸리티
+  throttle(func, limit) {
+    let inThrottle;
+    return function() {
+      const args = arguments;
+      const context = this;
+      if (!inThrottle) {
+        func.apply(context, args);
+        inThrottle = true;
+        setTimeout(() => inThrottle = false, limit);
+      }
+    }
+  }
+
+  // 🎯 가장 작은 텍스트 포함 요소 찾기
+  findSmallestTextContainer(element, text) {
+    // 텍스트가 포함된 가장 작은 요소를 찾기 위해 자식 요소들을 탐색
+    const walker = document.createTreeWalker(
+      element,
+      NodeFilter.SHOW_ELEMENT,
+      {
+        acceptNode: (node) => {
+          // 노드의 텍스트 내용이 찾고자 하는 텍스트를 포함하는지 확인
+          const nodeText = node.textContent?.trim();
+          if (nodeText && text && nodeText.includes(text.substring(0, 50))) {
+            return NodeFilter.FILTER_ACCEPT;
+          }
+          return NodeFilter.FILTER_SKIP;
+        }
+      }
+    );
+
+    let smallestElement = element;
+    let smallestSize = element.getBoundingClientRect().width * element.getBoundingClientRect().height;
+    
+    let currentNode;
+    while (currentNode = walker.nextNode()) {
+      const rect = currentNode.getBoundingClientRect();
+      const size = rect.width * rect.height;
+      
+      // 크기가 더 작고, 실제로 화면에 보이는 요소인 경우
+      if (size > 0 && size < smallestSize) {
+        smallestElement = currentNode;
+        smallestSize = size;
+      }
+    }
+    
+    return smallestElement;
+  }
+
+  // 🎯 요소에서 해당하는 테이크 찾기
+  findTakeFromElement(element) {
+    if (!element || !this.preTakes) return null;
+    
+    // 요소가 테이크에 속하는지 확인
+    for (const take of this.preTakes) {
+      if (take.element && (take.element.contains(element) || take.element === element)) {
+        return take;
+      }
+    }
+    
+    return null;
+  }
+
+
   
   // 🎯 body 내부 메인 콘텐츠 추출 (header, footer 제외)
   extractMainContent() {
@@ -426,26 +1041,34 @@ class TTSManager {
     return selector;
   }
   
-  // 🎯 테이크 목록 UI 업데이트
+  // 🎯 테이크 리스트 UI 업데이트 (국기 + 텍스트)
   updateTakeListUI() {
-    if (this.htmlViewer) {
-      let html = `<div style="color: #4CAF50; font-weight: bold; margin-bottom: 10px;">
-        📋 발견된 테이크: ${this.preTakes.length}개
-      </div>`;
+    if (this.takeListContainer) {
+      // 테마 색상 가져오기
+      const isDark = this.currentTheme === 'dark';
+      const textColor = isDark ? '#aaaaaa' : '#1d1d1d';
+      const itemBgColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
       
-      this.preTakes.slice(0, 5).forEach((take, index) => {
-        const preview = take.text.substring(0, 40);
-        const lang = take.language === 'ko' ? '🇰🇷' : '🇺🇸';
-        html += `<div style="margin: 5px 0; font-size: 10px; opacity: 0.8;">
-          ${index + 1}. ${lang} ${preview}...
+      let html = '';
+      
+      this.preTakes.forEach((take, index) => {
+        // 언어별 국기 이모지
+        const flagEmoji = take.language === 'ko' ? '🇰🇷' : 
+                         take.language === 'en' ? '🇺🇸' : 
+                         take.language === 'ja' ? '🇯🇵' : '🌐';
+        
+        html += `<div style="
+          margin-bottom: 6px; 
+          font-size: 8px; 
+          line-height: 1.3;
+          color: black;
+        ">
+          <span>${flagEmoji}</span>
+          <span>${take.text.substring(0, 100)}${take.text.length > 100 ? '...' : ''} / ${take.text.length}</span>
         </div>`;
       });
       
-      if (this.preTakes.length > 5) {
-        html += `<div style="opacity: 0.6; font-size: 9px;">...그외 ${this.preTakes.length - 5}개</div>`;
-      }
-      
-      this.htmlViewer.innerHTML = html;
+      this.takeListContainer.innerHTML = html;
     }
   }
 
@@ -457,110 +1080,80 @@ class TTSManager {
       existingUI.remove();
     }
 
-    // 플로팅 컨테이너 생성 (CSS로 스타일링)
+    // 테마 색상 가져오기
+    const isDark = this.currentTheme === 'dark';
+    const bgColor = isDark ? 'rgba(0, 0, 0, 0.9)' : 'rgba(222, 222, 222, 0.9)';
+    const textColor = isDark ? '#aaaaaa' : '#1d1d1d';
+
+    // 플로팅 컨테이너 생성 (테이크 리스트 포함)
     this.floatingUI = document.createElement('div');
     this.floatingUI.id = 'tts-floating-ui';
-    this.floatingUI.style.display = 'none'; // 초기 숨김
-
-    // 🎯 상태 라벨
-    this.statusLabel = document.createElement('div');
-    this.statusLabel.id = 'tts-status';
-    this.statusLabel.style.cssText = `
-      margin-bottom: 8px;
-      font-weight: bold;
-      color: #4CAF50;
-      font-size: 13px;
-    `;
-    this.statusLabel.textContent = 'TTS 준비됨';
-
-    // 🎯 현재 음성 및 테이크 정보
-    this.voiceLabel = document.createElement('div');
-    this.voiceLabel.id = 'tts-voice';
-    this.voiceLabel.style.cssText = `
-      margin-bottom: 8px;
-      color: #2196F3;
-      font-size: 11px;
-    `;
-    this.voiceLabel.textContent = `음성: ${this.selectedVoice.name}`;
-
-    // 🎯 현재 테이크 정보
-    this.takeInfoLabel = document.createElement('div');
-    this.takeInfoLabel.id = 'tts-take-info';
-    this.takeInfoLabel.style.cssText = `
-      margin-bottom: 8px;
-      color: #FF9800;
-      font-size: 11px;
+    this.floatingUI.style.cssText = `
+      position: fixed !important;
+      top: 15px !important;
+      right: 15px !important;
+      background: rgba(255, 255, 255, 0.8) !important;
+      backdrop-filter: blur(10px) !important;
+      -webkit-backdrop-filter: blur(10px) !important;
+      color: black !important;
+      padding: 12px !important;
+      border-radius: 8px !important;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1) !important;
+      font-size: ${this.UI_FONT_SIZE} !important;
+      font-family: system-ui, -apple-system, sans-serif !important;
+      z-index: 99998 !important;
+      max-width: 100px !important;
+      max-height: 85vh !important;
+      display: none !important;
+      overflow-y: auto !important;
     `;
 
-    // 🎯 현재 단어 정보
-    this.wordInfoLabel = document.createElement('div');
-    this.wordInfoLabel.id = 'tts-word-info';
-    this.wordInfoLabel.style.cssText = `
-      margin-bottom: 8px;
-      color: #9C27B0;
-      font-size: 11px;
+    // 🎯 발견된 테이크 수 표시
+    this.takeCountLabel = document.createElement('div');
+    this.takeCountLabel.id = 'tts-take-count';
+    this.takeCountLabel.style.cssText = `
+      color: black !important;
+      font-size: 8px !important;
+      font-weight: normal !important;
+      margin-bottom: 8px !important;
+      text-align: left !important;
+    `;
+    this.takeCountLabel.textContent = '0개 테이크 감지됨';
+
+    // 🎯 테이크 리스트 컨테이너 (스크롤 가능)
+    this.takeListContainer = document.createElement('div');
+    this.takeListContainer.id = 'tts-take-list';
+    this.takeListContainer.style.cssText = `
+      overflow-y: auto !important;
+      scrollbar-width: thin !important;
+      color: black !important;
     `;
 
-    // 🎯 진행률 바
-    const progressContainer = document.createElement('div');
-    progressContainer.style.cssText = `
-      width: 100%;
-      height: 6px;
-      background: rgba(255, 255, 255, 0.2);
-      border-radius: 3px;
-      margin-bottom: 10px;
-      overflow: hidden;
-    `;
-
-    this.progressBar = document.createElement('div');
-    this.progressBar.id = 'tts-progress';
-    this.progressBar.style.cssText = `
-      width: 0%;
-      height: 100%;
-      background: linear-gradient(90deg, #4CAF50, #81C784);
-      transition: width 0.3s ease;
-      border-radius: 3px;
-    `;
-
-    progressContainer.appendChild(this.progressBar);
-
-    // 🎯 HTML 코드 뷰어
-    this.htmlViewer = document.createElement('div');
-    this.htmlViewer.id = 'tts-html-viewer';
-    this.htmlViewer.innerHTML = '<div style="color: #999;">HTML 코드가 여기에 표시됩니다</div>';
-
-    // 🎯 단축키 안내
-    const shortcutInfo = document.createElement('div');
-    shortcutInfo.style.cssText = `
-      font-size: 10px;
-      color: rgba(255, 255, 255, 0.6);
-      line-height: 1.3;
-      margin-top: 8px;
-      border-top: 1px solid rgba(255, 255, 255, 0.1);
-      padding-top: 8px;
-    `;
-    shortcutInfo.innerHTML = `
-      <div>🎵 1~0: 음성 선택 | ⏹️ ESC: 중지</div>
-      <div>🔤 현재: ${this.selectedVoice.key}번 - ${this.selectedVoice.name}</div>
-    `;
-
-    // 🎯 요소들 조립
-    this.floatingUI.appendChild(this.statusLabel);
-    this.floatingUI.appendChild(this.voiceLabel);
-    this.floatingUI.appendChild(this.takeInfoLabel);
-    this.floatingUI.appendChild(this.wordInfoLabel);
-    this.floatingUI.appendChild(progressContainer);
-    this.floatingUI.appendChild(this.htmlViewer);
-    this.floatingUI.appendChild(shortcutInfo);
+    // 🎯 요소 조립
+    this.floatingUI.appendChild(this.takeCountLabel);
+    this.floatingUI.appendChild(this.takeListContainer);
 
     document.body.appendChild(this.floatingUI);
     
-    console.log('🎯 TTS UI 생성 완료:', this.floatingUI);
+    console.log('🎯 TTS UI 생성 완료 (간소화):', this.floatingUI);
+  }
+
+  // 🎯 테이크 수 업데이트
+  updateTakeCount() {
+    if (this.takeCountLabel) {
+      const count = this.preTakes ? this.preTakes.length : 0;
+      this.takeCountLabel.textContent = `${count}개 테이크 감지됨`;
+    }
   }
 
   // 🎯 새로운 키보드 단축키 설정 (마우스 위치 기반)
   setupKeyboardShortcuts() {
     document.addEventListener('keydown', (event) => {
+      // 플러그인이 비활성화된 경우 모든 단축키 무시
+      if (!this.isPluginEnabled) {
+        return;
+      }
+      
       // 입력 필드에서는 단축키 무시
       if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
         return;
@@ -600,10 +1193,44 @@ class TTSManager {
   async selectVoiceAndStartFromMousePosition(voiceIndex) {
     // 음성 선택
     if (voiceIndex >= 0 && voiceIndex < this.VOICES.length) {
-      this.selectedVoice = this.VOICES[voiceIndex];
-      console.log(`🎵 음성 선택: ${this.selectedVoice.name}`);
+      const previousVoiceId = this.selectedVoice.id;
+      const newVoice = this.VOICES[voiceIndex];
       
-      // 🎯 마우스 위치에서 테이크 찾기
+      this.selectedVoice = newVoice;
+      
+      // 화자 설정 저장
+      this.saveVoiceSetting(newVoice);
+      
+      console.log(`🎵 단축키로 음성 선택: ${this.selectedVoice.name}`);
+      
+      // 하단 플로팅 UI 업데이트
+      this.updateBottomFloatingUIState();
+      
+      // 🎤 화자가 변경된 경우 버퍼링 제거 및 재시작 처리
+      if (previousVoiceId !== newVoice.id) {
+        // 현재 재생 중이면 현재 테이크부터 새 목소리로 재시작
+        if (this.isPlaying && this.currentPlayList && this.currentPlayList.length > 0) {
+          console.log(`🎤 단축키로 화자 변경: 현재 테이크부터 새 목소리로 재시작`);
+          this.clearAllBuffering();
+          
+          if (this.currentAudio) {
+            this.currentAudio.pause();
+            this.currentAudio = null;
+          }
+          
+          this.isPlaying = false;
+          this.isPaused = false;
+          
+          // 현재 테이크부터 새 목소리로 재시작
+          setTimeout(() => {
+            this.playTakeAtIndex(this.currentTakeIndex);
+          }, 300);
+          
+          return; // 마우스 위치 기반 재생은 하지 않음
+        }
+      }
+      
+      // 🎯 마우스 위치에서 테이크 찾기 (새로운 재생 시작)
       const takeAtMouse = this.findTakeAtMousePosition();
       
       if (takeAtMouse) {
@@ -924,6 +1551,9 @@ class TTSManager {
       this.isPlaying = true;
       this.isPaused = false;
       
+      // 하단 플로팅 UI 상태 업데이트
+      this.updateBottomFloatingUIState();
+      
       console.log(`🎵 오디오 재생 시작: ${take.id}`);
       
       // 🎯 App.js 스타일 단어 트래킹 준비
@@ -946,7 +1576,6 @@ class TTSManager {
       
       this.currentAudio.onended = () => {
         console.log(`✅ 테이크 재생 완료: ${take.id}`);
-        this.isPlaying = false;
         
         // 단어 트래킹 정리
         this.cleanupWordTracking();
@@ -955,11 +1584,16 @@ class TTSManager {
         setTimeout(() => {
           const nextIndex = this.currentTakeIndex + 1;
           if (nextIndex < this.currentPlayList.length) {
+            // 다음 테이크가 있으면 연속 재생 (재생 상태 유지)
             this.playTakeAtIndex(nextIndex);
             // 🎯 다음 테이크 재생 시작과 동시에 연속적 버퍼링 확인
             this.maintainContinuousBuffering(nextIndex);
           } else {
+            // 모든 테이크 재생 완료 시에만 상태 변경
             console.log('🎉 모든 테이크 재생 완료');
+            this.isPlaying = false;
+            this.isPaused = false;
+            this.updateBottomFloatingUIState();
             this.updateStatus('재생 완료', '#4CAF50');
           }
           resolve();
@@ -969,6 +1603,13 @@ class TTSManager {
       this.currentAudio.onerror = (error) => {
         console.error(`❌ 오디오 재생 오류: ${take.id}`, error);
         this.isPlaying = false;
+        this.isPaused = false;
+        this.updateStatus('재생 오류', '#F44336');
+        this.stopWordTracking();
+        
+        // 하단 플로팅 UI 상태 업데이트
+        this.updateBottomFloatingUIState();
+        
         reject(error);
       };
       
@@ -1191,7 +1832,7 @@ class TTSManager {
   calculateCurrentWordIndex(currentTime, duration, words) {
     if (!duration || !words || words.length === 0) return 0;
     
-    const totalDuration = duration + 1;
+    const totalDuration = duration;
     const totalWeight = words.reduce((sum, word) => sum + word.weight, 0);
     const timePerWeight = totalWeight > 0 ? totalDuration / totalWeight : 0;
     
@@ -1505,8 +2146,8 @@ class TTSManager {
       position: absolute !important;
       pointer-events: none !important;
       z-index: 999999 !important;
-      background: rgba(139, 69, 19, 0.1) !important;
-      border-bottom: 2px solid rgba(139, 69, 19, 0.8) !important;
+      background: rgba(34, 124, 255, 0.1) !important;
+      border-bottom: 2px solid #227cff !important;
       border-radius: 0px !important;
       transition: all 0.2s ease !important;
       display: none !important;
@@ -1541,14 +2182,18 @@ class TTSManager {
       const wordPosition = this.findWordPositionInText(wordIndex);
       
       if (wordPosition) {
-        // 🎨 박스를 좌우상으로 2px씩 확장 (레이아웃 영향 없이)
-        this.overlayHighlight.style.left = (wordPosition.left - 2) + 'px';
-        this.overlayHighlight.style.top = (wordPosition.top - 2) + 'px';
-        this.overlayHighlight.style.width = (wordPosition.width + 4) + 'px'; // 좌우 2px씩 = 총 4px 추가
-        this.overlayHighlight.style.height = (wordPosition.height + 2) + 'px'; // 상단 2px 추가
+        // 🎨 박스 확장: 좌우 25%, 위 15%, 아래 10%
+        const fontSizeExpansion = wordPosition.fontSize * 0.25; // 좌우 25%
+        const topExpansion = wordPosition.fontSize * 0.15; // 위쪽 15%
+        const bottomExpansion = wordPosition.fontSize * 0.1; // 아래쪽은 10%
+        
+        this.overlayHighlight.style.left = (wordPosition.left - fontSizeExpansion) + 'px';
+        this.overlayHighlight.style.top = (wordPosition.top - topExpansion) + 'px';
+        this.overlayHighlight.style.width = (wordPosition.width + fontSizeExpansion * 2) + 'px'; // 좌우 25%씩 확장
+        this.overlayHighlight.style.height = (wordPosition.height + topExpansion + bottomExpansion) + 'px'; // 위 15% + 아래 10%
         this.overlayHighlight.style.display = 'block';
         
-        console.log(`🎨 오버레이 하이라이트 업데이트: 단어 ${wordIndex + 1} "${this.currentTakeWords[wordIndex]?.text}"`);
+        console.log(`🎨 오버레이 하이라이트 업데이트: 단어 ${wordIndex + 1} "${this.currentTakeWords[wordIndex]?.text}" (폰트: ${wordPosition.fontSize}px, 좌우: ${fontSizeExpansion.toFixed(1)}px, 위: ${topExpansion.toFixed(1)}px, 아래: ${bottomExpansion.toFixed(1)}px)`);
       } else {
         this.overlayHighlight.style.display = 'none';
       }
@@ -1584,11 +2229,16 @@ class TTSManager {
       if (range) {
         const rect = range.getBoundingClientRect();
         
+        // 폰트 크기 정보 가져오기
+        const computedStyle = window.getComputedStyle(takeElement);
+        const fontSize = parseFloat(computedStyle.fontSize) || 16; // 기본값 16px
+        
         return {
           left: rect.left + window.scrollX,
           top: rect.top + window.scrollY,
           width: rect.width,
-          height: rect.height
+          height: rect.height,
+          fontSize: fontSize
         };
       }
       
@@ -1851,11 +2501,1141 @@ class TTSManager {
     if (this.floatingUI) {
       this.floatingUI.style.display = 'block';
     }
+    
+    // 하단 플로팅 UI도 표시
+    if (!this.bottomFloatingUI) {
+      this.createBottomFloatingUI();
+    }
+    this.bottomFloatingUI.style.display = 'block';
   }
 
   hideUI() {
     if (this.floatingUI) {
       this.floatingUI.style.display = 'none';
+    }
+    // 플러그인이 비활성화된 경우가 아니라면 하단 플로팅 UI는 계속 표시
+    // (togglePlugin에서 직접 제어)
+  }
+
+  // 🎨 화면 주 배경색 기반 테마 자동 감지 및 적용
+  async detectAndApplyTheme() {
+    try {
+      const backgroundColor = await this.analyzePageBackgroundColor();
+      const isDark = this.isColorDark(backgroundColor);
+      
+      this.currentTheme = isDark ? 'dark' : 'light';
+      console.log(`🎨 테마 감지: ${this.currentTheme} (배경색: ${backgroundColor})`);
+      
+      // 테마 변경 시 하단 플로팅 UI 업데이트
+      if (this.bottomFloatingUI) {
+        this.updateBottomFloatingUITheme();
+      }
+      
+    } catch (error) {
+      console.warn('🎨 테마 감지 실패, 기본 라이트 테마 사용:', error);
+      this.currentTheme = 'light';
+    }
+  }
+
+  // 🔍 페이지의 주 배경색 분석
+  async analyzePageBackgroundColor() {
+    // 방법 1: body의 computed style 확인
+    const bodyBgColor = window.getComputedStyle(document.body).backgroundColor;
+    
+    // 방법 2: html 요소의 배경색 확인
+    const htmlBgColor = window.getComputedStyle(document.documentElement).backgroundColor;
+    
+    // 방법 3: 가장 큰 영역을 차지하는 요소의 배경색 확인
+    const dominantBgColor = this.findDominantBackgroundColor();
+    
+    // 우선순위: 명시적 body 색상 > 명시적 html 색상 > 주요 요소 색상 > 기본값
+    let finalColor = 'rgb(255, 255, 255)'; // 기본 흰색
+    
+    if (bodyBgColor && bodyBgColor !== 'rgba(0, 0, 0, 0)' && bodyBgColor !== 'transparent') {
+      finalColor = bodyBgColor;
+    } else if (htmlBgColor && htmlBgColor !== 'rgba(0, 0, 0, 0)' && htmlBgColor !== 'transparent') {
+      finalColor = htmlBgColor;
+    } else if (dominantBgColor) {
+      finalColor = dominantBgColor;
+    }
+    
+    console.log(`🎨 배경색 분석: body(${bodyBgColor}), html(${htmlBgColor}), dominant(${dominantBgColor}) → ${finalColor}`);
+    return finalColor;
+  }
+
+  // 🔍 화면에서 가장 넓은 영역을 차지하는 배경색 찾기
+  findDominantBackgroundColor() {
+    try {
+      // 화면 중앙과 모서리 등 여러 지점에서 배경색 샘플링
+      const samplePoints = [
+        { x: window.innerWidth * 0.5, y: window.innerHeight * 0.5 }, // 중앙
+        { x: window.innerWidth * 0.1, y: window.innerHeight * 0.1 }, // 좌상단
+        { x: window.innerWidth * 0.9, y: window.innerHeight * 0.1 }, // 우상단
+        { x: window.innerWidth * 0.1, y: window.innerHeight * 0.9 }, // 좌하단
+        { x: window.innerWidth * 0.9, y: window.innerHeight * 0.9 }, // 우하단
+        { x: window.innerWidth * 0.5, y: window.innerHeight * 0.1 }, // 상단 중앙
+        { x: window.innerWidth * 0.5, y: window.innerHeight * 0.9 }, // 하단 중앙
+      ];
+
+      const colorCounts = {};
+
+      for (const point of samplePoints) {
+        const element = document.elementFromPoint(point.x, point.y);
+        if (element) {
+          const color = this.getEffectiveBackgroundColor(element);
+          if (color && color !== 'transparent' && color !== 'rgba(0, 0, 0, 0)') {
+            colorCounts[color] = (colorCounts[color] || 0) + 1;
+          }
+        }
+      }
+
+      // 가장 많이 나타난 색상 반환
+      const sortedColors = Object.entries(colorCounts).sort((a, b) => b[1] - a[1]);
+      return sortedColors.length > 0 ? sortedColors[0][0] : null;
+
+    } catch (error) {
+      console.warn('🔍 주요 배경색 찾기 실패:', error);
+      return null;
+    }
+  }
+
+  // 🎨 요소의 실제 배경색 찾기 (상위 요소까지 추적)
+  getEffectiveBackgroundColor(element) {
+    let currentElement = element;
+    
+    while (currentElement && currentElement !== document.body) {
+      const style = window.getComputedStyle(currentElement);
+      const bgColor = style.backgroundColor;
+      
+      if (bgColor && bgColor !== 'rgba(0, 0, 0, 0)' && bgColor !== 'transparent') {
+        return bgColor;
+      }
+      
+      currentElement = currentElement.parentElement;
+    }
+    
+    // body까지 확인
+    if (currentElement === document.body) {
+      const bodyStyle = window.getComputedStyle(document.body);
+      const bodyBgColor = bodyStyle.backgroundColor;
+      if (bodyBgColor && bodyBgColor !== 'rgba(0, 0, 0, 0)' && bodyBgColor !== 'transparent') {
+        return bodyBgColor;
+      }
+    }
+    
+    return 'rgb(255, 255, 255)'; // 기본 흰색
+  }
+
+  // 🔍 색상이 어두운지 판단
+  isColorDark(colorString) {
+    try {
+      // RGB 값 추출
+      const rgb = this.parseColorToRGB(colorString);
+      if (!rgb) return false;
+
+      // 상대 밝기 계산 (ITU-R BT.709 기준)
+      const luminance = (0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b) / 255;
+      
+      // 0.5 미만이면 어두운 색상으로 판단
+      const isDark = luminance < 0.5;
+      console.log(`🔍 색상 분석: ${colorString} → RGB(${rgb.r}, ${rgb.g}, ${rgb.b}) → 밝기: ${luminance.toFixed(3)} → ${isDark ? '다크' : '라이트'}`);
+      
+      return isDark;
+    } catch (error) {
+      console.warn('🔍 색상 분석 실패:', error);
+      return false; // 기본적으로 라이트 테마
+    }
+  }
+
+  // 🎨 색상 문자열을 RGB 객체로 변환
+  parseColorToRGB(colorString) {
+    if (!colorString) return null;
+
+    // rgb() 형식
+    const rgbMatch = colorString.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+    if (rgbMatch) {
+      return {
+        r: parseInt(rgbMatch[1]),
+        g: parseInt(rgbMatch[2]),
+        b: parseInt(rgbMatch[3])
+      };
+    }
+
+    // rgba() 형식
+    const rgbaMatch = colorString.match(/rgba\((\d+),\s*(\d+),\s*(\d+),\s*[\d.]+\)/);
+    if (rgbaMatch) {
+      return {
+        r: parseInt(rgbaMatch[1]),
+        g: parseInt(rgbaMatch[2]),
+        b: parseInt(rgbaMatch[3])
+      };
+    }
+
+    // hex 형식 (#ffffff)
+    const hexMatch = colorString.match(/^#([a-fA-F0-9]{6})$/);
+    if (hexMatch) {
+      const hex = hexMatch[1];
+      return {
+        r: parseInt(hex.substr(0, 2), 16),
+        g: parseInt(hex.substr(2, 2), 16),
+        b: parseInt(hex.substr(4, 2), 16)
+      };
+    }
+
+    // 짧은 hex 형식 (#fff)
+    const shortHexMatch = colorString.match(/^#([a-fA-F0-9]{3})$/);
+    if (shortHexMatch) {
+      const hex = shortHexMatch[1];
+      return {
+        r: parseInt(hex[0] + hex[0], 16),
+        g: parseInt(hex[1] + hex[1], 16),
+        b: parseInt(hex[2] + hex[2], 16)
+      };
+    }
+
+    return null;
+  }
+
+  // 🎨 하단 플로팅 UI 테마 업데이트
+  updateBottomFloatingUITheme() {
+    if (!this.bottomFloatingUI) return;
+
+    const isDark = this.currentTheme === 'dark';
+    
+    // 라이트 테마는 흰색, 다크 테마는 검정 + 블러 효과
+    const bgColor = isDark ? 'rgba(0, 0, 0, 0.8)' : 'rgba(255, 255, 255, 0.8)';
+    const textColor = isDark ? '#aaaaaa' : '#1d1d1d';
+    const borderColor = isDark ? 'rgba(255, 255, 255, 1.0)' : 'rgba(29, 29, 29, 0.3)';
+
+    // 컨테이너 배경 업데이트 (블러 효과 포함)
+    this.bottomFloatingUI.style.background = bgColor;
+    this.bottomFloatingUI.style.backdropFilter = 'blur(10px)';
+    this.bottomFloatingUI.style.webkitBackdropFilter = 'blur(10px)';
+    this.bottomFloatingUI.style.color = textColor;
+
+    // 버튼 스타일 업데이트 (투명 배경으로 부모 스타일 상속)
+    if (this.bottomFloatingButton) {
+      this.bottomFloatingButton.style.background = 'transparent';
+      this.bottomFloatingButton.style.color = textColor;
+      this.bottomFloatingButton.style.textAlign = 'center';
+    }
+
+    // SVG 아이콘 색상 업데이트
+    const svgStyle = this.bottomFloatingUI.querySelector('svg style');
+    if (svgStyle) {
+      svgStyle.textContent = `.company-logo { fill: ${textColor}; }`;
+    }
+
+    // 보더 색상 업데이트 - 클래스명으로 구분선 찾아서 업데이트
+    const border1 = this.bottomFloatingUI.querySelector('.tts-bottom-border-1');
+    
+    if (border1) {
+      border1.style.borderTop = `1px solid ${borderColor} !important`;
+      console.log(`🎨 구분선 색상 업데이트: ${borderColor}`);
+    }
+
+    // 상단 플로팅 UI 단축키 정보 구분선 색상 업데이트
+    const shortcutInfo = document.getElementById('tts-floating-shortcut-info');
+    if (shortcutInfo) {
+      const shortcutBorderColor = isDark ? 'rgba(170, 170, 170, 0.4)' : 'rgba(29, 29, 29, 0.4)';
+      const shortcutTextColor = isDark ? 'rgba(170, 170, 170, 0.6)' : 'rgba(29, 29, 29, 0.6)';
+      
+      shortcutInfo.style.borderTop = `1px solid ${shortcutBorderColor}`;
+      shortcutInfo.style.color = shortcutTextColor;
+      console.log(`🎨 상단 플로팅 UI 단축키 구분선 색상 업데이트: ${shortcutBorderColor}`);
+    }
+
+    // 상태 텍스트 재생성 (새 색상 적용)
+    this.updateBottomFloatingUIState();
+
+    console.log(`🎨 하단 플로팅 UI 테마 적용: ${this.currentTheme}`);
+  }
+
+  // 🎯 하단 플로팅 UI 생성 (audiobook-ui 스타일)
+  createBottomFloatingUI() {
+    // 기존 하단 플로팅 UI 제거
+    if (this.bottomFloatingUI) {
+      this.bottomFloatingUI.remove();
+    }
+
+    // 테마별 배경색 설정
+    const isDark = this.currentTheme === 'dark';
+    const bgColor = isDark ? 'rgba(0, 0, 0, 0.8)' : 'rgba(255, 255, 255, 0.8)';
+    const textColor = isDark ? '#aaaaaa' : '#1d1d1d';
+    const borderColor = isDark ? 'rgba(255, 255, 255, 1.0)' : 'rgba(29, 29, 29, 0.3)';
+
+    this.bottomFloatingUI = document.createElement('div');
+    this.bottomFloatingUI.id = 'tts-bottom-floating-ui';
+    this.bottomFloatingUI.style.cssText = `
+      position: fixed !important;
+      left: 0 !important;
+      bottom: 0 !important;
+      width: 100% !important;
+      z-index: 99997 !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      background: ${bgColor} !important;
+      backdrop-filter: blur(10px) !important;
+      -webkit-backdrop-filter: blur(10px) !important;
+      color: ${textColor} !important;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+      display: none !important;
+    `;
+
+    // 상단 보더 라인들
+    const borderContainer = document.createElement('div');
+    borderContainer.style.cssText = `
+      width: 100% !important;
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: center !important;
+      position: relative !important;
+      padding: 0 !important;
+      margin: 0 !important;
+    `;
+
+    // 구분선 (100% 너비) - 테마에 따라 색상 적용
+    const border1 = document.createElement('div');
+    border1.className = 'tts-bottom-border-1';
+    border1.style.cssText = `
+      width: 100% !important;
+      height: 0 !important;
+      border-top: 1px solid ${borderColor} !important;
+      margin: 0 !important;
+    `;
+
+    // 메인 버튼 컨테이너 (아이콘 + 텍스트)
+    const buttonContainer = document.createElement('div');
+    buttonContainer.style.cssText = `
+      width: 100% !important;
+      height: 44px !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      position: relative !important;
+    `;
+
+    // SVG 아이콘 (좌측) - 원본 SVG 수정 버전
+    const svgIcon = document.createElement('div');
+    svgIcon.innerHTML = `
+      <svg width="20" height="20" viewBox="281 404 33 33" xmlns="http://www.w3.org/2000/svg">
+        <style>
+          .company-logo { fill: ${textColor}; }
+        </style>
+        <path class="company-logo" d="M281.9,436.9h32.4v-32.4h-32.4v32.4ZM298,407.1c3.1,0,6,1.1,8.3,2.9l-7.8,7.8,2.5,2.5,7.8-7.8c1.8,2.3,2.9,5.2,2.9,8.3,0,7.5-6.1,13.7-13.7,13.7s-13.7-6.1-13.7-13.7,6.1-13.7,13.7-13.7Z"/>
+      </svg>
+    `;
+    svgIcon.style.cssText = `
+      position: absolute !important;
+      left: 16px !important;
+      top: 50% !important;
+      transform: translateY(-50%) !important;
+      pointer-events: auto !important;
+      cursor: pointer !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+    `;
+
+    // 로고 클릭 시 Supertone 웹사이트 새창으로 열기
+    svgIcon.addEventListener('click', (event) => {
+      event.stopPropagation(); // 버튼 클릭 이벤트와 분리
+      window.open('https://supertone.ai/', '_blank');
+    });
+
+    // 메인 버튼 (텍스트만)
+    this.bottomFloatingButton = document.createElement('button');
+    this.bottomFloatingButton.style.cssText = `
+      width: 100% !important;
+      height: 44px !important;
+      line-height: 39px !important;
+      background: transparent !important;
+      color: ${textColor} !important;
+      border: 0 !important;
+      box-shadow: none !important;
+      font-size: ${this.UI_FONT_SIZE} !important;
+      font-weight: normal !important;
+      text-transform: none !important;
+      cursor: pointer !important;
+      transition: all 0.3s !important;
+      font-family: inherit !important;
+      outline: none !important;
+      padding-top: 0 !important;
+      margin-top: -3px !important;
+      padding-left: 50px !important;
+      text-align: center !important;
+    `;
+
+    // 컨테이너에 아이콘과 버튼 추가
+    buttonContainer.appendChild(svgIcon);
+    buttonContainer.appendChild(this.bottomFloatingButton);
+
+    borderContainer.appendChild(border1);
+    this.bottomFloatingUI.appendChild(borderContainer);
+    this.bottomFloatingUI.appendChild(buttonContainer);
+    
+    // 이벤트 리스너
+    this.bottomFloatingButton.addEventListener('click', (event) => {
+      this.handleBottomFloatingButtonClick(event);
+    });
+
+    document.body.appendChild(this.bottomFloatingUI);
+    
+    // 테마 적용 후 상태 업데이트
+    this.updateBottomFloatingUITheme();
+    this.updateBottomFloatingUIState();
+    
+    console.log('🎯 하단 플로팅 UI 생성 완료');
+  }
+
+  // 🎵 재생 속도를 텍스트로 변환
+  getSpeedText(speed) {
+    if (speed <= 0.6) return '정말 느리게';
+    if (speed <= 0.8) return '조금 느리게';
+    if (speed <= 1.0) return '보통 빠르기로';
+    if (speed <= 1.2) return '조금 빠르게';
+    if (speed <= 1.4) return '빠르게';
+    if (speed <= 1.6) return '제법 빠르게';
+    return '정말 빠르게';
+  }
+
+  // 🎵 속도 메뉴 표시
+  // 🎵 속도 메뉴 표시 (app.js PopupCard 스타일)
+  showSpeedMenu() {
+    // 기존 속도 메뉴가 있다면 제거
+    this.hideSpeedMenu();
+    
+    // 테마 색상 가져오기 (하단 플로팅과 동일한 스타일)
+    const isDark = this.currentTheme === 'dark';
+    const bgColor = isDark ? 'rgba(0, 0, 0, 0.8)' : 'rgba(255, 255, 255, 0.8)';
+    const textColor = isDark ? '#aaaaaa' : '#1d1d1d';
+    const borderColor = isDark ? 'rgba(255, 255, 255, 1.0)' : 'rgba(29, 29, 29, 0.3)';
+    
+    // 팝업 카드 컨테이너 생성 (app.js PopupCard 스타일)
+    this.speedMenuPopup = document.createElement('div');
+    this.speedMenuPopup.id = 'tts-speed-menu-popup';
+    this.speedMenuPopup.style.cssText = `
+      position: fixed !important;
+      bottom: 0 !important;
+      left: 50% !important;
+      transform: translate(-50%, 0) !important;
+      width: 60% !important;
+      min-height: 40vh !important;
+      max-height: 60vh !important;
+      background: ${bgColor} !important;
+      backdrop-filter: blur(10px) !important;
+      -webkit-backdrop-filter: blur(10px) !important;
+      border: 1px solid ${borderColor} !important;
+      border-radius: 3px !important;
+      box-shadow: 0px 0px 60px ${textColor}50 !important;
+      z-index: 100002 !important;
+      line-height: 1.5em !important;
+      padding: 0 !important;
+      overflow-y: auto !important;
+      -ms-overflow-style: none !important;
+      scrollbar-width: none !important;
+      font-family: system-ui, -apple-system, sans-serif !important;
+      animation: slideIn 0.7s ease forwards !important;
+    `;
+    
+    // 스크롤바 숨기기
+    this.speedMenuPopup.style.setProperty('-webkit-scrollbar', 'none', 'important');
+    
+    // 제목 추가 (app.js Typography 스타일)
+    const title = document.createElement('div');
+    title.style.cssText = `
+      margin-bottom: 24px !important;
+      font-weight: 400 !important;
+      -webkit-text-stroke: 0.03em !important;
+      paint-order: stroke fill !important;
+      color: ${textColor} !important;
+      padding: 24px 24px 0 24px !important;
+      text-align: left !important;
+      text-transform: none !important;
+              font-size: ${this.UI_FONT_SIZE} !important;
+    `;
+    title.textContent = '읽는 속도';
+    this.speedMenuPopup.appendChild(title);
+
+    // 각 속도 옵션 생성 (app.js 스타일)
+    this.SPEED_OPTIONS.forEach((speedOption) => {
+      const speedItem = document.createElement('div');
+      speedItem.style.cssText = `
+        padding: 5px 24px 10px 24px !important;
+        cursor: pointer !important;
+        border-radius: 8px !important;
+        -webkit-tap-highlight-color: rgba(139, 69, 19, 0.1) !important;
+        transition: background-color 0.2s !important;
+      `;
+      
+      // Typography 컨테이너 (app.js 스타일)
+      const typography = document.createElement('div');
+      typography.style.cssText = `
+        text-align: left !important;
+        text-transform: none !important;
+      `;
+      
+      // 속도 텍스트 (언더라인 있음, app.js 스타일)
+      const speedText = document.createElement('span');
+      speedText.style.cssText = `
+        color: ${textColor} !important;
+        text-decoration: underline !important;
+        text-underline-offset: 5px !important;
+        text-decoration-color: ${textColor}66 !important;
+        cursor: inherit !important;
+        display: inline !important;
+        font-size: ${this.UI_FONT_SIZE} !important;
+      `;
+      speedText.textContent = speedOption.text;
+      
+      typography.appendChild(speedText);
+      speedItem.appendChild(typography);
+      
+      // 클릭 이벤트 (app.js 스타일)
+      speedItem.addEventListener('mousedown', (e) => {
+        e.stopPropagation();
+        this.selectSpeed(speedOption);
+        this.hideSpeedMenu();
+      });
+
+      // 호버 효과 (app.js 스타일)
+      speedItem.addEventListener('mouseenter', () => {
+        speedItem.style.backgroundColor = 'rgba(139, 69, 19, 0.1) !important';
+      });
+
+      speedItem.addEventListener('mouseleave', () => {
+        speedItem.style.backgroundColor = 'transparent !important';
+      });
+
+      this.speedMenuPopup.appendChild(speedItem);
+    });
+    
+    // 하단 여백 추가 (app.js 스타일)
+    const bottomSpacer = document.createElement('div');
+    bottomSpacer.style.cssText = 'height: 30px !important;';
+    this.speedMenuPopup.appendChild(bottomSpacer);
+
+    // 백드롭 생성 (외곽 클릭 감지용)
+    this.speedMenuBackdrop = document.createElement('div');
+    this.speedMenuBackdrop.id = 'tts-speed-menu-backdrop';
+    this.speedMenuBackdrop.style.cssText = `
+      position: fixed !important;
+      top: 0 !important;
+      left: 0 !important;
+      width: 100% !important;
+      height: 100% !important;
+      background: transparent !important;
+      z-index: 99999 !important;
+    `;
+    
+    // 백드롭 클릭 시 메뉴 닫기
+    this.speedMenuBackdrop.addEventListener('click', () => {
+      this.hideSpeedMenu();
+    });
+    
+    // 문서에 추가 (백드롭 먼저, 그 다음 메뉴)
+    document.body.appendChild(this.speedMenuBackdrop);
+    document.body.appendChild(this.speedMenuPopup);
+
+    // 외부 클릭 시 메뉴 닫기
+    setTimeout(() => {
+      document.addEventListener('click', this.handleSpeedMenuOutsideClick.bind(this));
+    }, 100);
+  }
+
+  // 🎵 속도 메뉴 숨기기
+  hideSpeedMenu() {
+    if (this.speedMenuPopup) {
+      // 슬라이드 아웃 애니메이션 (app.js 스타일)
+      this.speedMenuPopup.style.animation = 'slideOut 0.2s ease forwards !important';
+      setTimeout(() => {
+        if (this.speedMenuPopup && this.speedMenuPopup.parentNode) {
+          this.speedMenuPopup.parentNode.removeChild(this.speedMenuPopup);
+        }
+        this.speedMenuPopup = null;
+        if (this.speedMenuBackdrop) {
+          this.speedMenuBackdrop.remove();
+          this.speedMenuBackdrop = null;
+        }
+      }, 200);
+    }
+    
+    document.removeEventListener('click', this.handleSpeedMenuOutsideClick.bind(this));
+  }
+
+  // 🎵 속도 메뉴 외부 클릭 처리
+  handleSpeedMenuOutsideClick(event) {
+    if (this.speedMenuPopup && !this.speedMenuPopup.contains(event.target)) {
+      this.hideSpeedMenu();
+    }
+  }
+
+  // 🎵 속도 선택 및 테이크 재생성
+  async selectSpeed(speedOption) {
+    const previousSpeed = this.playbackSpeed;
+    this.playbackSpeed = speedOption.speed;
+    
+    // 속도 설정 저장
+    this.saveSpeedSetting(speedOption.speed);
+    
+    console.log(`🎵 속도 선택: ${speedOption.speed}x (${speedOption.text})`);
+    
+    // 메뉴 숨기기
+    this.hideSpeedMenu();
+    
+    // UI 업데이트
+    this.updateBottomFloatingUIState();
+    
+    // 속도가 실제로 변경된 경우에만 재생성
+    if (previousSpeed !== this.playbackSpeed) {
+      this.handleVoiceOrSpeedChange();
+    }
+  }
+
+  // 🎯 하단 플로팅 UI 상태 업데이트
+  updateBottomFloatingUIState() {
+    if (!this.bottomFloatingButton) return;
+
+    // 테마별 색상 설정 (audiobook-ui 원래 색상)
+    const textColor = this.currentTheme === 'dark' ? '#aaaaaa' : '#1d1d1d';
+    const underlineColor = this.currentTheme === 'dark' ? 'rgba(170, 170, 170, 0.4)' : 'rgba(29, 29, 29, 0.4)';
+
+    if (this.isPlaying && !this.isPaused) {
+      // 재생 중
+      const speedText = this.getSpeedText(this.playbackSpeed);
+      
+      this.bottomFloatingButton.innerHTML = `
+        <span style="cursor: pointer; color: ${textColor};">
+          <span style="
+            text-decoration: underline;
+            text-underline-position: under;
+            display: inline;
+            text-decoration-color: ${underlineColor};
+            text-underline-offset: 5%;
+            cursor: pointer;
+            color: ${textColor};
+          " data-action="voice-menu">
+            ${this.selectedVoice.name}
+          </span>
+          님이
+          <span style="
+            color: ${textColor};
+            margin: 0 2px;
+            cursor: pointer;
+            text-decoration: underline;
+            text-underline-position: under;
+            text-decoration-color: ${underlineColor};
+            text-underline-offset: 5%;
+          " data-action="speed-menu">
+            ${speedText}
+          </span>
+          <span style="
+            text-decoration: underline;
+            text-underline-position: under;
+            display: inline;
+            text-decoration-color: ${underlineColor};
+            text-underline-offset: 5%;
+            color: ${textColor};
+          ">
+            읽고 있어요
+          </span>
+        </span>
+      `;
+    } else if (this.isPaused) {
+      // 일시정지 중
+      this.bottomFloatingButton.innerHTML = `
+        <span style="cursor: pointer; color: ${textColor};">
+          <span style="
+            text-decoration: underline;
+            text-underline-position: under;
+            display: inline;
+            text-decoration-color: ${underlineColor};
+            text-underline-offset: 5%;
+            cursor: pointer;
+            color: ${textColor};
+          " data-action="voice-menu">
+            ${this.selectedVoice.name}
+          </span>
+          님이
+          <span style="
+            text-decoration: underline;
+            text-underline-position: under;
+            display: inline;
+            margin-left: 2px;
+            text-decoration-color: ${underlineColor};
+            text-underline-offset: 5%;
+            color: ${textColor};
+          ">
+            쉬고 있어요
+          </span>
+        </span>
+      `;
+    } else {
+      // 정지 상태
+      this.bottomFloatingButton.innerHTML = `
+        <span style="color: ${textColor};">
+          <span style="
+            text-decoration: underline;
+            text-underline-position: under;
+            display: inline;
+            text-decoration-color: ${underlineColor};
+            text-underline-offset: 5%;
+            cursor: pointer;
+            color: ${textColor};
+          " data-action="voice-menu">
+            ${this.selectedVoice.name}
+          </span>
+          님의 목소리로
+          <span style="
+            text-decoration: underline;
+            text-underline-position: under;
+            display: inline;
+            margin-left: 2px;
+            text-decoration-color: ${underlineColor};
+            text-underline-offset: 5%;
+            cursor: pointer;
+            color: ${textColor};
+          " data-action="start-reading">
+            읽어 보세요
+          </span>
+        </span>
+      `;
+    }
+  }
+
+  // 🎯 하단 플로팅 버튼 클릭 처리
+  async handleBottomFloatingButtonClick(event) {
+    // 화자 메뉴 클릭 처리
+    if (event && event.target.dataset.action === 'voice-menu') {
+      event.stopPropagation();
+      this.showVoiceMenu();
+      return;
+    }
+
+    // '읽어 보세요' 클릭 처리
+    if (event && event.target.dataset.action === 'start-reading') {
+      event.stopPropagation();
+      await this.startReadingFromFirst();
+      return;
+    }
+
+    // 속도 메뉴 클릭 처리
+    if (event && event.target.dataset.action === 'speed-menu') {
+      event.stopPropagation();
+      this.showSpeedMenu();
+      return;
+    }
+
+    // 재생/일시정지 처리 (버튼의 다른 영역 클릭)
+    if (this.isPlaying) {
+      if (this.isPaused) {
+        this.resumePlayback();
+      } else {
+        this.pausePlayback();
+      }
+    } else {
+      // 정지 상태에서 버튼 클릭 시도 '읽어 보세요' 클릭과 동일하게 처리
+      await this.startReadingFromFirst();
+    }
+  }
+
+  // 🎯 첫 번째 테이크부터 읽기 시작
+  async startReadingFromFirst() {
+    // 수집된 첫 번째 테이크 자동 재생
+    if (this.preTakes && this.preTakes.length > 0) {
+      console.log('🎯 "읽어 보세요" 클릭: 수집된 테이크로 자동 재생 시작');
+      await this.startPlaybackFromTake(this.preTakes[0]);
+    } else {
+      console.log('🔍 "읽어 보세요" 클릭: 테이크가 없어서 페이지 분석 시작');
+      this.updateStatus('페이지 분석 중...', '#FF9800');
+      // 페이지 분석 후 첫 번째 테이크 재생
+      try {
+        await this.analyzePageAndCreateTakes();
+        if (this.preTakes && this.preTakes.length > 0) {
+          await this.startPlaybackFromTake(this.preTakes[0]);
+        } else {
+          this.updateStatus('읽을 내용을 찾을 수 없습니다', '#F44336');
+        }
+      } catch (error) {
+        console.error('페이지 분석 실패:', error);
+        this.updateStatus('페이지 분석 실패', '#F44336');
+      }
+    }
+  }
+
+  // 🎯 화자 변경 메뉴 표시
+  // 🎵 음성 메뉴 표시 (app.js PopupCard 스타일)
+  showVoiceMenu() {
+    // 기존 메뉴 제거
+    if (this.voiceMenuPopup) {
+      this.voiceMenuPopup.remove();
+    }
+
+    // 테마 색상 가져오기 (하단 플로팅과 동일한 스타일)
+    const isDark = this.currentTheme === 'dark';
+    const bgColor = isDark ? 'rgba(0, 0, 0, 0.8)' : 'rgba(255, 255, 255, 0.8)';
+    const textColor = isDark ? '#aaaaaa' : '#1d1d1d';
+    const borderColor = isDark ? 'rgba(255, 255, 255, 1.0)' : 'rgba(29, 29, 29, 0.3)';
+    
+    // 팝업 카드 컨테이너 생성 (app.js PopupCard 스타일)
+    this.voiceMenuPopup = document.createElement('div');
+    this.voiceMenuPopup.id = 'tts-voice-menu-popup';
+    this.voiceMenuPopup.style.cssText = `
+      position: fixed !important;
+      bottom: 0 !important;
+      left: 50% !important;
+      transform: translate(-50%, 0) !important;
+      width: 60% !important;
+      min-height: 40vh !important;
+      max-height: 60vh !important;
+      background: ${bgColor} !important;
+      backdrop-filter: blur(10px) !important;
+      -webkit-backdrop-filter: blur(10px) !important;
+      border: 1px solid ${borderColor} !important;
+      border-radius: 3px !important;
+      box-shadow: 0px 0px 60px ${textColor}50 !important;
+      z-index: 100002 !important;
+      line-height: 1.5em !important;
+      padding: 0 !important;
+      overflow-y: auto !important;
+      -ms-overflow-style: none !important;
+      scrollbar-width: none !important;
+      font-family: system-ui, -apple-system, sans-serif !important;
+      animation: slideIn 0.7s ease forwards !important;
+    `;
+    
+    // 애니메이션 키프레임 추가 (app.js 스타일)
+    if (!document.getElementById('tts-voice-menu-keyframes')) {
+      const style = document.createElement('style');
+      style.id = 'tts-voice-menu-keyframes';
+      style.textContent = `
+        @keyframes slideIn {
+          0% { transform: translate(-50%, calc(100% + 80px)) rotate(0deg); opacity: 1; }
+          100% { transform: translate(-50%, 0) rotate(0deg); opacity: 1; }
+        }
+        @keyframes slideOut {
+          0% { transform: translate(-50%, 0) rotate(0deg); visibility: visible; opacity: 1; }
+          99.9% { transform: translate(-50%, calc(100% + 80px)) rotate(0deg); visibility: visible; opacity: 1; }
+          100% { transform: translate(-50%, calc(100% + 80px)) rotate(0deg); visibility: hidden; opacity: 1; }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+    
+    // 스크롤바 숨기기
+    this.voiceMenuPopup.style.setProperty('-webkit-scrollbar', 'none', 'important');
+    
+    // 제목 추가 (app.js Typography 스타일)
+    const title = document.createElement('div');
+    title.style.cssText = `
+      margin-bottom: 24px !important;
+      font-weight: 400 !important;
+      -webkit-text-stroke: 0.03em !important;
+      paint-order: stroke fill !important;
+      color: ${textColor} !important;
+      padding: 24px 24px 0 24px !important;
+      text-align: left !important;
+      text-transform: none !important;
+              font-size: ${this.UI_FONT_SIZE} !important;
+    `;
+    title.textContent = '읽는 이';
+    this.voiceMenuPopup.appendChild(title);
+
+    // 각 음성 옵션 생성 (app.js 스타일)
+    this.VOICES.forEach((voice) => {
+      const voiceOption = document.createElement('div');
+      voiceOption.style.cssText = `
+        padding: 5px 24px 10px 24px !important;
+        cursor: pointer !important;
+        border-radius: 8px !important;
+        -webkit-tap-highlight-color: rgba(139, 69, 19, 0.1) !important;
+        transition: background-color 0.2s !important;
+      `;
+      
+      // Typography 컨테이너 (app.js 스타일)
+      const typography = document.createElement('div');
+      typography.style.cssText = `
+        text-align: left !important;
+        text-transform: none !important;
+      `;
+      
+      // 음성 이름 (언더라인 있음, app.js 스타일)
+      const voiceName = document.createElement('span');
+      voiceName.style.cssText = `
+        color: ${textColor} !important;
+        text-decoration: underline !important;
+        text-underline-offset: 5px !important;
+        text-decoration-color: ${textColor}66 !important;
+        cursor: inherit !important;
+        display: inline !important;
+        font-size: ${this.UI_FONT_SIZE} !important;
+      `;
+      voiceName.textContent = voice.name;
+      
+      // 음성 설명 (투명도 70%, app.js 스타일)
+      const voiceDescription = document.createElement('span');
+      voiceDescription.style.cssText = `
+        color: ${textColor}B3 !important;
+        white-space: pre-line !important;
+        cursor: default !important;
+        font-size: ${this.UI_FONT_SIZE} !important;
+      `;
+      voiceDescription.textContent = voice.description;
+      
+      typography.appendChild(voiceName);
+      typography.appendChild(voiceDescription);
+      voiceOption.appendChild(typography);
+      
+      // 클릭 이벤트 (app.js 스타일)
+      voiceOption.addEventListener('mousedown', (e) => {
+        e.stopPropagation();
+        this.selectVoice(voice);
+        this.hideVoiceMenu();
+      });
+
+      // 호버 효과 (app.js 스타일)
+      voiceOption.addEventListener('mouseenter', () => {
+        voiceOption.style.backgroundColor = 'rgba(139, 69, 19, 0.1) !important';
+      });
+
+      voiceOption.addEventListener('mouseleave', () => {
+        voiceOption.style.backgroundColor = 'transparent !important';
+      });
+
+      this.voiceMenuPopup.appendChild(voiceOption);
+    });
+    
+    // 하단 여백 추가 (app.js 스타일)
+    const bottomSpacer = document.createElement('div');
+    bottomSpacer.style.cssText = 'height: 30px !important;';
+    this.voiceMenuPopup.appendChild(bottomSpacer);
+
+    // 백드롭 생성 (외곽 클릭 감지용)
+    this.voiceMenuBackdrop = document.createElement('div');
+    this.voiceMenuBackdrop.id = 'tts-voice-menu-backdrop';
+    this.voiceMenuBackdrop.style.cssText = `
+      position: fixed !important;
+      top: 0 !important;
+      left: 0 !important;
+      width: 100% !important;
+      height: 100% !important;
+      background: transparent !important;
+      z-index: 99999 !important;
+    `;
+    
+    // 백드롭 클릭 시 메뉴 닫기
+    this.voiceMenuBackdrop.addEventListener('click', () => {
+      this.hideVoiceMenu();
+    });
+    
+    // 문서에 추가 (백드롭 먼저, 그 다음 메뉴)
+    document.body.appendChild(this.voiceMenuBackdrop);
+    document.body.appendChild(this.voiceMenuPopup);
+    
+    // 외부 클릭 시 메뉴 숨기기
+    setTimeout(() => {
+      document.addEventListener('click', this.handleVoiceMenuOutsideClick.bind(this));
+    }, 0);
+  }
+
+  // 🎯 화자 변경 메뉴 숨기기 (app.js 스타일)
+  hideVoiceMenu() {
+    if (this.voiceMenuPopup) {
+      // 슬라이드 아웃 애니메이션 (app.js 스타일)
+      this.voiceMenuPopup.style.animation = 'slideOut 0.2s ease forwards !important';
+      
+      setTimeout(() => {
+        if (this.voiceMenuPopup) {
+          this.voiceMenuPopup.remove();
+          this.voiceMenuPopup = null;
+        }
+        if (this.voiceMenuBackdrop) {
+          this.voiceMenuBackdrop.remove();
+          this.voiceMenuBackdrop = null;
+        }
+      }, 200);
+    }
+  }
+
+  // 🎯 화자 선택
+  selectVoice(voice) {
+    const previousVoiceId = this.selectedVoice.id;
+    this.selectedVoice = voice;
+    
+    // 화자 설정 저장
+    this.saveVoiceSetting(voice);
+    
+    console.log(`🎤 화자 변경: ${voice.name} (${voice.id})`);
+    
+    // 화자가 실제로 변경된 경우에만 처리
+    if (previousVoiceId !== voice.id) {
+      this.handleVoiceOrSpeedChange();
+    }
+    
+    // 하단 플로팅 UI 상태 업데이트
+    this.updateBottomFloatingUIState();
+    
+    // 화자 변경 팝업의 선택 상태도 업데이트
+    if (this.voiceMenuPopup) {
+      this.updateVoiceMenuSelection(voice.id);
+    }
+    
+    // 기존 UI도 업데이트
+    this.updateStatus(`화자 변경: ${voice.name}`, '#4CAF50');
+  }
+
+  // 🎤 화자/속도 변경 처리 (기존 테이크 재생 로직 활용)
+  handleVoiceOrSpeedChange() {
+    console.log('🎤 화자/속도 변경으로 인한 재시작 처리 시작');
+    
+    // 현재 재생 중인 테이크가 있는 경우에만 처리
+    if (this.isPlaying && this.currentPlayList && this.currentTakeIndex >= 0) {
+      const currentTake = this.currentPlayList[this.currentTakeIndex];
+      if (currentTake) {
+        // 모든 버퍼링 제거
+        this.clearAllBuffering();
+        
+        // 현재 재생 중지
+        if (this.currentAudio) {
+          this.currentAudio.pause();
+          this.currentAudio = null;
+        }
+        
+        // 단어 트래킹 중지
+        this.stopWordTracking();
+        
+        // 기존 테이크 재생 로직을 사용하여 현재 테이크부터 다시 시작
+        console.log(`🎯 현재 테이크부터 새로운 설정으로 재시작: ${currentTake.id} (${this.currentTakeIndex + 1}/${this.currentPlayList.length})`);
+        
+        // 상태를 재생 중으로 유지하고 현재 테이크부터 재생
+        this.isPlaying = true;
+        this.isPaused = false;
+        this.updateBottomFloatingUIState();
+        
+        // 기존 테이크 재생 로직 활용
+        this.playTakeAtIndex(this.currentTakeIndex);
+      }
+    }
+  }
+
+  // 🎤 화자 변경 처리 (레거시 - 호환성 유지)
+  handleVoiceChange() {
+    console.log('🎤 화자 변경으로 인한 재시작 처리 시작');
+    
+    // 1. 현재 재생 상태 저장
+    const wasPlaying = this.isPlaying;
+    const currentTakeIndex = this.currentTakeIndex;
+    const currentPlayList = this.currentPlayList;
+    
+    // 2. 모든 버퍼링 제거
+    this.clearAllBuffering();
+    
+    // 3. 현재 오디오 정지
+    if (this.currentAudio) {
+      this.currentAudio.pause();
+      this.currentAudio = null;
+    }
+    
+    // 4. 상태 초기화
+    this.isPlaying = false;
+    this.isPaused = false;
+    
+    // 5. 재생 중이었다면 현재 테이크부터 새 목소리로 재시작
+    if (wasPlaying && currentPlayList && currentPlayList.length > 0 && currentTakeIndex >= 0) {
+      console.log(`🎤 마지막 테이크 ${currentTakeIndex + 1}번부터 새 목소리로 재시작`);
+      this.updateStatus(`새 목소리로 재시작 중...`, '#FF9800');
+      
+      // 잠시 후 재시작 (UI 업데이트 후)
+      setTimeout(() => {
+        this.playTakeAtIndex(currentTakeIndex);
+      }, 500);
+    } else {
+      // 재생 중이 아니었다면 단순히 상태만 업데이트
+      this.updateBottomFloatingUIState();
+    }
+  }
+
+  // 🗑️ 모든 버퍼링 제거
+  clearAllBuffering() {
+    console.log('🗑️ 모든 버퍼링 제거 시작');
+    
+    // 1. audioBuffer의 모든 URL 해제
+    Object.values(this.audioBuffer).forEach(url => {
+      if (url && typeof url === 'string' && url.startsWith('blob:')) {
+        URL.revokeObjectURL(url);
+        console.log(`🗑️ 버퍼 URL 해제: ${url.substring(0, 30)}...`);
+      }
+    });
+    
+    // 2. audioBuffer 초기화
+    this.audioBuffer = {};
+    
+    // 3. 버퍼링 진행 중인 테이크들 중단
+    this.bufferingTakes.clear();
+    
+    // 4. AbortController로 진행 중인 요청 중단
+    if (this.abortController) {
+      this.abortController.abort();
+      console.log('🗑️ 진행 중인 TTS 요청 중단');
+    }
+    this.abortController = new AbortController();
+    
+    // 5. 플레이리스트의 버퍼링 상태 초기화
+    if (this.currentPlayList) {
+      this.currentPlayList.forEach(take => {
+        take.isBuffered = false;
+        take.audioUrl = null;
+      });
+    }
+    
+    console.log('✅ 모든 버퍼링 제거 완료');
+  }
+
+  // 🎯 화자 메뉴에서 선택 상태 업데이트
+  updateVoiceMenuSelection(selectedVoiceId) {
+    if (!this.voiceMenuPopup) return;
+
+    const voiceOptions = this.voiceMenuPopup.querySelectorAll('div[data-voice-id]');
+    voiceOptions.forEach(option => {
+      const voiceId = option.dataset.voiceId;
+      const voiceName = option.querySelector('span');
+      
+      if (voiceId === selectedVoiceId) {
+        // 선택된 화자 스타일 적용
+        option.style.background = 'rgba(255, 255, 255, 0.1) !important';
+        if (voiceName) {
+          voiceName.style.color = '#4CAF50 !important';
+        }
+      } else {
+        // 선택되지 않은 화자 스타일 제거
+        option.style.background = 'transparent !important';
+        if (voiceName) {
+          voiceName.style.color = 'white !important';
+        }
+      }
+    });
+  }
+
+  // 🎯 재생/일시정지 제어
+  pausePlayback() {
+    if (this.currentAudio) {
+      this.currentAudio.pause();
+      this.isPaused = true;
+      this.isPlaying = true; // 일시정지 상태에서도 isPlaying은 true
+      this.updateBottomFloatingUIState();
+      this.updateStatus('일시정지됨', '#FF9800');
+      console.log('⏸️ 재생 일시정지');
+    }
+  }
+
+  resumePlayback() {
+    if (this.currentAudio && this.isPaused) {
+      this.currentAudio.play();
+      this.isPaused = false;
+      this.isPlaying = true;
+      this.updateBottomFloatingUIState();
+      this.updateStatus(`재생 중... (${this.currentPlayListIndex + 1}/${this.currentPlayList.length})`, '#4CAF50');
+      console.log('▶️ 재생 재개');
     }
   }
 
@@ -2289,28 +4069,37 @@ class TTSManager {
     return meaningful.slice(0, 2); // 최대 2개까지만
   }
 
-  // 최적의 분할 위치 찾기 (App.js 로직 참고)
+  // 최적의 분할 위치 찾기 (App.js 로직 참고, 일본어 문장 기호 포함)
   findBestCutPosition(text, maxLength) {
-    // 1순위: 문장 끝 기호들 (마침표, 느낌표, 물음표 등)
+    // 1순위: 기본 문장 끝 기호들
     const lastPeriod = text.lastIndexOf('.', maxLength);
     const lastExclam = text.lastIndexOf('!', maxLength);
     const lastQuestion = text.lastIndexOf('?', maxLength);
     const lastTilde = text.lastIndexOf('~', maxLength);
     
-    // 한국어 문장 끝 기호들
-    const lastKoreanPeriod = text.lastIndexOf('。', maxLength);
-    const lastKoreanComma = text.lastIndexOf('、', maxLength);
+    // 🇯🇵 일본어 문장 끝 기호들 (App.js 참고)
+    const lastJapanesePeriod = text.lastIndexOf('。', maxLength);      // 일본어 마침표
+    const lastJapaneseComma = text.lastIndexOf('、', maxLength);       // 일본어 독점 (쉼표)
+    const lastJapaneseExclam = text.lastIndexOf('！', maxLength);      // 일본어 느낌표
+    const lastJapaneseQuestion = text.lastIndexOf('？', maxLength);    // 일본어 물음표
     
-    // 따옴표들 (문장 끝일 수 있음)
+    // 🇯🇵 일본어 특수 문장 기호들
+    const lastJapaneseQuote1 = text.lastIndexOf('」', maxLength);      // 일본어 닫는 따옴표
+    const lastJapaneseQuote2 = text.lastIndexOf('』', maxLength);      // 일본어 이중 닫는 따옴표
+    const lastJapaneseQuote3 = text.lastIndexOf('〉', maxLength);      // 일본어 꺾쇠
+    const lastJapaneseQuote4 = text.lastIndexOf('》', maxLength);      // 일본어 이중 꺾쇠
+    
+    // 일반 따옴표들
     const lastQuote1 = text.lastIndexOf('"', maxLength);
     const lastQuote2 = text.lastIndexOf('"', maxLength);
     const lastQuote3 = text.lastIndexOf("'", maxLength);
     const lastQuote4 = text.lastIndexOf("'", maxLength);
     
-    // 1순위: 완전한 문장 끝 기호들
+    // 1순위: 완전한 문장 끝 기호들 (일본어 포함)
     const sentenceEndCandidates = [
-      lastPeriod, lastExclam, lastQuestion, lastTilde, 
-      lastKoreanPeriod, lastKoreanComma,
+      lastPeriod, lastExclam, lastQuestion, lastTilde,
+      lastJapanesePeriod, lastJapaneseComma, lastJapaneseExclam, lastJapaneseQuestion,
+      lastJapaneseQuote1, lastJapaneseQuote2, lastJapaneseQuote3, lastJapaneseQuote4,
       lastQuote1, lastQuote2, lastQuote3, lastQuote4
     ].filter(idx => idx > 0);
     
@@ -2319,8 +4108,14 @@ class TTSManager {
     const lastSemicolon = text.lastIndexOf(';', maxLength);
     const lastColon = text.lastIndexOf(':', maxLength);
     
+    // 🇯🇵 일본어 절 구분 기호들
+    const lastJapaneseMiddleDot = text.lastIndexOf('・', maxLength);    // 일본어 중점
+    const lastJapaneseColon = text.lastIndexOf('：', maxLength);       // 일본어 콜론
+    const lastJapaneseSemicolon = text.lastIndexOf('；', maxLength);   // 일본어 세미콜론
+    
     const clauseEndCandidates = [
-      lastComma, lastSemicolon, lastColon
+      lastComma, lastSemicolon, lastColon,
+      lastJapaneseMiddleDot, lastJapaneseColon, lastJapaneseSemicolon
     ].filter(idx => idx > 0);
     
     // 3순위: 공백
@@ -2792,25 +4587,48 @@ class TTSManager {
   }
 
   // 언어 감지
-  // 🎯 개선된 언어 감지 로직 (테이크별 감지 지원)
+  // 🎯 개선된 언어 감지 로직 (일본어 포함, App.js 기반)
   async detectLanguage(text) {
-    // 텍스트 정리 (공백, 숫자, 특수문자 제외하고 실제 문자만)
+    // 텍스트 정리 (공백, 숫자, 기본 문장부호 제외하고 실제 문자만)
     const cleanText = text.replace(/[\s\d\p{P}]/gu, '');
     
-    // 한글 패턴 (한글 자음, 모음, 완성형 한글)
+    // 🇰🇷 한글 패턴 (한글 자음, 모음, 완성형 한글)
     const koreanPattern = /[ㄱ-ㅎㅏ-ㅣ가-힣]/g;
-    // 영문 패턴 (알파벳만)
+    
+    // 🇺🇸 영문 패턴 (알파벳만)
     const englishPattern = /[a-zA-Z]/g;
+    
+    // 🇯🇵 일본어 패턴
+    const hiraganaPattern = /[ひらがな\u3040-\u309F]/g;     // 히라가나
+    const katakanaPattern = /[カタカナ\u30A0-\u30FF]/g;     // 가타카나
+    const kanjiPattern = /[一-龯]/g;                        // 한자 (일본어 문맥)
+    
+    // 일본어 특유의 문자 조합 패턴
+    const japaneseParticles = /[はがのをにでと]/g;           // 일본어 조사
+    const japaneseEndings = /[ますですだった]/g;              // 일본어 어미
     
     const koreanMatches = cleanText.match(koreanPattern) || [];
     const englishMatches = cleanText.match(englishPattern) || [];
+    const hiraganaMatches = cleanText.match(hiraganaPattern) || [];
+    const katakanaMatches = cleanText.match(katakanaPattern) || [];
+    const kanjiMatches = cleanText.match(kanjiPattern) || [];
+    const particleMatches = cleanText.match(japaneseParticles) || [];
+    const endingMatches = cleanText.match(japaneseEndings) || [];
     
     const koreanCount = koreanMatches.length;
     const englishCount = englishMatches.length;
-    const totalLetters = koreanCount + englishCount;
+    const hiraganaCount = hiraganaMatches.length;
+    const katakanaCount = katakanaMatches.length;
+    const kanjiCount = kanjiMatches.length;
+    const japaneseGrammarCount = particleMatches.length + endingMatches.length;
+    
+    // 일본어 총 문자수 (히라가나 + 가타카나 + 일본어 맥락의 한자)
+    const japaneseCount = hiraganaCount + katakanaCount + (kanjiCount * 0.7); // 한자는 70% 가중치
+    const totalLetters = koreanCount + englishCount + japaneseCount;
     
     console.log(`언어 감지 분석: "${text.substring(0, 30)}..."`);
-    console.log(`한글: ${koreanCount}자, 영문: ${englishCount}자, 전체: ${totalLetters}자`);
+    console.log(`한글: ${koreanCount}자, 영문: ${englishCount}자, 일본어: ${japaneseCount.toFixed(1)}자`);
+    console.log(`  ㄴ 히라가나: ${hiraganaCount}, 가타카나: ${katakanaCount}, 한자: ${kanjiCount}, 문법: ${japaneseGrammarCount}`);
     
     // 텍스트가 너무 짧으면 기본값 한국어
     if (totalLetters < 5) {
@@ -2818,22 +4636,43 @@ class TTSManager {
       return 'ko';
     }
     
-    // 한글 비율 계산
+    // 각 언어 비율 계산
     const koreanRatio = koreanCount / totalLetters;
     const englishRatio = englishCount / totalLetters;
+    const japaneseRatio = japaneseCount / totalLetters;
     
-    console.log(`한글 비율: ${(koreanRatio * 100).toFixed(1)}%, 영문 비율: ${(englishRatio * 100).toFixed(1)}%`);
+    console.log(`비율 - 한글: ${(koreanRatio * 100).toFixed(1)}%, 영문: ${(englishRatio * 100).toFixed(1)}%, 일본어: ${(japaneseRatio * 100).toFixed(1)}%`);
     
-    // 🎯 더 엄격한 언어 감지 기준
+    // 🎯 일본어 우선 감지 (일본어 글자가 5% 이상이면 일본어)
+    if (hiraganaCount > 0 || katakanaCount > 0 || japaneseGrammarCount > 0) {
+      if (japaneseRatio >= 0.05 || japaneseGrammarCount >= 1) {  // 일본어 비율 5% 이상 또는 문법 요소 1개 이상
+        console.log('→ 일본어로 감지 (일본어 글자 5% 이상 또는 문법 요소 발견)');
+        return 'ja';
+      }
+    }
+    
+    // 🎯 한국어 감지
     if (koreanRatio >= 0.3) {  // 한글이 30% 이상이면 한국어
       console.log('→ 한국어로 감지');
       return 'ko';
-    } else if (englishRatio >= 0.7) {  // 영문이 70% 이상이면 영어
+    }
+    
+    // 🎯 영어 감지
+    if (englishRatio >= 0.7) {  // 영문이 70% 이상이면 영어
       console.log('→ 영어로 감지');
       return 'en';
-    } else if (koreanCount > englishCount) {  // 한글 문자수가 더 많으면 한국어
+    }
+    
+    // 🎯 상대적 비교로 최종 결정
+    if (japaneseCount > koreanCount && japaneseCount > englishCount) {
+      console.log('→ 일본어 문자수 우세로 일본어');
+      return 'ja';
+    } else if (koreanCount > englishCount) {
       console.log('→ 한글 문자수 우세로 한국어');
       return 'ko';
+    } else if (englishCount > 0) {
+      console.log('→ 영문 문자수 우세로 영어');
+      return 'en';
     } else {
       console.log('→ 기본값 한국어');
       return 'ko';
@@ -2905,10 +4744,11 @@ class TTSManager {
       language: language,
       style: voice.id === '6151a25f6a7f5b1e000023' ? 'excited' : 'neutral',
       model: 'sona_speech_1',
+      speed: this.playbackSpeed,
       voice_settings: {
         pitch_shift: 0,
         pitch_variance: 1,
-        speed: language === 'ko' ? 1.3 : 1.1
+        speed: this.playbackSpeed
       }
     };
 
@@ -3104,10 +4944,11 @@ class TTSManager {
       language: take.language,
       style: this.selectedVoice.id === '6151a25f6a7f5b1e000023' ? 'excited' : 'neutral',
       model: 'sona_speech_1',
+      speed: this.playbackSpeed,
       voice_settings: {
         pitch_shift: 0,
         pitch_variance: 1,
-        speed: take.language === 'ko' ? 1.3 : 1.1  // 한국어는 1.3, 영어는 1.1
+        speed: this.playbackSpeed
       }
     };
 

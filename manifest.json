@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "TTS Text Reader",
+  "name": "TLDRL / Supertone Reader",
   "version": "1.0",
-  "description": "웹사이트의 텍스트를 선택하고 TTS로 읽어주는 익스텐션",
+  "description": "Too Long; Didn't Read? Listen.",
   "permissions": [
     "activeTab",
     "scripting"
@@ -18,6 +18,18 @@
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "TTS Text Reader"
+    "default_title": "TLDRL / Supertone Reader",
+    "default_icon": {
+      "16": "icon16_on.png",
+      "32": "icon32_on.png",
+      "48": "icon48_on.png",
+      "128": "icon128_on.png"
+    }
+  },
+  "icons": {
+    "16": "icon16_on.png",
+    "32": "icon32_on.png",
+    "48": "icon48_on.png",
+    "128": "icon128_on.png"
   }
 }

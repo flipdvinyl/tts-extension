@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_1" xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 159.6 159.6">
+  <!-- Generator: Adobe Illustrator 29.6.0, SVG Export Plug-In . SVG Version: 2.1.1 Build 207)  -->
+  <defs>
+    <style>
+      .st0 {
+        fill: #ccc;
+      }
+
+      .st1 {
+        fill: blue;
+      }
+    </style>
+  </defs>
+  <rect class="st1" width="159.6" height="159.6"/>
+  <rect class="st0" x="15.5" y="13.1" width="41.3" height="5.2"/>
+  <rect class="st0" x="33.6" y="13.1" width="5.2" height="57.2"/>
+  <polygon class="st0" points="143.8 144.2 110 144.2 110 87.1 115.1 87.1 115.1 139.1 143.8 139.1 143.8 144.2"/>
+  <polygon class="st0" points="99.2 70.2 65.3 70.2 65.3 13.1 70.5 13.1 70.5 65.1 99.2 65.1 99.2 70.2"/>
+  <path class="st0" d="M36.2,144.2h-18.5v-57.2h18.5c7.6,0,17.5,14.3,17.5,29.6s-10.4,27.6-17.5,27.6ZM22.8,139.1h13.4c3.7,0,12.3-8.7,12.3-22.4s-9.2-24.4-12.3-24.4h-13.4v46.8Z"/>
+  <path class="st0" d="M70.5,144.2h-5.2v-57.2h21.7c4.1,0,12.1,7.3,12.1,16.1s-8,16.1-12.1,16.1h-16.6v25ZM70.5,114.1h16.6c1.3-.2,7-4.9,7-10.9s-5.7-10.7-7.1-10.9h-16.5v21.8Z"/>
+  <rect class="st0" x="89.2" y="113.2" width="5.2" height="31.9" transform="translate(-40.1 41.4) rotate(-20.9)"/>
+  <rect class="st0" x="121" y="11.9" width="5.2" height="16.4"/>
+  <rect class="st0" x="109.4" y="56.3" width="22.3" height="5.2" transform="translate(23.6 151.7) rotate(-69.8)"/>
+</svg>
