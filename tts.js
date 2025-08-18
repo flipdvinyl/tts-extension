@@ -2871,13 +2871,233 @@ class TTSManager {
     }
   }
 
-  // 음성 변환
+  // 🔍 멀티 청크 필요 여부 확인
+  needsMultiChunk(text, language) {
+    const maxLength = language === 'en' ? 300 : 200;
+    return text.length > maxLength;
+  }
+
+  // 🔄 텍스트를 적절한 크기로 분할
+  smartChunkSplit(text, language) {
+    const maxLength = language === 'en' ? 300 : 200;
+    const chunks = [];
+    let remainingText = text;
+    
+    while (remainingText.length > maxLength) {
+      const cutIndex = this.findBestCutPosition(remainingText, maxLength);
+      chunks.push(remainingText.slice(0, cutIndex).trim());
+      remainingText = remainingText.slice(cutIndex).trim();
+    }
+    
+    if (remainingText.length > 0) {
+      chunks.push(remainingText);
+    }
+    
+    console.log(`📝 텍스트 분할 완료: ${chunks.length}개 청크`, chunks.map((chunk, i) => `${i+1}: "${chunk.substring(0, 30)}..."`));
+    return chunks;
+  }
+
+  // 🎵 단일 청크 TTS 생성
+  async generateSingleChunkAudio(text, voice, language, chunkIndex = 0) {
+    const requestData = {
+      text: text,
+      voice_id: voice.id,
+      language: language,
+      style: voice.id === '6151a25f6a7f5b1e000023' ? 'excited' : 'neutral',
+      model: 'sona_speech_1',
+      voice_settings: {
+        pitch_shift: 0,
+        pitch_variance: 1,
+        speed: language === 'ko' ? 1.3 : 1.1
+      }
+    };
+
+    console.log(`🎵 청크 ${chunkIndex + 1} TTS 생성 중...`);
+    
+    const response = await fetch(`${this.apiUrl}/api/tts`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestData),
+      signal: this.abortController?.signal
+    });
+
+    if (!response.ok) {
+      throw new Error(`TTS API 오류: ${response.status} - ${response.statusText}`);
+    }
+
+    const audioBlob = await response.blob();
+    return URL.createObjectURL(audioBlob);
+  }
+
+  // 🔗 오디오 파일들을 하나로 병합
+  async mergeAudioUrls(audioUrls) {
+    console.log(`🔗 ${audioUrls.length}개 오디오 파일 병합 시작...`);
+    
+    try {
+      // 모든 오디오 파일을 AudioBuffer로 변환
+      const audioBuffers = await Promise.all(
+        audioUrls.map(async (url, index) => {
+          console.log(`📥 오디오 ${index + 1} 로딩 중...`);
+          const response = await fetch(url);
+          const arrayBuffer = await response.arrayBuffer();
+          const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+          return await audioContext.decodeAudioData(arrayBuffer);
+        })
+      );
+
+      console.log('📊 오디오 버퍼 정보:', audioBuffers.map((buffer, i) => 
+        `${i+1}: ${buffer.duration.toFixed(2)}초, ${buffer.sampleRate}Hz`
+      ));
+
+      // 병합된 오디오 버퍼 생성
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const totalLength = audioBuffers.reduce((sum, buffer) => sum + buffer.length, 0);
+      const sampleRate = audioBuffers[0].sampleRate;
+      const numberOfChannels = audioBuffers[0].numberOfChannels;
+
+      const mergedBuffer = audioContext.createBuffer(numberOfChannels, totalLength, sampleRate);
+
+      // 오디오 데이터 복사
+      let offset = 0;
+      for (const buffer of audioBuffers) {
+        for (let channel = 0; channel < numberOfChannels; channel++) {
+          mergedBuffer.getChannelData(channel).set(buffer.getChannelData(channel), offset);
+        }
+        offset += buffer.length;
+      }
+
+      console.log(`🎵 병합 완료: 총 ${mergedBuffer.duration.toFixed(2)}초`);
+
+      // AudioBuffer를 Blob으로 변환
+      const length = mergedBuffer.length;
+      const audioData = new Float32Array(length * numberOfChannels);
+      
+      for (let channel = 0; channel < numberOfChannels; channel++) {
+        const channelData = mergedBuffer.getChannelData(channel);
+        for (let i = 0; i < length; i++) {
+          audioData[i * numberOfChannels + channel] = channelData[i];
+        }
+      }
+
+      // WAV 파일로 인코딩
+      const wavBlob = this.encodeWAV(audioData, sampleRate, numberOfChannels);
+      const mergedUrl = URL.createObjectURL(wavBlob);
+
+      // 임시 URL들 정리
+      audioUrls.forEach(url => URL.revokeObjectURL(url));
+
+      return mergedUrl;
+
+    } catch (error) {
+      console.error('🔗 오디오 병합 실패:', error);
+      throw error;
+    }
+  }
+
+  // 🎵 WAV 인코딩 헬퍼
+  encodeWAV(audioData, sampleRate, numberOfChannels) {
+    const length = audioData.length;
+    const buffer = new ArrayBuffer(44 + length * 2);
+    const view = new DataView(buffer);
+    
+    // WAV 헤더 작성
+    const writeString = (offset, string) => {
+      for (let i = 0; i < string.length; i++) {
+        view.setUint8(offset + i, string.charCodeAt(i));
+      }
+    };
+    
+    writeString(0, 'RIFF');
+    view.setUint32(4, 36 + length * 2, true);
+    writeString(8, 'WAVE');
+    writeString(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, numberOfChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * numberOfChannels * 2, true);
+    view.setUint16(32, numberOfChannels * 2, true);
+    view.setUint16(34, 16, true);
+    writeString(36, 'data');
+    view.setUint32(40, length * 2, true);
+    
+    // 오디오 데이터 작성
+    let offset = 44;
+    for (let i = 0; i < length; i++) {
+      const sample = Math.max(-1, Math.min(1, audioData[i]));
+      view.setInt16(offset, sample * 0x7FFF, true);
+      offset += 2;
+    }
+    
+    return new Blob([buffer], { type: 'audio/wav' });
+  }
+
+  // 🔄 멀티 청크 TTS 생성
+  async generateMultiChunkAudio(take) {
+    const chunks = this.smartChunkSplit(take.text, take.language);
+    console.log(`🔄 멀티청크 TTS 시작: ${take.id} (${chunks.length}개 청크)`);
+    
+    // 진행률 표시 초기화
+    this.updateStatus(`음성 생성 중... 0/${chunks.length}`, '#FF9800');
+    
+    try {
+      // 병렬로 모든 청크 생성
+      const audioPromises = chunks.map((chunk, index) => 
+        this.generateSingleChunkAudio(chunk, this.selectedVoice, take.language, index)
+      );
+      
+      const audioUrls = [];
+      
+      // 하나씩 완료되는 대로 진행률 업데이트
+      for (let i = 0; i < audioPromises.length; i++) {
+        try {
+          const audioUrl = await audioPromises[i];
+          audioUrls.push(audioUrl);
+          this.updateStatus(`음성 생성 중... ${i + 1}/${chunks.length}`, '#FF9800');
+          console.log(`✅ 청크 ${i + 1}/${chunks.length} 완료`);
+        } catch (error) {
+          console.error(`❌ 청크 ${i + 1} 생성 실패:`, error);
+          throw error;
+        }
+      }
+      
+      // 오디오 병합
+      this.updateStatus('음성 병합 중...', '#FF9800');
+      const mergedAudioUrl = await this.mergeAudioUrls(audioUrls);
+      
+      console.log(`🎉 멀티청크 TTS 완료: ${take.id}`);
+      return mergedAudioUrl;
+      
+    } catch (error) {
+      console.error(`❌ 멀티청크 TTS 실패: ${take.id}`, error);
+      throw error;
+    }
+  }
+
+  // 음성 변환 (메인 진입점)
   async convertToSpeech(take) {
     console.log(`🎵 TTS 음성 생성 시작: ${take.id}`);
     console.log(`📝 텍스트 미리보기: "${take.text.substring(0, 50)}..."`);
     console.log(`🗣️ 선택된 음성: ${this.selectedVoice.name} (${this.selectedVoice.id})`);
     console.log(`🌍 언어: ${take.language}`);
+    console.log(`📏 텍스트 길이: ${take.text.length}자`);
     
+    // 멀티 청크 필요 여부 확인
+    const isMultiChunk = this.needsMultiChunk(take.text, take.language);
+    
+    if (isMultiChunk) {
+      console.log(`🔄 멀티청크 TTS 모드: ${take.text.length}자 → 분할 처리`);
+      return await this.generateMultiChunkAudio(take);
+    } else {
+      console.log(`🎵 단일청크 TTS 모드: ${take.text.length}자 → 단일 처리`);
+      return await this.generateSingleChunkAudio(take.text, this.selectedVoice, take.language);
+    }
+  }
+
+  // 기존 단일 TTS 요청 처리 (호환성 유지)
+  async convertToSpeechLegacy(take) {
     const requestData = {
       text: take.text,
       voice_id: this.selectedVoice.id,
