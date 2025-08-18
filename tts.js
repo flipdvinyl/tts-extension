@@ -170,13 +170,23 @@ class TTSManager {
       const text = this.extractTextFromElement(element);
       
       if (text && text.length > 3) { // 최소 길이 체크 (한글 3자)
-        const takeId = `take-${i + 1}`;
+        // 중복 테이크 방지: 바로 이전 테이크와 내용이 같으면 스킵
+        const previousTake = this.preTakes[this.preTakes.length - 1];
+        const normalizedText = text.trim().replace(/\s+/g, ' '); // 공백 정규화
+        const previousNormalizedText = previousTake ? previousTake.text.trim().replace(/\s+/g, ' ') : '';
+        
+        if (previousTake && normalizedText === previousNormalizedText) {
+          console.log(`🔄 중복 테이크 스킵: "${text.substring(0, 30)}..." (이전 테이크와 동일)`);
+          continue; // 중복이면 스킵
+        }
+        
+        const takeId = `take-${this.preTakes.length + 1}`; // 실제 생성되는 순서로 ID 부여
         const language = await this.detectLanguage(text);
         
         const preTake = {
           id: takeId,
-          index: i,
-          text: text,
+          index: this.preTakes.length,
+          text: normalizedText, // 정규화된 텍스트 사용
           language: language,
           element: element,
           selector: this.generateElementSelector(element),
@@ -185,7 +195,7 @@ class TTSManager {
         };
         
         this.preTakes.push(preTake);
-        console.log(`📝 테이크 ${i + 1} 생성: "${text.substring(0, 50)}..." (${language})`);
+        console.log(`📝 테이크 ${this.preTakes.length} 생성: "${normalizedText.substring(0, 50)}..." (${language})`);
       }
     }
     
@@ -941,20 +951,19 @@ class TTSManager {
         // 단어 트래킹 정리
         this.cleanupWordTracking();
         
-        // 다음 테이크 재생 및 연속적 버퍼링 확인
-        const nextIndex = this.currentTakeIndex + 1;
-        if (nextIndex < this.currentPlayList.length) {
-          setTimeout(() => {
+        // 🎯 테이크 종료 후 0.5초 지연
+        setTimeout(() => {
+          const nextIndex = this.currentTakeIndex + 1;
+          if (nextIndex < this.currentPlayList.length) {
             this.playTakeAtIndex(nextIndex);
             // 🎯 다음 테이크 재생 시작과 동시에 연속적 버퍼링 확인
             this.maintainContinuousBuffering(nextIndex);
-          }, 100);
-        } else {
-          console.log('🎉 모든 테이크 재생 완료');
-          this.updateStatus('재생 완료', '#4CAF50');
-        }
-        
-        resolve();
+          } else {
+            console.log('🎉 모든 테이크 재생 완료');
+            this.updateStatus('재생 완료', '#4CAF50');
+          }
+          resolve();
+        }, 500); // 0.5초 지연
       };
       
       this.currentAudio.onerror = (error) => {
@@ -2955,33 +2964,36 @@ class TTSManager {
         // 단어 트래킹 중지
         this.stopWordTracking();
         
-        // 다음 테이크 재생 (즉시 또는 짧은 간격)
-        if (takeIndex + 1 < this.takes.length) {
-          this.currentTakeIndex = takeIndex + 1;
-          
-          // 🚀 버퍼링된 테이크는 즉시, 아니면 짧은 간격
-          const nextTakeBuffered = this.audioBuffer[this.currentTakeIndex];
-          const delay = nextTakeBuffered ? 50 : 200; // 버퍼링된 경우 50ms, 아니면 200ms
-          
-          console.log(`다음 테이크 ${this.currentTakeIndex + 1} ${nextTakeBuffered ? '버퍼링됨 (즉시)' : '생성 필요 (200ms 대기)'}`);
-          
-          setTimeout(() => {
-            this.generateAndPlayTake(this.currentTakeIndex);
-          }, delay);
-          
-          // 그 다음 테이크 미리 생성 (더 앞서서)
-          for (let i = takeIndex + 2; i < Math.min(takeIndex + 5, this.takes.length); i++) {
-            if (!this.audioBuffer[i]) {
-              this.prepareNextTake(i);
+        // 🎯 테이크 종료 후 0.5초 지연
+        setTimeout(() => {
+          // 다음 테이크 재생
+          if (takeIndex + 1 < this.takes.length) {
+            this.currentTakeIndex = takeIndex + 1;
+            
+            // 🚀 버퍼링된 테이크는 즉시, 아니면 짧은 간격
+            const nextTakeBuffered = this.audioBuffer[this.currentTakeIndex];
+            const delay = nextTakeBuffered ? 50 : 200; // 버퍼링된 경우 50ms, 아니면 200ms
+            
+            console.log(`다음 테이크 ${this.currentTakeIndex + 1} ${nextTakeBuffered ? '버퍼링됨 (즉시)' : '생성 필요 (200ms 대기)'}`);
+            
+            setTimeout(() => {
+              this.generateAndPlayTake(this.currentTakeIndex);
+            }, delay);
+            
+            // 그 다음 테이크 미리 생성 (더 앞서서)
+            for (let i = takeIndex + 2; i < Math.min(takeIndex + 5, this.takes.length); i++) {
+              if (!this.audioBuffer[i]) {
+                this.prepareNextTake(i);
+              }
             }
+          } else {
+            // 모든 테이크 재생 완료
+            this.updateStatus('재생 완료', '#4CAF50');
+            setTimeout(() => this.hideUI(), 3000);
           }
-        } else {
-          // 모든 테이크 재생 완료
-          this.updateStatus('재생 완료', '#4CAF50');
-          setTimeout(() => this.hideUI(), 3000);
-        }
-        
-        resolve();
+          
+          resolve();
+        }, 500); // 0.5초 지연
       };
       
       this.currentAudio.onerror = (error) => {
