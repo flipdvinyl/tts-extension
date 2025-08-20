@@ -1,5 +1,8 @@
 class TTSManager {
   constructor() {
+    // 🎯 메모리 최적화: 디버깅 플래그
+    this.DEBUG_MODE = false; // 프로덕션에서는 false로 설정
+    
     // VOICES 배열 (audiobook-ui에서 가져옴)
     // 🎵 사용 가능한 음성 목록 (app.js와 동일)
     this.VOICES = [
@@ -23,7 +26,13 @@ class TTSManager {
     // 🎯 새로운 테이크 시스템 관련 상태
     this.preTakes = [];  // 사전 생성된 테이크 목록
     this.currentAudio = null;
-    this.audioBuffer = {};
+    
+    // 🎯 메모리 최적화: 스마트 오디오 버퍼 관리
+    this.audioBuffer = new Map(); // Map으로 변경하여 순서 관리
+    this.audioBufferTTL = new Map(); // TTL 관리
+    this.MAX_AUDIO_CACHE = 5; // 최대 5개 오디오만 캐시
+    this.CACHE_TTL = 300000; // 5분 TTL
+    
     this.takes = [];
     this.currentTakeIndex = 0;
     this.currentPlayingTakeId = null;
@@ -33,11 +42,15 @@ class TTSManager {
     this.bufferingTakes = new Set(); // 버퍼링 중인 테이크들
     this.abortController = null;
     
-    // 현재 선택된 음성 (저장된 설정 불러오기)
-    this.selectedVoice = this.loadVoiceSetting();
+    // 🎯 탭 간 동기화: 설정을 비동기로 불러오기 (기본값으로 초기화 후 업데이트)
+    this.selectedVoice = this.VOICES[2]; // 기본값: 책뚫남
+    this.playbackSpeed = 1.2; // 기본값: 1.2x
     
-    // TTS 재생 속도 (저장된 설정 불러오기)
-    this.playbackSpeed = this.loadSpeedSetting();
+    // 비동기로 실제 설정 불러오기 (UI 업데이트 포함)
+    this.loadSettingsAsync().then((settingsChanged) => {
+      // 설정 로딩 완료 후 항상 UI 업데이트 (새 탭에서 동기화된 설정 표시)
+      this.updateAllUIWithSettings();
+    });
     this.minSpeed = 0.6;
     this.maxSpeed = 1.8;
     this.speedStep = 0.2;
@@ -49,7 +62,7 @@ class TTSManager {
       { speed: 1.0, text: '보통 빠르기로' },
       { speed: 1.2, text: '조금 빠르게' },
       { speed: 1.4, text: '빠르게' },
-      { speed: 1.6, text: '제법 빠르게' },
+      { speed: 1.6, text: '꽤 빠르게' },
       { speed: 1.8, text: '정말 빠르게' }
     ];
     
@@ -69,24 +82,151 @@ class TTSManager {
     this.wordInfoLabel = null;
     this.htmlViewer = null;
     
-    // 단어 트래킹 관련 (App.js 스타일)
+    // 🎯 메모리 최적화: DOM 요소 참조 관리
     this.currentTakeWordElements = [];
     this.currentTakeWords = [];
+    this.elementCache = new WeakMap(); // DOM 요소 캐시
+    this.elementMetadata = new WeakSet(); // 처리된 요소 추적
+    
+    // 🎥 YouTube 아이콘 관련 초기화
+    this.youtubeIcon = null;
+    this.youtubeTitleObserver = null;
+    this.youtubeIconMonitoringInterval = null;
+    
+    // 🤖 Zeta AI 화자 구분 시스템
+    this.zetaAISpeaker1Voice = this.VOICES[7]; // 진지한 케일리 (인덱스 7)
+    this.zetaAISpeaker2Voice = this.VOICES[3]; // 제너레이션 MG (인덱스 3)
+    this.zetaAIEnterFlag = false; // 엔터키 입력 플래그 (true: 엔터키 입력됨, false: 엔터키 입력 안됨)
+    this.zetaAICurrentSpeaker = 'speaker2'; // 현재 화자 (기본값: 화자2)
+    
+    // 🤖 Zeta AI: 순차 발화 큐 시스템
+    this.zetaAISpeechQueue = []; // 발화 대기 큐
+    this.zetaAIIsPlaying = false; // 현재 발화 중인지 여부
+    this.zetaAICurrentAudio = null; // 현재 재생 중인 오디오
     
     // 🎯 페이지 로딩 완료 감지 및 초기화
     this.initializeWhenReady();
     
+    // 🤖 Zeta AI: 포괄적 엔터키 감지 시스템 설정
+    this.setupZetaAIEnterKeyDetection();
+    
+    // 🤖 Zeta AI: 캐릭터 선택 UI 생성
+    this.createZetaAICharacterSelectionUI();
+    
+    // 🤖 Zeta AI: 3초 지연 후 테이크 감지 시작
+    this.startZetaAIDelayedTakeDetection();
+    
+    // 🎥 YouTube 모드 즉시 확인 및 시작
+    if (this.isYouTubeMode()) {
+      console.log('🎥 YouTube 모드 즉시 감지됨 - YouTube 모드 시작');
+      setTimeout(() => {
+        this.startYouTubeMode();
+      }, 1000); // 1초 후 시작
+    }
+    
     // 테마 감지 및 적용
     this.currentTheme = 'light'; // 기본값
     
-    // 하단 플로팅 UI 즉시 생성
+    // 하단 플로팅 UI 생성 (제타 AI에서는 숨김)
     this.createBottomFloatingUI();
+    
+    // 🤖 Zeta AI / ChatGPT: 기존 하단 플로팅 UI 숨김
+    if (this.isZetaOrChatGPTMode()) {
+      this.hideBottomFloatingUIForZetaAI();
+      this.hideAllFloatingUIForZetaAI();
+    }
     
     // 테마 감지 후 UI 업데이트
     this.detectAndApplyTheme();
     
     // 백그라운드 스크립트 메시지 리스너 설정
     this.setupMessageListener();
+    
+    // 🎯 탭 간 설정 동기화: storage 변경 리스너 설정
+    this.setupStorageListener();
+    
+    // 🎯 메모리 최적화: 주기적 캐시 정리 (1분마다)
+    this.cacheCleanupInterval = setInterval(() => {
+      this.cleanExpiredAudioCache();
+    }, 60000);
+  }
+
+  // 🎯 메모리 최적화: 조건부 로깅 헬퍼 메소드들
+  log(...args) {
+    if (this.DEBUG_MODE) console.log(...args);
+  }
+
+  warn(...args) {
+    if (this.DEBUG_MODE) console.warn(...args);
+  }
+
+  error(...args) {
+    if (this.DEBUG_MODE) console.error(...args);
+  }
+
+  // 🤖 Zeta AI / ChatGPT 모드 확인 헬퍼
+  isZetaOrChatGPTMode() {
+    return window.location.hostname.includes('zeta-ai') || window.location.hostname.includes('chatgpt_temp');
+  }
+
+  // 🎥 YouTube 모드 확인 헬퍼
+  isYouTubeMode() {
+    return window.location.hostname.includes('youtube.com') && window.location.pathname.includes('watch');
+  }
+
+  // 🎯 메모리 최적화: 스마트 오디오 버퍼 관리
+  cleanExpiredAudioCache() {
+    const now = Date.now();
+    const expiredKeys = [];
+    
+    for (const [key, timestamp] of this.audioBufferTTL.entries()) {
+      if (now - timestamp > this.CACHE_TTL) {
+        expiredKeys.push(key);
+      }
+    }
+    
+    for (const key of expiredKeys) {
+      this.removeFromAudioCache(key);
+    }
+    
+    if (expiredKeys.length > 0) {
+      this.log(`🧹 만료된 오디오 캐시 ${expiredKeys.length}개 정리 완료`);
+    }
+  }
+
+  removeFromAudioCache(key) {
+    if (this.audioBuffer.has(key)) {
+      const audioUrl = this.audioBuffer.get(key);
+      if (audioUrl && audioUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(audioUrl);
+      }
+      this.audioBuffer.delete(key);
+      this.audioBufferTTL.delete(key);
+    }
+  }
+
+  addToAudioCache(key, audioUrl) {
+    // 캐시 크기 제한 확인
+    if (this.audioBuffer.size >= this.MAX_AUDIO_CACHE) {
+      // LRU: 가장 오래된 항목 제거
+      const oldestKey = this.audioBuffer.keys().next().value;
+      this.removeFromAudioCache(oldestKey);
+    }
+    
+    // 새 항목 추가
+    this.audioBuffer.set(key, audioUrl);
+    this.audioBufferTTL.set(key, Date.now());
+    
+    this.log(`📦 오디오 캐시 추가: ${key} (총 ${this.audioBuffer.size}개)`);
+  }
+
+  getFromAudioCache(key) {
+    if (this.audioBuffer.has(key)) {
+      // 액세스 시 TTL 갱신 (LRU 효과)
+      this.audioBufferTTL.set(key, Date.now());
+      return this.audioBuffer.get(key);
+    }
+    return null;
   }
 
   // 📨 백그라운드 스크립트 메시지 리스너 설정
@@ -100,12 +240,42 @@ class TTSManager {
     });
   }
 
+  // 🎯 탭 간 설정 동기화: storage 변경 리스너 설정
+  setupStorageListener() {
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName === 'sync') {
+        // 화자 설정이 다른 탭에서 변경됨
+        if (changes['tts-voice']) {
+          const newVoiceData = changes['tts-voice'].newValue;
+          if (newVoiceData) {
+            const voice = this.VOICES.find(v => v.id === newVoiceData.id);
+            if (voice && voice.id !== this.selectedVoice.id) {
+              this.selectedVoice = voice;
+              this.updateVoiceUI();
+              this.log(`🔄 다른 탭에서 화자 변경 감지: ${voice.name}`);
+            }
+          }
+        }
+        
+        // 속도 설정이 다른 탭에서 변경됨
+        if (changes['tts-speed']) {
+          const newSpeed = changes['tts-speed'].newValue;
+          if (newSpeed && newSpeed !== this.playbackSpeed) {
+            this.playbackSpeed = newSpeed;
+            this.updateSpeedUI();
+            this.log(`🔄 다른 탭에서 속도 변경 감지: ${newSpeed}x`);
+          }
+        }
+      }
+    });
+  }
+
   // 🔄 플러그인 on/off 토글
   togglePlugin() {
     this.isPluginEnabled = !this.isPluginEnabled;
     
     if (this.isPluginEnabled) {
-      console.log('🟢 TTS 플러그인 활성화');
+      this.log('🟢 TTS 플러그인 활성화');
       this.showUI();
       // 기존 상태 복원
       if (this.bottomFloatingUI) {
@@ -121,6 +291,8 @@ class TTSManager {
       }
       // 플로팅 아이콘도 숨기기
       this.hideTakeHoverIcon();
+      // 🎥 YouTube 아이콘도 제거
+      this.removeYouTubeIcon();
       // 모든 오버레이 제거
       this.removeAllHighlights();
     }
@@ -150,65 +322,225 @@ class TTSManager {
     
     // 테이크 호버 아이콘 제거
     this.hideTakeHoverIcon();
+    
+    // 🎥 YouTube 아이콘 제거
+    this.removeYouTubeIcon();
+  }
+  
+  // 🎥 YouTube 아이콘 제거
+  removeYouTubeIcon() {
+    if (this.youtubeIcon) {
+      this.youtubeIcon.remove();
+      this.youtubeIcon = null;
+      console.log('🎥 YouTube: 아이콘 제거됨');
+    }
+    
+    if (this.youtubeTitleObserver) {
+      this.youtubeTitleObserver.disconnect();
+      this.youtubeTitleObserver = null;
+      console.log('🎥 YouTube: 제목 감지 옵저버 제거됨');
+    }
+    
+    if (this.youtubeIconMonitoringInterval) {
+      clearInterval(this.youtubeIconMonitoringInterval);
+      this.youtubeIconMonitoringInterval = null;
+      console.log('🎥 YouTube: 아이콘 모니터링 제거됨');
+    }
   }
 
-  // 💾 화자 설정 저장 및 불러오기
-  saveVoiceSetting(voice) {
+  // 🎯 탭 간 동기화: Chrome storage API 기반 화자 설정 저장
+  async saveVoiceSetting(voice) {
     try {
-      localStorage.setItem('tts-extension-voice', JSON.stringify({
+      const voiceData = {
         id: voice.id,
         name: voice.name,
         key: voice.key
-      }));
-      console.log(`💾 화자 설정 저장: ${voice.name}`);
+      };
+      
+      await chrome.storage.sync.set({ 'tts-voice': voiceData });
+      this.log(`💾 화자 설정 저장 (모든 탭 동기화): ${voice.name}`);
+      
+      // 백업용 localStorage도 저장
+      localStorage.setItem('tts-extension-voice', JSON.stringify(voiceData));
     } catch (error) {
-      console.warn('화자 설정 저장 실패:', error);
-    }
-  }
-
-  loadVoiceSetting() {
-    try {
-      const saved = localStorage.getItem('tts-extension-voice');
-      if (saved) {
-        const voiceData = JSON.parse(saved);
-        const voice = this.VOICES.find(v => v.id === voiceData.id);
-        if (voice) {
-          console.log(`💾 화자 설정 불러오기: ${voice.name}`);
-          return voice;
-        }
+      this.warn('화자 설정 저장 실패:', error);
+      // Chrome storage 실패 시 localStorage로 폴백
+      try {
+        localStorage.setItem('tts-extension-voice', JSON.stringify({
+          id: voice.id,
+          name: voice.name,
+          key: voice.key
+        }));
+      } catch (localError) {
+        this.error('localStorage 백업도 실패:', localError);
       }
-    } catch (error) {
-      console.warn('화자 설정 불러오기 실패:', error);
     }
-    // 기본값: 책뚫남
-    return this.VOICES[2];
   }
 
-  // 💾 속도 설정 저장 및 불러오기
-  saveSpeedSetting(speed) {
+  // 🎯 탭 간 동기화: Chrome storage API 우선 화자 설정 불러오기
+  async loadVoiceSetting() {
+    return new Promise((resolve) => {
+      try {
+        // Chrome storage 우선 시도 (콜백 방식)
+        chrome.storage.sync.get(['tts-voice'], (result) => {
+          if (result['tts-voice']) {
+            const voiceData = result['tts-voice'];
+            const voice = this.VOICES.find(v => v.id === voiceData.id);
+            if (voice) {
+              this.log(`💾 화자 설정 불러오기 (Chrome storage): ${voice.name}`);
+              resolve(voice);
+              return;
+            }
+          }
+          
+          // Chrome storage 실패 시 localStorage 폴백
+          try {
+            const saved = localStorage.getItem('tts-extension-voice');
+            if (saved) {
+              const voiceData = JSON.parse(saved);
+              const voice = this.VOICES.find(v => v.id === voiceData.id);
+              if (voice) {
+                this.log(`💾 화자 설정 불러오기 (localStorage 백업): ${voice.name}`);
+                // Chrome storage에도 동기화
+                chrome.storage.sync.set({ 'tts-voice': voiceData }).catch(() => {});
+                resolve(voice);
+                return;
+              }
+            }
+          } catch (error) {
+            this.warn('localStorage 불러오기도 실패:', error);
+          }
+          
+          // 기본값: 책뚫남
+          this.log('기본 화자 사용: 책뚫남');
+          resolve(this.VOICES[2]);
+        });
+      } catch (error) {
+        this.warn('Chrome storage 불러오기 실패, localStorage로 폴백:', error);
+        // 에러 시 기본값 반환
+        resolve(this.VOICES[2]);
+      }
+    });
+  }
+
+  // 🎯 탭 간 동기화: Chrome storage API 기반 속도 설정 저장
+  async saveSpeedSetting(speed) {
     try {
+      await chrome.storage.sync.set({ 'tts-speed': speed });
+      this.log(`💾 속도 설정 저장 (모든 탭 동기화): ${speed}x`);
+      
+      // 백업용 localStorage도 저장
       localStorage.setItem('tts-extension-speed', speed.toString());
-      console.log(`💾 속도 설정 저장: ${speed}x`);
     } catch (error) {
-      console.warn('속도 설정 저장 실패:', error);
+      this.warn('속도 설정 저장 실패:', error);
+      // Chrome storage 실패 시 localStorage로 폴백
+      try {
+        localStorage.setItem('tts-extension-speed', speed.toString());
+      } catch (localError) {
+        this.error('localStorage 속도 저장도 실패:', localError);
+      }
     }
   }
 
-  loadSpeedSetting() {
-    try {
-      const saved = localStorage.getItem('tts-extension-speed');
-      if (saved) {
-        const speed = parseFloat(saved);
-        if (speed >= this.minSpeed && speed <= this.maxSpeed) {
-          console.log(`💾 속도 설정 불러오기: ${speed}x`);
-          return speed;
-        }
+  // 🎯 탭 간 동기화: Chrome storage API 우선 속도 설정 불러오기
+  async loadSpeedSetting() {
+    return new Promise((resolve) => {
+      try {
+        // Chrome storage 우선 시도 (콜백 방식)
+        chrome.storage.sync.get(['tts-speed'], (result) => {
+          if (result['tts-speed']) {
+            const speed = parseFloat(result['tts-speed']);
+            if (speed >= this.minSpeed && speed <= this.maxSpeed) {
+              this.log(`💾 속도 설정 불러오기 (Chrome storage): ${speed}x`);
+              resolve(speed);
+              return;
+            }
+          }
+          
+          // Chrome storage 실패 시 localStorage 폴백
+          try {
+            const saved = localStorage.getItem('tts-extension-speed');
+            if (saved) {
+              const speed = parseFloat(saved);
+              if (speed >= this.minSpeed && speed <= this.maxSpeed) {
+                this.log(`💾 속도 설정 불러오기 (localStorage 백업): ${speed}x`);
+                // Chrome storage에도 동기화
+                chrome.storage.sync.set({ 'tts-speed': speed }).catch(() => {});
+                resolve(speed);
+                return;
+              }
+            }
+          } catch (error) {
+            this.warn('localStorage 속도 불러오기도 실패:', error);
+          }
+          
+          // 기본값: 1.2
+          this.log('기본 속도 사용: 1.2x');
+          resolve(1.2);
+        });
+      } catch (error) {
+        this.warn('Chrome storage 속도 불러오기 실패, localStorage로 폴백:', error);
+        // 에러 시 기본값 반환
+        resolve(1.2);
       }
+    });
+  }
+
+  // 🎯 탭 간 동기화: 비동기 설정 로딩
+  async loadSettingsAsync() {
+    try {
+      let settingsChanged = false;
+      
+      // 화자 설정 로딩
+      const voice = await this.loadVoiceSetting();
+      if (voice && voice.id !== this.selectedVoice.id) {
+        this.selectedVoice = voice;
+        settingsChanged = true;
+        this.log(`🎯 화자 설정 로딩: ${voice.name}`);
+      }
+      
+      // 속도 설정 로딩
+      const speed = await this.loadSpeedSetting();
+      if (speed !== this.playbackSpeed) {
+        this.playbackSpeed = speed;
+        settingsChanged = true;
+        this.log(`🎯 속도 설정 로딩: ${speed}x`);
+      }
+      
+      this.log('🎯 모든 설정 로딩 완료');
+      return settingsChanged;
     } catch (error) {
-      console.warn('속도 설정 불러오기 실패:', error);
+      this.warn('설정 로딩 중 오류:', error);
+      return false;
     }
-    // 기본값: 1.2
-    return 1.2;
+  }
+
+  // UI 업데이트 헬퍼 메소드들
+  updateVoiceUI() {
+    // 음성 라벨 업데이트
+    if (this.voiceLabel) {
+      this.voiceLabel.textContent = `🎵 음성: ${this.selectedVoice.name}`;
+    }
+  }
+
+  updateSpeedUI() {
+    // 속도 UI 업데이트 (필요시 확장)
+    this.log(`🎵 속도 UI 업데이트: ${this.playbackSpeed}x`);
+  }
+
+  // 🎯 설정 로딩 완료 후 모든 UI 업데이트
+  updateAllUIWithSettings() {
+    this.log('🎯 설정 로딩 완료: 모든 UI 업데이트');
+    
+    // 하단 플로팅 UI 업데이트
+    this.updateBottomFloatingUIState();
+    
+    // 플로팅 UI 업데이트 (있는 경우)
+    this.updateVoiceUI();
+    this.updateSpeedUI();
+    
+    // 기타 UI 요소들 업데이트 (필요시 확장)
+    // this.updateFloatingUI(); // 함수가 정의되지 않아 주석 처리
   }
 
   // 🎯 페이지 로딩 완료 시 초기화 (다단계 시점 확보)
@@ -248,13 +580,17 @@ class TTSManager {
         console.log('✅ 1차 시점에서 충분한 테이크 확보');
         this.updateTakeCount();
         this.showUI();
+        
+        // 🤖 Zeta AI 모니터링 시작
+        this.startZetaAIMonitoring();
         return;
       }
     } catch (error) {
       console.log('⚠️ 1차 시점 실패:', error.message);
     }
     
-    // 🎯 2차: 추가 확보 시점 - 외부 솔루션 로딩 직전
+    // 🎯 2차: 추가 확보 시점 - 외부 솔루션 로딩 직전 (비디오 플레이어 오버라이트 방지로 주석처리)
+    /*
     console.log('🔄 2차 시점 시도 중... (외부 솔루션 로딩 전)');
     this.updateStatus('추가 콘텐츠 분석 중...', '#FF9800');
     
@@ -279,8 +615,10 @@ class TTSManager {
     } catch (error) {
       console.log('⚠️ 2차 시점 실패:', error.message);
     }
+    */
     
-    // 🎯 3차: 최종 확보 시점 - 모든 로딩 완료 후
+    // 🎯 3차: 최종 확보 시점 - 모든 로딩 완료 후 (비디오 플레이어 오버라이트 방지로 주석처리)
+    /*
     console.log('🔄 3차 시점 시도 중... (최종 로딩 완료 후)');
     this.updateStatus('최종 콘텐츠 분석 중...', '#FF9800');
     
@@ -311,6 +649,26 @@ class TTSManager {
       console.error('❌ 3차 시점 실패:', error);
       this.updateStatus('초기화 오류 - 페이지를 새로고침해주세요', '#F44336');
     }
+    */
+    
+    // 🎯 1단계만 사용하여 비디오 플레이어 오버라이트 방지
+    if (bestTakeCount > 0) {
+      console.log(`✅ 1단계 시점에서 ${bestTakeCount}개 테이크 확보 (비디오 플레이어 오버라이트 방지)`);
+      this.updateTakeCount();
+      this.showUI();
+      
+      // 🤖 Zeta AI 모니터링 시작
+      this.startZetaAIMonitoring();
+    } else {
+      console.log('❌ 1단계 시점에서 테이크 생성 실패');
+      this.updateStatus('테이크 생성 실패 - 페이지를 새로고침해주세요', '#F44336');
+    }
+    
+    // 🎥 YouTube 모드 시작 (테이크 생성 성공 여부와 관계없이)
+    if (this.isYouTubeMode()) {
+      console.log('🎥 YouTube 모드 감지됨 - YouTube 모드 시작');
+      this.startYouTubeMode();
+    }
   }
   
   // 🎯 웹페이지 분석 및 테이크 사전 생성
@@ -320,6 +678,14 @@ class TTSManager {
     // 🔍 클리앙 디버깅: 현재 URL 확인
     console.log(`🌐 현재 URL: ${window.location.href}`);
     console.log(`🌐 도메인: ${window.location.hostname}`);
+    
+    // 🎥 YouTube에서는 일반적인 테이크 감지 비활성화
+    if (this.isYouTubeMode()) {
+      console.log('🎥 YouTube: 일반적인 테이크 감지 비활성화');
+      this.preTakes = [];
+      this.updateTakeCount();
+      return;
+    }
     
     // body 내부 구조 파악 (header, footer 제외)
     const bodyContent = this.extractMainContent();
@@ -375,6 +741,19 @@ class TTSManager {
 
   // 🎯 테이크 호버 아이콘 설정
   setupTakeHoverIcons() {
+    // 🤖 Zeta AI / ChatGPT에서는 테이크 호버 아이콘 비활성화
+    if (this.isZetaOrChatGPTMode()) {
+      console.log('🤖 Zeta AI / ChatGPT: 테이크 호버 아이콘 비활성화');
+      return;
+    }
+
+    // 🎥 YouTube에서는 테이크 호버 아이콘 비활성화하고 YouTube 전용 아이콘 생성
+    if (this.isYouTubeMode()) {
+      console.log('🎥 YouTube: 테이크 호버 아이콘 비활성화, YouTube 전용 아이콘 생성');
+      this.createYouTubeIcon();
+      return;
+    }
+    
     if (!this.preTakes || this.preTakes.length === 0) return;
     
     this.preTakes.forEach((take, index) => {
@@ -563,6 +942,432 @@ class TTSManager {
     // 저장된 요소 정보 초기화
     this.currentIconTake = null;
     this.currentIconElement = null;
+  }
+
+  // 🎥 YouTube 전용 아이콘 생성 (제목 행 오른쪽)
+  createYouTubeIcon() {
+    console.log('🎥 YouTube: 아이콘 생성 함수 시작');
+    
+    // 기존 YouTube 아이콘 제거
+    if (this.youtubeIcon) {
+      this.youtubeIcon.remove();
+      this.youtubeIcon = null;
+    }
+
+    // YouTube 제목 요소 찾기 (실제 YouTube 페이지 구조 기반)
+    let titleElement = null;
+    
+    // 1. 실제 YouTube 페이지의 정확한 선택자들 (우선순위 순)
+    const selectors = [
+      // 가장 정확한 선택자들
+      'h1.ytd-watch-metadata',
+      'h1.style-scope.ytd-watch-metadata',
+      'ytd-watch-metadata h1',
+      'ytd-video-primary-info-renderer h1',
+      
+      // 컨테이너 기반 선택자들
+      'div#title h1',
+      'div#title',
+      'ytd-video-primary-info-renderer div#title h1',
+      
+      // 일반적인 선택자들
+      'h1[class*="ytd-watch"]',
+      'h1[class*="title"]',
+      'h1',
+      
+      // 추가 선택자들
+      'ytd-video-primary-info-renderer h1',
+      'ytd-watch-metadata ytd-video-primary-info-renderer h1',
+      'div#meta h1',
+      'div#meta div#title h1'
+    ];
+    
+    for (const selector of selectors) {
+      titleElement = document.querySelector(selector);
+      if (titleElement) {
+        console.log(`🎥 YouTube: 제목 요소 발견 (${selector}):`, titleElement);
+        console.log(`🎥 YouTube: 제목 텍스트: "${titleElement.textContent.trim()}"`);
+        break;
+      }
+    }
+    
+    if (!titleElement) {
+      console.log('🎥 YouTube: 제목 요소를 찾을 수 없음');
+      console.log('🎥 YouTube: 페이지의 모든 h1 요소들:');
+      document.querySelectorAll('h1').forEach((h1, index) => {
+        console.log(`  ${index + 1}. <h1> "${h1.textContent.trim()}" (클래스: ${h1.className})`);
+      });
+      console.log('🎥 YouTube: 기본 위치에 아이콘 생성');
+      this.createYouTubeIconAtDefaultPosition();
+      return;
+    }
+
+    const isDark = this.currentTheme === 'dark';
+    const iconSize = 24; // 아이콘 크기 증가
+
+    // YouTube 아이콘 생성 (더 눈에 띄는 스타일)
+    this.youtubeIcon = document.createElement('div');
+    this.youtubeIcon.id = 'youtube-perplexity-icon';
+    this.youtubeIcon.innerHTML = `
+      <svg width="${iconSize}" height="${iconSize}" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="12" cy="12" r="11" fill="${isDark ? '#ffffff' : '#000000'}" opacity="0.9"/>
+        <path d="M8 6v12l10-6z" fill="${isDark ? '#000000' : '#ffffff'}"/>
+      </svg>
+    `;
+
+    // 위치 설정 - 제목 행 오른쪽 (타이틀 우측 여백)
+    const rect = titleElement.getBoundingClientRect();
+    const titleContainer = titleElement.closest('div#title') || titleElement.parentElement;
+    const containerRect = titleContainer ? titleContainer.getBoundingClientRect() : rect;
+    
+    this.youtubeIcon.style.cssText = `
+      position: fixed !important;
+      top: ${rect.top + (rect.height - iconSize) / 2}px !important;
+      left: ${containerRect.right + 15}px !important;
+      z-index: 100000 !important;
+      opacity: 1 !important;
+      pointer-events: auto !important;
+      cursor: pointer !important;
+      background: transparent !important;
+      border-radius: 50% !important;
+      width: ${iconSize}px !important;
+      height: ${iconSize}px !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      transition: transform 0.2s ease, opacity 0.2s ease !important;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
+    `;
+
+    console.log('🎥 YouTube: 제목 요소 위치:', rect);
+    console.log('🎥 YouTube: 컨테이너 위치:', containerRect);
+    console.log('🎥 YouTube: 아이콘 위치 설정:', `${rect.top + (rect.height - iconSize) / 2}px, ${containerRect.right + 15}px`);
+    console.log('🎥 YouTube: 아이콘 요소 생성됨:', this.youtubeIcon);
+
+    // 클릭 이벤트 설정
+    this.youtubeIcon.addEventListener('click', async (event) => {
+      event.stopPropagation();
+      console.log('🎥 YouTube: 아이콘 클릭됨');
+      await this.handleYouTubeGeminiRequest();
+    });
+
+    // 호버 효과
+    this.youtubeIcon.addEventListener('mouseenter', () => {
+      this.youtubeIcon.style.transform = 'scale(1.2)';
+      this.youtubeIcon.style.opacity = '1';
+    });
+
+    this.youtubeIcon.addEventListener('mouseleave', () => {
+      this.youtubeIcon.style.transform = 'scale(1.0)';
+      this.youtubeIcon.style.opacity = '0.9';
+    });
+
+    document.body.appendChild(this.youtubeIcon);
+    console.log('🎥 YouTube: Perplexity 아이콘 생성 완료');
+    console.log('🎥 YouTube: 아이콘이 DOM에 추가됨:', document.body.contains(this.youtubeIcon));
+    
+    // 추가 확인: 아이콘이 실제로 보이는지 확인
+    setTimeout(() => {
+      if (this.youtubeIcon && document.body.contains(this.youtubeIcon)) {
+        const computedStyle = window.getComputedStyle(this.youtubeIcon);
+        console.log('🎥 YouTube: 아이콘 계산된 스타일:', {
+          display: computedStyle.display,
+          visibility: computedStyle.visibility,
+          opacity: computedStyle.opacity,
+          zIndex: computedStyle.zIndex,
+          position: computedStyle.position,
+          top: computedStyle.top,
+          left: computedStyle.left
+        });
+      }
+    }, 100);
+  }
+
+  // 🎥 YouTube 기본 위치에 아이콘 생성
+  createYouTubeIconAtDefaultPosition() {
+    console.log('🎥 YouTube: 기본 위치 아이콘 생성 시작');
+    
+    const isDark = this.currentTheme === 'dark';
+    const iconSize = 24;
+    
+    // 더 눈에 띄는 아이콘 생성
+    this.youtubeIcon = document.createElement('div');
+    this.youtubeIcon.id = 'youtube-perplexity-icon';
+    this.youtubeIcon.innerHTML = `
+      <svg width="${iconSize}" height="${iconSize}" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="12" cy="12" r="11" fill="${isDark ? '#ffffff' : '#000000'}" opacity="0.9"/>
+        <path d="M8 6v12l10-6z" fill="${isDark ? '#000000' : '#ffffff'}"/>
+      </svg>
+    `;
+    
+    this.youtubeIcon.style.cssText = `
+      position: fixed !important;
+      top: 20px !important;
+      left: calc(100vw - 60px) !important;
+      z-index: 100000 !important;
+      opacity: 1 !important;
+      background: transparent !important;
+      border-radius: 50% !important;
+      width: ${iconSize}px !important;
+      height: ${iconSize}px !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      cursor: pointer !important;
+      pointer-events: auto !important;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
+      transition: transform 0.2s ease, opacity 0.2s ease !important;
+    `;
+
+    // 클릭 이벤트 설정
+    this.youtubeIcon.addEventListener('click', async (event) => {
+      event.stopPropagation();
+      console.log('🎥 YouTube: 기본 위치 아이콘 클릭됨');
+      await this.handleYouTubeGeminiRequest();
+    });
+
+    // 호버 효과
+    this.youtubeIcon.addEventListener('mouseenter', () => {
+      this.youtubeIcon.style.transform = 'scale(1.2)';
+      this.youtubeIcon.style.opacity = '1';
+    });
+
+    this.youtubeIcon.addEventListener('mouseleave', () => {
+      this.youtubeIcon.style.transform = 'scale(1.0)';
+      this.youtubeIcon.style.opacity = '0.9';
+    });
+
+    document.body.appendChild(this.youtubeIcon);
+    console.log('🎥 YouTube: 기본 위치에 Perplexity 아이콘 생성 완료');
+    console.log('🎥 YouTube: 기본 위치 아이콘이 DOM에 추가됨:', document.body.contains(this.youtubeIcon));
+  }
+
+  // 🎥 YouTube Gemini 요청 처리
+  async handleYouTubeGeminiRequest() {
+    try {
+      console.log('🎥 YouTube: Gemini 요청 시작');
+      
+      const currentUrl = window.location.href;
+      
+      // Gemini API가 로드되었는지 확인
+      if (!window.geminiAPI) {
+        console.log('🎥 YouTube: Gemini API가 로드되지 않음, 동적 로드 시도');
+        await this.loadGeminiAPI();
+      }
+      
+      // Gemini API 사용
+      if (window.geminiAPI && window.geminiAPI.convertYouTubeToBookContent) {
+        const response = await window.geminiAPI.convertYouTubeToBookContent(currentUrl);
+        
+        if (response) {
+          console.log('🎥 YouTube: Gemini 응답 받음, 테이크 생성 시작');
+          
+          // 응답을 테이크로 변환
+          await this.createTakesFromGeminiResponse(response);
+          
+          // 기본 테이크 재생 로직으로 1번 테이크부터 순차 재생
+          if (this.preTakes && this.preTakes.length > 0) {
+            await this.startPlaybackFromTake(this.preTakes[0]);
+          }
+        }
+      } else {
+        console.error('🎥 YouTube: Gemini API를 사용할 수 없음');
+        alert('Gemini API를 로드할 수 없습니다. 페이지를 새로고침해보세요.');
+      }
+    } catch (error) {
+      console.error('🎥 YouTube: Gemini 요청 실패:', error);
+      alert('Gemini API 요청에 실패했습니다: ' + error.message);
+    }
+  }
+  
+  // 🎥 Gemini API 동적 로드
+  async loadGeminiAPI() {
+    return new Promise((resolve, reject) => {
+      try {
+        // 이미 로드되었는지 확인
+        if (window.geminiAPI) {
+          resolve();
+          return;
+        }
+        
+        // 1. 먼저 content_scripts에서 로드되었는지 확인 (잠시 대기)
+        setTimeout(() => {
+          if (window.geminiAPI) {
+            console.log('🎥 YouTube: Gemini API가 이미 로드됨');
+            resolve();
+            return;
+          }
+          
+          // 2. 동적 로드 시도
+          const script = document.createElement('script');
+          script.src = chrome.runtime.getURL('gemini-api.js');
+          script.onload = () => {
+            console.log('🎥 YouTube: Gemini API 동적 로드 완료');
+            resolve();
+          };
+          script.onerror = () => {
+            console.error('🎥 YouTube: Gemini API 동적 로드 실패');
+            reject(new Error('Gemini API 로드 실패'));
+          };
+          
+          document.head.appendChild(script);
+        }, 100); // 100ms 대기
+        
+      } catch (error) {
+        console.error('🎥 YouTube: Gemini API 로드 중 오류:', error);
+        reject(error);
+      }
+    });
+  }
+
+  // 🎥 Gemini 응답을 테이크로 변환
+  async createTakesFromGeminiResponse(response) {
+    try {
+      console.log('🎥 YouTube: Gemini 응답을 테이크로 변환 시작');
+      
+      // 기존 테이크 초기화
+      this.preTakes = [];
+      
+      // 응답 텍스트를 문단으로 분할
+      const paragraphs = response.split('\n\n').filter(p => p.trim().length > 0);
+      
+      for (let i = 0; i < paragraphs.length; i++) {
+        const paragraph = paragraphs[i].trim();
+        if (paragraph.length > 10) { // 최소 길이 체크
+          const takeId = `youtube-take-${i + 1}`;
+          const language = await this.detectLanguage(paragraph);
+          
+          const take = {
+            id: takeId,
+            index: i,
+            text: paragraph,
+            language: language,
+            element: null, // YouTube에서는 DOM 요소 없음
+            selector: null,
+            isBuffered: false,
+            audioUrl: null
+          };
+          
+          this.preTakes.push(take);
+          console.log(`🎥 YouTube: 테이크 ${i + 1} 생성: "${paragraph.substring(0, 50)}..." (${language})`);
+        }
+      }
+      
+      console.log(`🎥 YouTube: 총 ${this.preTakes.length}개 테이크 생성 완료`);
+      this.updateTakeCount();
+      
+    } catch (error) {
+      console.error('🎥 YouTube: 테이크 변환 실패:', error);
+    }
+  }
+
+  // 🎥 YouTube 모드 시작
+  startYouTubeMode() {
+    if (!this.isYouTubeMode()) {
+      console.log('🎥 YouTube 모드가 아닙니다');
+      return;
+    }
+    
+    console.log('🎥 YouTube 모드 시작');
+    
+    // YouTube에서는 일반적인 테이크 감지 비활성화
+    // 대신 Perplexity 아이콘만 생성
+    
+    // 더 많은 시점에서 아이콘 생성 시도 (실제 YouTube 로딩 시간 고려)
+    const createIconAttempts = [
+      { delay: 100, name: '즉시 시도' },
+      { delay: 500, name: '0.5초 후 시도' },
+      { delay: 1000, name: '1초 후 시도' },
+      { delay: 2000, name: '2초 후 시도' },
+      { delay: 3000, name: '3초 후 시도' },
+      { delay: 5000, name: '5초 후 시도' },
+      { delay: 8000, name: '8초 후 시도' },
+      { delay: 10000, name: '10초 후 시도' }
+    ];
+    
+    createIconAttempts.forEach(({ delay, name }) => {
+      setTimeout(() => {
+        console.log(`🎥 YouTube: ${name} - 아이콘 생성 시도`);
+        this.createYouTubeIcon();
+      }, delay);
+    });
+    
+    // MutationObserver로 DOM 변경 감지하여 동적으로 생성된 제목 요소에 대응
+    this.setupYouTubeTitleObserver();
+    
+    // 추가로 주기적으로 아이콘 상태 확인
+    this.startYouTubeIconMonitoring();
+  }
+  
+  // 🎥 YouTube 제목 요소 변경 감지
+  setupYouTubeTitleObserver() {
+    if (!this.isYouTubeMode()) return;
+    
+    console.log('🎥 YouTube: 제목 요소 변경 감지 설정');
+    
+    this.youtubeTitleObserver = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        if (mutation.type === 'childList') {
+          // 새로 추가된 노드들 확인
+          mutation.addedNodes.forEach((node) => {
+            if (node.nodeType === Node.ELEMENT_NODE) {
+              // 제목 관련 요소가 추가되었는지 확인
+              if (this.isYouTubeTitleElement(node)) {
+                console.log('🎥 YouTube: 새로운 제목 요소 감지, 아이콘 재생성');
+                setTimeout(() => this.createYouTubeIcon(), 100);
+              }
+            }
+          });
+        }
+      });
+    });
+    
+    // body 전체 감시
+    this.youtubeTitleObserver.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
+  }
+  
+  // 🎥 YouTube 제목 요소인지 확인
+  isYouTubeTitleElement(element) {
+    if (!element || !element.querySelector) return false;
+    
+    const titleSelectors = [
+      'h1.ytd-watch-metadata',
+      'h1.style-scope.ytd-watch-metadata',
+      'div#title h1',
+      'div#title',
+      'ytd-watch-metadata h1',
+      'ytd-video-primary-info-renderer h1',
+      'h1[class*="ytd-watch"]',
+      'h1[class*="title"]'
+    ];
+    
+    return titleSelectors.some(selector => {
+      return element.matches(selector) || element.querySelector(selector);
+    });
+  }
+  
+  // 🎥 YouTube 아이콘 모니터링 시작
+  startYouTubeIconMonitoring() {
+    if (!this.isYouTubeMode()) return;
+    
+    console.log('🎥 YouTube: 아이콘 모니터링 시작');
+    
+    // 30초마다 아이콘 상태 확인
+    this.youtubeIconMonitoringInterval = setInterval(() => {
+      const existingIcon = document.getElementById('youtube-perplexity-icon');
+      const titleElement = document.querySelector('h1.ytd-watch-metadata, h1.style-scope.ytd-watch-metadata, ytd-watch-metadata h1');
+      
+      if (!existingIcon && titleElement) {
+        console.log('🎥 YouTube: 모니터링에서 제목 발견, 아이콘 재생성');
+        this.createYouTubeIcon();
+      } else if (existingIcon && !titleElement) {
+        console.log('🎥 YouTube: 모니터링에서 제목 사라짐, 아이콘 제거');
+        this.removeYouTubeIcon();
+      }
+    }, 30000); // 30초마다 확인
   }
 
   // 🎯 아이콘 자동 숨김 타이머 설정
@@ -823,222 +1628,50 @@ class TTSManager {
     const body = document.body;
     if (!body) return null;
     
-    // header, footer, nav 등 제외
-    const excludeSelectors = [
-      'header', 'footer', 'nav', '[role="banner"]', '[role="contentinfo"]',
-      '[role="navigation"]', '.header', '.footer', '.nav', '.navigation',
-      '.sidebar', '.menu', '.breadcrumb'
-    ];
+    const hostname = window.location.hostname.toLowerCase();
+    console.log(`🌐 사이트별 메인 콘텐츠 추출 시작: ${hostname}`);
     
-    // 메인 콘텐츠 영역 우선 찾기 (대형 사이트 호환성 강화)
-    let mainContent = body.querySelector('main, [role="main"], .main, .content, .container, .board_view, .article, .post, .view_content, .content_view');
+    // 🎯 사이트별 특화 본문 영역 식별
+    let mainContent = window.htmlAnalyzerSites.getSiteSpecificMainContent(hostname, body);
     
     if (!mainContent) {
-      // CNN/BBC/Google 등 대형 사이트 특화 셀렉터
-      mainContent = body.querySelector('[data-module="ArticleBody"], .article-body, .story-body, .entry-content, .post-body, .article-content, .page-content, .main-content, [class*="article"], [class*="story"], [class*="page-"]');
+      // 일반적인 메인 콘텐츠 영역 찾기
+      mainContent = window.htmlAnalyzerCommon.extractMainContent();
     }
     
-    if (!mainContent) {
-      // 클리앙 및 기타 사이트: 게시글 본문 영역 탐지
-      mainContent = body.querySelector('.view_content, .content_view, .board_content, .post_content, [class*="content"], [class*="view"]');
-    }
-    
-    if (!mainContent) {
-      // 메인 영역이 없으면 body 전체에서 제외 요소들 필터링
-      mainContent = body;
-      console.log('⚠️ 메인 콘텐츠 영역을 찾지 못해 body 전체를 사용합니다.');
-    }
-    
-    console.log(`🎯 메인 콘텐츠 영역: <${mainContent.tagName.toLowerCase()}>`);
     return mainContent;
   }
+
+
   
   // 🎯 콘텐츠 요소들 찾기 (DOM 순서대로 순차적 처리)
   findContentElements(container) {
-    if (!container) return [];
-    
-    const contentElements = [];
-    const processedElements = new Set(); // 중복 방지
-    
-    // TreeWalker로 DOM 순서대로 모든 블록 요소 탐색
-    const walker = document.createTreeWalker(
-      container,
-      NodeFilter.SHOW_ELEMENT,
-      {
-        acceptNode: (node) => {
-          // div, p, h#, article, section 등 블록 요소만
-          const validTags = ['div', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'article', 'section', 'blockquote', 'aside'];
-          if (!validTags.includes(node.tagName.toLowerCase())) {
-            return NodeFilter.FILTER_REJECT;
-          }
-          
-          // 제외 조건 확인
-          if (this.shouldExcludeElement(node)) {
-            return NodeFilter.FILTER_REJECT;
-          }
-          
-          return NodeFilter.FILTER_ACCEPT;
-        }
-      }
-    );
-    
-    let currentNode;
-    while (currentNode = walker.nextNode()) {
-      // 이미 처리된 요소는 건너뛰기
-      if (processedElements.has(currentNode)) {
-        continue;
-      }
-      
-      const tagName = currentNode.tagName.toLowerCase();
-      console.log(`🔍 요소 검사: <${tagName}> (${currentNode.textContent?.length || 0}자)`);
-      
-      // 🔍 클리앙 디버깅: p 태그 상세 분석
-      if (tagName === 'p') {
-        console.log(`🟢 P 태그 상세:`, {
-          innerHTML: currentNode.innerHTML,
-          textContent: `"${currentNode.textContent}"`,
-          textLength: currentNode.textContent?.length || 0,
-          hasOnlyBr: currentNode.innerHTML === '<br>' || currentNode.innerHTML === '<br/>',
-          hasNbsp: currentNode.innerHTML.includes('&nbsp;')
-        });
-      }
-      
-      // 🎯 모든 태그를 DOM 순서대로 동일하게 처리
-      const directText = this.getDirectTextContent(currentNode);
-      const fullText = this.extractAllTextFromElement(currentNode);
-      const isHeading = tagName.match(/^h[1-6]$/);
-      const isParagraph = tagName === 'p';
-      const minLength = isHeading ? 2 : 3; // p태그 3자, h태그 2자 (한글 기준)
-      
-      if (isParagraph || isHeading) {
-        // p 태그나 헤딩 태그는 항상 개별 처리 (전체 텍스트 사용)
-        if (fullText && fullText.length > minLength) {
-          const elementType = isHeading ? 'H' : 'P';
-          console.log(`✅ ${elementType} 태그 테이크 추가: "${fullText.substring(0, 30)}..."`);
-          contentElements.push(currentNode);
-          processedElements.add(currentNode);
-        } else if (isParagraph) {
-          // p 태그 디버깅: 왜 추가되지 않았는지 로그
-          console.log(`❌ P 태그 제외됨:`, {
-            fullTextLength: fullText?.length || 0,
-            minLength: minLength,
-            fullText: `"${fullText}"`,
-            reason: !fullText ? '텍스트 없음' : fullText.length <= minLength ? '길이 부족' : '기타'
-          });
-        }
-      } else if (directText && directText.length > 3) { // div도 3자로 완화 (한글 기준)
-        // div 등에서 직접 텍스트가 있는 경우 (직접 텍스트만 사용)
-        console.log(`✅ 직접 텍스트 테이크 추가: <${tagName}> "${directText.substring(0, 30)}..."`);
-        contentElements.push(currentNode);
-        processedElements.add(currentNode);
-        
-        // ⚠️ 중요: 하위 요소들은 별도로 처리되도록 processedElements에 추가하지 않음
-        // 각각이 독립적인 테이크가 될 수 있도록 함
-      }
-    }
-    
-    console.log(`🔍 콘텐츠 요소 탐색 완료: ${contentElements.length}개`);
-    
-    // 🔍 대형 사이트 디버깅: 발견된 요소들 요약
-    const hostname = window.location.hostname;
-    const isProblematicSite = hostname.includes('cnn.com') || hostname.includes('bbc.com') || hostname.includes('google.com') || hostname.includes('clien.net');
-    
-    if (isProblematicSite || contentElements.length === 0) {
-      console.log(`🔍 ${hostname} 디버깅 - 발견된 콘텐츠 요소들:`);
-      contentElements.slice(0, 5).forEach((el, idx) => {
-        const text = el.textContent?.trim().substring(0, 50) || '';
-        console.log(`  ${idx + 1}. <${el.tagName.toLowerCase()}> "${text}..."`);
-        console.log(`    클래스: ${el.className || '없음'}`);
-        console.log(`    ID: ${el.id || '없음'}`);
-      });
-      if (contentElements.length === 0) {
-        console.log(`⚠️ ${hostname}에서 콘텐츠 요소를 하나도 찾지 못했습니다!`);
-        console.log(`📊 메인 콘텐츠 영역: ${mainContent?.tagName || '없음'}`);
-        console.log(`📊 메인 콘텐츠 클래스: ${mainContent?.className || '없음'}`);
-      }
-    }
-    
-    return contentElements;
+    return window.htmlAnalyzerCommon.findContentElements(container);
   }
   
   // 🎯 요소 제외 여부 판단 (Daum 뉴스 디버깅 강화)
   shouldExcludeElement(element) {
-    const isExcluded = this.isExcludedElement(element);
-    const isVisible = this.isVisibleElement(element);
-    const textContent = element.textContent?.trim() || '';
-    
-    // 🔍 Daum 뉴스 디버깅: 제외 사유 상세 분석
-    if (isExcluded || !isVisible) {
-      console.log(`🚫 요소 제외됨:`, {
-        tagName: element.tagName.toLowerCase(),
-        className: element.className || '',
-        id: element.id || '',
-        isExcluded: isExcluded,
-        isVisible: isVisible,
-        textLength: textContent.length,
-        textPreview: textContent.substring(0, 50) + '...'
-      });
-    }
-    
-    return isExcluded || !isVisible;
+    return window.htmlAnalyzerCommon.shouldExcludeElement(element);
   }
   
   // 🎯 요소 가시성 확인
   isVisibleElement(element) {
-    if (!element) return false;
-    
-    // 스타일 확인
-    const style = window.getComputedStyle(element);
-    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
-      return false;
-    }
-    
-    // 크기 확인
-    const rect = element.getBoundingClientRect();
-    if (rect.width === 0 && rect.height === 0) {
-      return false;
-    }
-    
-    return true;
+    return window.htmlAnalyzerCommon.isVisibleElement(element);
   }
   
   // 🎯 요소의 직접 텍스트 내용 추출 (하위 블록 요소 제외)
   getDirectTextContent(element) {
-    let text = '';
-    
-    for (const child of element.childNodes) {
-      if (child.nodeType === Node.TEXT_NODE) {
-        text += child.textContent;
-      } else if (child.nodeType === Node.ELEMENT_NODE) {
-        // 인라인 요소들(span, strong, em 등)의 텍스트는 포함
-        const tagName = child.tagName.toLowerCase();
-        const inlineTags = ['span', 'strong', 'em', 'b', 'i', 'a', 'code', 'small', 'sub', 'sup'];
-        if (inlineTags.includes(tagName)) {
-          text += child.textContent;
-        }
-      }
-    }
-    
-    return text.trim();
+    return window.htmlAnalyzerCommon.getDirectTextContent(element);
   }
   
   // 🎯 요소에서 전체 텍스트 추출 (테이크 생성용)
   extractTextFromElement(element) {
-    return this.extractAllTextFromElement(element);
+    return window.htmlAnalyzerCommon.extractTextFromElement(element);
   }
   
   // 🎯 요소 선택자 생성
   generateElementSelector(element) {
-    let selector = element.tagName.toLowerCase();
-    
-    if (element.id) {
-      selector += `#${element.id}`;
-    } else if (element.className) {
-      const classes = element.className.trim().split(/\s+/).slice(0, 2);
-      selector += '.' + classes.join('.');
-    }
-    
-    return selector;
+    return window.htmlAnalyzerCommon.generateElementSelector(element);
   }
   
   // 🎯 테이크 리스트 UI 업데이트 (국기 + 텍스트)
@@ -1060,8 +1693,8 @@ class TTSManager {
         html += `<div style="
           margin-bottom: 6px; 
           font-size: 8px; 
-          line-height: 1.3;
-          color: black;
+          line-height: 1.6em;
+          color: ${textColor};
         ">
           <span>${flagEmoji}</span>
           <span>${take.text.substring(0, 100)}${take.text.length > 100 ? '...' : ''} / ${take.text.length}</span>
@@ -1080,10 +1713,11 @@ class TTSManager {
       existingUI.remove();
     }
 
-    // 테마 색상 가져오기
+    // 테마별 배경색 설정 (하단 플로팅 UI와 동일)
     const isDark = this.currentTheme === 'dark';
-    const bgColor = isDark ? 'rgba(0, 0, 0, 0.9)' : 'rgba(222, 222, 222, 0.9)';
-    const textColor = isDark ? '#aaaaaa' : '#1d1d1d';
+    const bgColor = isDark ? 'rgba(0, 0, 0, 0.2)' : 'rgba(255, 255, 255, 0.2)';
+    const textColor = isDark ? 'rgba(255, 255, 255, 0.8)' : '#1d1d1d';
+    const borderColor = 'rgba(125, 125, 125, 0.5)';
 
     // 플로팅 컨테이너 생성 (테이크 리스트 포함)
     this.floatingUI = document.createElement('div');
@@ -1092,10 +1726,10 @@ class TTSManager {
       position: fixed !important;
       top: 15px !important;
       right: 15px !important;
-      background: rgba(255, 255, 255, 0.8) !important;
+      background: ${bgColor} !important;
       backdrop-filter: blur(10px) !important;
       -webkit-backdrop-filter: blur(10px) !important;
-      color: black !important;
+      color: ${textColor} !important;
       padding: 12px !important;
       border-radius: 8px !important;
       box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1) !important;
@@ -1106,13 +1740,14 @@ class TTSManager {
       max-height: 85vh !important;
       display: none !important;
       overflow-y: auto !important;
+      border: 1px solid ${borderColor} !important;
     `;
 
     // 🎯 발견된 테이크 수 표시
     this.takeCountLabel = document.createElement('div');
     this.takeCountLabel.id = 'tts-take-count';
     this.takeCountLabel.style.cssText = `
-      color: black !important;
+      color: ${textColor} !important;
       font-size: 8px !important;
       font-weight: normal !important;
       margin-bottom: 8px !important;
@@ -1126,7 +1761,7 @@ class TTSManager {
     this.takeListContainer.style.cssText = `
       overflow-y: auto !important;
       scrollbar-width: thin !important;
-      color: black !important;
+      color: ${textColor} !important;
     `;
 
     // 🎯 요소 조립
@@ -1154,8 +1789,12 @@ class TTSManager {
         return;
       }
       
-      // 입력 필드에서는 단축키 무시
-      if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
+      // 🎯 입력 필드에서 스페이스바 처리 개선
+      if (this.isInputField(event.target)) {
+        // 입력 필드에서는 스페이스바 기본 동작 허용
+        if (event.key === ' ') {
+          return;
+        }
         return;
       }
 
@@ -1176,6 +1815,16 @@ class TTSManager {
         // ESC로 모든 재생 중지
         this.stopAll();
         event.preventDefault();
+      } else if (key === ' ') {
+        // 🤖 Zeta AI / ChatGPT에서는 스페이스바 기능 비활성화
+        if (!this.isZetaOrChatGPTMode()) {
+          // 🎯 스페이스바로 하단 플로팅바 재생/일시정지 토글
+          this.handleSpacebarToggle();
+          event.preventDefault();
+        }
+      } else if (key === 'Enter') {
+        // 🤖 Zeta AI / ChatGPT: 엔터키 입력 감지 (화자 구분용) - 포괄적 감지
+        this.handleZetaAIEnterKey();
       }
     });
     
@@ -1188,6 +1837,223 @@ class TTSManager {
       this.currentMouseY = event.clientY;
     });
   }
+
+  // 🎯 입력 필드 판단 (스페이스바 예외 처리용)
+  isInputField(element) {
+    if (!element) return false;
+    
+    // 기본 입력 요소들
+    if (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA') {
+      return true;
+    }
+    
+    // contenteditable 요소들
+    if (element.contentEditable === 'true') {
+      return true;
+    }
+    
+    // 특정 역할을 가진 요소들
+    const role = element.getAttribute('role');
+    if (role === 'textbox' || role === 'searchbox' || role === 'combobox') {
+      return true;
+    }
+    
+    // 특정 클래스나 ID를 가진 요소들
+    const className = element.className?.toLowerCase() || '';
+    const elementId = element.id?.toLowerCase() || '';
+    
+    const inputKeywords = [
+      'input', 'textarea', 'editor', 'composer', 'comment', 'reply',
+      'search', 'form', 'chat', 'message', 'note', 'code'
+    ];
+    
+    if (inputKeywords.some(keyword => 
+      className.includes(keyword) || elementId.includes(keyword)
+    )) {
+      return true;
+    }
+    
+    return false;
+  }
+
+  // 🤖 Zeta AI / ChatGPT: 포괄적 엔터키 감지 시스템 설정
+  setupZetaAIEnterKeyDetection() {
+    if (!this.isZetaOrChatGPTMode()) {
+      return; // Zeta AI / ChatGPT 사이트가 아니면 설정하지 않음
+    }
+    
+    console.log('🤖 Zeta AI: 포괄적 엔터키 감지 시스템 설정 시작');
+    
+    // 1. 전역 keydown 이벤트 (이미 설정됨)
+    // 2. 전역 keypress 이벤트 추가
+    document.addEventListener('keypress', (event) => {
+      if (event.key === 'Enter' || event.keyCode === 13) {
+        this.handleZetaAIEnterKey();
+      }
+    }, true); // 캡처링 단계에서 감지
+    
+    // 3. 전역 keyup 이벤트 추가
+    document.addEventListener('keyup', (event) => {
+      if (event.key === 'Enter' || event.keyCode === 13) {
+        this.handleZetaAIEnterKey();
+      }
+    }, true); // 캡처링 단계에서 감지
+    
+    // 4. MutationObserver로 DOM 변경 감지 (React 등에서 동적으로 생성되는 입력 필드용)
+    this.setupZetaAIMutationObserver();
+    
+    // 5. 주기적 입력 필드 스캔 (백업용)
+    this.startZetaAIInputFieldScanning();
+    
+    console.log('🤖 Zeta AI / ChatGPT: 포괄적 엔터키 감지 시스템 설정 완료');
+  }
+
+  // 🤖 Zeta AI / ChatGPT: MutationObserver 설정 (동적 입력 필드 감지용)
+  setupZetaAIMutationObserver() {
+    if (!this.isZetaOrChatGPTMode()) {
+      return;
+    }
+    
+    // DOM 변경 감지
+    this.zetaAIMutationObserver = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        if (mutation.type === 'childList') {
+          mutation.addedNodes.forEach((node) => {
+            if (node.nodeType === Node.ELEMENT_NODE) {
+              // 새로 추가된 입력 필드들에 엔터키 이벤트 리스너 추가
+              this.addEnterKeyListenersToElement(node);
+            }
+          });
+        }
+      });
+    });
+    
+    // body 전체 감시
+    this.zetaAIMutationObserver.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
+    
+    console.log('🤖 Zeta AI / ChatGPT: MutationObserver 설정 완료');
+  }
+
+  // 🤖 Zeta AI / ChatGPT: 요소에 엔터키 리스너 추가
+  addEnterKeyListenersToElement(element) {
+    if (!element || !this.isZetaOrChatGPTMode()) {
+      return;
+    }
+    
+    // 입력 필드인지 확인
+    if (this.isInputField(element)) {
+      // keydown, keypress, keyup 모두 추가
+      ['keydown', 'keypress', 'keyup'].forEach(eventType => {
+        element.addEventListener(eventType, (event) => {
+          if (event.key === 'Enter' || event.keyCode === 13) {
+            this.handleZetaAIEnterKey();
+          }
+        }, true);
+      });
+      
+      console.log('🤖 Zeta AI / ChatGPT: 입력 필드에 엔터키 리스너 추가:', element.tagName, element.className);
+    }
+    
+    // 자식 요소들도 재귀적으로 처리
+    if (element.children) {
+      Array.from(element.children).forEach(child => {
+        this.addEnterKeyListenersToElement(child);
+      });
+    }
+  }
+
+  // 🤖 Zeta AI / ChatGPT: 주기적 입력 필드 스캔 (백업용)
+  startZetaAIInputFieldScanning() {
+    if (!this.isZetaOrChatGPTMode()) {
+      return;
+    }
+    
+    // 2초마다 모든 입력 필드를 스캔하여 엔터키 리스너 추가
+    this.zetaAIInputScanInterval = setInterval(() => {
+      const inputElements = document.querySelectorAll('input, textarea, [contenteditable="true"], [role="textbox"]');
+      
+      inputElements.forEach(element => {
+        // 이미 리스너가 추가되었는지 확인
+        if (!element.hasAttribute('data-zeta-enter-listener')) {
+          this.addEnterKeyListenersToElement(element);
+          element.setAttribute('data-zeta-enter-listener', 'true');
+        }
+      });
+    }, 2000);
+    
+    console.log('🤖 Zeta AI / ChatGPT: 주기적 입력 필드 스캔 시작');
+  }
+
+  // 🤖 Zeta AI / ChatGPT 엔터키 처리 (화자 구분용)
+  handleZetaAIEnterKey() {
+    if (!this.isZetaOrChatGPTMode()) {
+      return; // Zeta AI / ChatGPT 사이트가 아니면 무시
+    }
+    
+    // 중복 감지 방지 (100ms 내 중복 호출 무시)
+    const currentTime = Date.now();
+    if (this.lastEnterKeyTime && (currentTime - this.lastEnterKeyTime) < 100) {
+      return;
+    }
+    this.lastEnterKeyTime = currentTime;
+    
+    // 엔터키 입력 플래그를 true로 설정
+    this.zetaAIEnterFlag = true;
+    
+    console.log('🤖 Zeta AI / ChatGPT 엔터키 감지: 플래그 true로 설정');
+    console.log('🤖 Zeta AI / ChatGPT 감지 위치:', event?.target?.tagName, event?.target?.className);
+  }
+
+  // 🤖 Zeta AI / ChatGPT 화자 구분 로직
+  determineZetaAISpeaker() {
+    if (!this.isZetaOrChatGPTMode()) {
+      return; // Zeta AI / ChatGPT 사이트가 아니면 무시
+    }
+    
+    // 엔터키 플래그가 true인 경우에만 화자1로 변경
+    if (this.zetaAIEnterFlag) {
+      this.zetaAICurrentSpeaker = 'speaker1';
+      console.log('🤖 Zeta AI / ChatGPT 화자1 감지: 엔터키 플래그 true');
+      // 플래그를 false로 변경 (다음 테이크부터는 화자2)
+      this.zetaAIEnterFlag = false;
+    } else {
+      // 엔터키 플래그가 false인 경우 화자2 (기본값)
+      if (!this.zetaAICurrentSpeaker || this.zetaAICurrentSpeaker === 'speaker1') {
+        this.zetaAICurrentSpeaker = 'speaker2';
+        console.log('🤖 Zeta AI / ChatGPT 화자2 감지: 엔터키 플래그 false');
+      }
+    }
+    
+    const currentVoice = this.zetaAICurrentSpeaker === 'speaker1' ? 
+      this.zetaAISpeaker1Voice : this.zetaAISpeaker2Voice;
+    
+    console.log(`🤖 Zeta AI / ChatGPT 최종 결정: ${this.zetaAICurrentSpeaker} (${currentVoice.name})`);
+  }
+
+  // 🎯 스페이스바 토글 처리 (하단 플로팅바와 동일한 로직)
+  async handleSpacebarToggle() {
+    this.log('🎯 스페이스바 토글 처리');
+    
+    // 현재 재생 중인 경우
+    if (this.isPlaying) {
+      if (this.isPaused) {
+        // 일시정지 상태면 재생 재개
+        this.log('▶️ 스페이스바: 재생 재개');
+        this.resumePlayback();
+      } else {
+        // 재생 중이면 일시정지
+        this.log('⏸️ 스페이스바: 일시정지');
+        this.pausePlayback();
+      }
+    } else {
+      // 정지 상태면 '읽어 보세요' 기능 실행
+      this.log('🎯 스페이스바: 읽어 보세요 기능 실행');
+      await this.startReadingFromFirst();
+    }
+  }
   
   // 🎯 음성 선택 후 마우스 위치에서 테이크 재생 시작
   async selectVoiceAndStartFromMousePosition(voiceIndex) {
@@ -1199,7 +2065,7 @@ class TTSManager {
       this.selectedVoice = newVoice;
       
       // 화자 설정 저장
-      this.saveVoiceSetting(newVoice);
+      await this.saveVoiceSetting(newVoice);
       
       console.log(`🎵 단축키로 음성 선택: ${this.selectedVoice.name}`);
       
@@ -1364,9 +2230,19 @@ class TTSManager {
         console.log(`🎯 버퍼링된 오디오 즉시 재생: ${take.id}`);
         audioUrl = take.audioUrl;
       } else {
-        // 버퍼링되지 않은 경우 생성
+        // 버퍼링되지 않은 경우 생성 (재생을 위한 생성)
         console.log(`🔄 테이크 실시간 생성: ${take.id}`);
         this.updateStatus(`음성 생성 중... (${playListIndex + 1}/${this.currentPlayList.length})`, '#FF9800');
+        
+        // 🎯 재생을 위한 생성 시 해당 테이크 위치로 자동 스크롤
+        if (take.element) {
+          console.log(`📜 재생을 위한 생성 - 테이크 위치로 스크롤: <${take.element.tagName.toLowerCase()}>`);
+          take.element.scrollIntoView({ 
+            behavior: 'smooth', 
+            block: 'center',
+            inline: 'nearest'
+          });
+        }
         
         // 🎯 현재 재생 테이크에도 버퍼링 애니메이션 적용
         console.log(`🎭 현재 재생 테이크 애니메이션 시작: ${take.id}`);
@@ -2145,7 +3021,7 @@ class TTSManager {
     this.overlayHighlight.style.cssText = `
       position: absolute !important;
       pointer-events: none !important;
-      z-index: 999999 !important;
+      z-index: 99996 !important;
       background: rgba(34, 124, 255, 0.1) !important;
       border-bottom: 2px solid #227cff !important;
       border-radius: 0px !important;
@@ -2498,6 +3374,12 @@ class TTSManager {
 
   // 플로팅 UI 표시/숨김
   showUI() {
+    // 🤖 Zeta AI / ChatGPT에서는 기존 플로팅 UI 숨김
+    if (this.isZetaOrChatGPTMode()) {
+      console.log('🤖 Zeta AI / ChatGPT: 기존 플로팅 UI 숨김');
+      return;
+    }
+    
     if (this.floatingUI) {
       this.floatingUI.style.display = 'block';
     }
@@ -2513,6 +3395,14 @@ class TTSManager {
     if (this.floatingUI) {
       this.floatingUI.style.display = 'none';
     }
+    
+    // 하단 플로팅 UI가 숨겨질 때 스크롤 영역도 제거
+    const scrollSpacer = document.getElementById('tts-bottom-scroll-spacer');
+    if (scrollSpacer) {
+      scrollSpacer.remove();
+      console.log('📏 하단 스크롤 영역 제거');
+    }
+    
     // 플러그인이 비활성화된 경우가 아니라면 하단 플로팅 UI는 계속 표시
     // (togglePlugin에서 직접 제어)
   }
@@ -2529,6 +3419,11 @@ class TTSManager {
       // 테마 변경 시 하단 플로팅 UI 업데이트
       if (this.bottomFloatingUI) {
         this.updateBottomFloatingUITheme();
+      }
+      
+      // 🤖 Zeta AI: 테마 변경 시 캐릭터 UI 재생성
+      if (window.location.hostname.includes('zeta-ai')) {
+        this.updateZetaAICharacterUITheme();
       }
       
     } catch (error) {
@@ -2696,16 +3591,53 @@ class TTSManager {
     return null;
   }
 
-  // 🎨 하단 플로팅 UI 테마 업데이트
+  // 🎯 하단 스크롤 영역 추가 (플로팅 UI 높이만큼)
+  addBottomScrollSpacer() {
+    // 기존 스크롤 영역 제거
+    const existingSpacer = document.getElementById('tts-bottom-scroll-spacer');
+    if (existingSpacer) {
+      existingSpacer.remove();
+    }
+
+    // 새로운 스크롤 영역 생성
+    const scrollSpacer = document.createElement('div');
+    scrollSpacer.id = 'tts-bottom-scroll-spacer';
+    scrollSpacer.style.cssText = `
+      width: 100% !important;
+      height: 45px !important;
+      min-height: 45px !important;
+      max-height: 45px !important;
+      position: relative !important;
+      display: block !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      border: 0 !important;
+      background: transparent !important;
+      pointer-events: none !important;
+      user-select: none !important;
+      z-index: 1 !important;
+      box-sizing: border-box !important;
+      flex-shrink: 0 !important;
+      flex-grow: 0 !important;
+      overflow: hidden !important;
+    `;
+
+    // body의 마지막 자식으로 추가 (플로팅 UI보다 앞에)
+    document.body.appendChild(scrollSpacer);
+    
+    console.log('📏 하단 스크롤 영역 추가: 45px');
+  }
+
+    // 🎨 하단 플로팅 UI 테마 업데이트
   updateBottomFloatingUITheme() {
     if (!this.bottomFloatingUI) return;
 
     const isDark = this.currentTheme === 'dark';
     
     // 라이트 테마는 흰색, 다크 테마는 검정 + 블러 효과
-    const bgColor = isDark ? 'rgba(0, 0, 0, 0.8)' : 'rgba(255, 255, 255, 0.8)';
-    const textColor = isDark ? '#aaaaaa' : '#1d1d1d';
-    const borderColor = isDark ? 'rgba(255, 255, 255, 1.0)' : 'rgba(29, 29, 29, 0.3)';
+    const bgColor = isDark ? 'rgba(0, 0, 0, 0.2)' : 'rgba(255, 255, 255, 0.2)';
+    const textColor = isDark ? 'rgba(255, 255, 255, 0.8)' : '#1d1d1d';
+    const borderColor = 'rgba(125, 125, 125, 0.5)';
 
     // 컨테이너 배경 업데이트 (블러 효과 포함)
     this.bottomFloatingUI.style.background = bgColor;
@@ -2720,17 +3652,21 @@ class TTSManager {
       this.bottomFloatingButton.style.textAlign = 'center';
     }
 
+    // 새로고침 버튼 스타일 업데이트
+    if (this.refreshButton) {
+      this.refreshButton.style.background = 'transparent';
+      this.refreshButton.style.color = textColor;
+    }
+
     // SVG 아이콘 색상 업데이트
     const svgStyle = this.bottomFloatingUI.querySelector('svg style');
     if (svgStyle) {
       svgStyle.textContent = `.company-logo { fill: ${textColor}; }`;
     }
 
-    // 보더 색상 업데이트 - 클래스명으로 구분선 찾아서 업데이트
-    const border1 = this.bottomFloatingUI.querySelector('.tts-bottom-border-1');
-    
-    if (border1) {
-      border1.style.borderTop = `1px solid ${borderColor} !important`;
+    // 보더 색상 업데이트 - 상위 컨테이너에 직접 적용
+    if (this.bottomFloatingUI) {
+      this.bottomFloatingUI.style.borderTop = `1px solid ${borderColor} !important`;
       console.log(`🎨 구분선 색상 업데이트: ${borderColor}`);
     }
 
@@ -2758,11 +3694,17 @@ class TTSManager {
       this.bottomFloatingUI.remove();
     }
 
+    // 기존 스크롤 영역 추가 요소 제거
+    const existingScrollSpacer = document.getElementById('tts-bottom-scroll-spacer');
+    if (existingScrollSpacer) {
+      existingScrollSpacer.remove();
+    }
+
     // 테마별 배경색 설정
     const isDark = this.currentTheme === 'dark';
-    const bgColor = isDark ? 'rgba(0, 0, 0, 0.8)' : 'rgba(255, 255, 255, 0.8)';
-    const textColor = isDark ? '#aaaaaa' : '#1d1d1d';
-    const borderColor = isDark ? 'rgba(255, 255, 255, 1.0)' : 'rgba(29, 29, 29, 0.3)';
+    const bgColor = isDark ? 'rgba(0, 0, 0, 0.2)' : 'rgba(255, 255, 255, 0.2)';
+    const textColor = isDark ? 'rgba(255, 255, 255, 0.8)' : '#1d1d1d';
+    const borderColor = 'rgba(125, 125, 125, 0.5)';
 
     this.bottomFloatingUI = document.createElement('div');
     this.bottomFloatingUI.id = 'tts-bottom-floating-ui';
@@ -2780,42 +3722,23 @@ class TTSManager {
       color: ${textColor} !important;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
       display: none !important;
-    `;
-
-    // 상단 보더 라인들
-    const borderContainer = document.createElement('div');
-    borderContainer.style.cssText = `
-      width: 100% !important;
-      display: flex !important;
-      flex-direction: column !important;
-      align-items: center !important;
-      position: relative !important;
-      padding: 0 !important;
-      margin: 0 !important;
-    `;
-
-    // 구분선 (100% 너비) - 테마에 따라 색상 적용
-    const border1 = document.createElement('div');
-    border1.className = 'tts-bottom-border-1';
-    border1.style.cssText = `
-      width: 100% !important;
-      height: 0 !important;
       border-top: 1px solid ${borderColor} !important;
-      margin: 0 !important;
     `;
 
-    // 메인 버튼 컨테이너 (아이콘 + 텍스트)
+    // 메인 버튼 컨테이너 (아이콘 + 텍스트 + 새로고침)
     const buttonContainer = document.createElement('div');
     buttonContainer.style.cssText = `
       width: 100% !important;
       height: 44px !important;
       display: flex !important;
       align-items: center !important;
-      justify-content: center !important;
-      position: relative !important;
+      justify-content: space-between !important;
+      padding: 0 16px !important;
+      box-sizing: border-box !important;
+      flex-wrap: nowrap !important;
     `;
 
-    // SVG 아이콘 (좌측) - 원본 SVG 수정 버전
+    // 좌측: SVG 아이콘
     const svgIcon = document.createElement('div');
     svgIcon.innerHTML = `
       <svg width="20" height="20" viewBox="281 404 33 33" xmlns="http://www.w3.org/2000/svg">
@@ -2826,10 +3749,6 @@ class TTSManager {
       </svg>
     `;
     svgIcon.style.cssText = `
-      position: absolute !important;
-      left: 16px !important;
-      top: 50% !important;
-      transform: translateY(-50%) !important;
       pointer-events: auto !important;
       cursor: pointer !important;
       display: flex !important;
@@ -2843,10 +3762,10 @@ class TTSManager {
       window.open('https://supertone.ai/', '_blank');
     });
 
-    // 메인 버튼 (텍스트만)
+    // 중앙: 메인 버튼 (텍스트만)
     this.bottomFloatingButton = document.createElement('button');
     this.bottomFloatingButton.style.cssText = `
-      width: 100% !important;
+      flex: 1 !important;
       height: 44px !important;
       line-height: 39px !important;
       background: transparent !important;
@@ -2861,17 +3780,47 @@ class TTSManager {
       font-family: inherit !important;
       outline: none !important;
       padding-top: 0 !important;
-      margin-top: -3px !important;
-      padding-left: 50px !important;
+      margin-top: 0px !important;
       text-align: center !important;
     `;
 
-    // 컨테이너에 아이콘과 버튼 추가
+    // 우측: 새로고침 버튼 (↺)
+    this.refreshButton = document.createElement('button');
+    this.refreshButton.innerHTML = '↺';
+    this.refreshButton.style.cssText = `
+      width: 24px !important;
+      height: 44px !important;
+      min-width: 24px !important;
+      max-width: 24px !important;
+      background: transparent !important;
+      color: ${textColor} !important;
+      border: 0 !important;
+      font-size: ${this.UI_FONT_SIZE} !important;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+      cursor: pointer !important;
+      transition: all 0.3s !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      margin-top: -3px !important;
+      padding: 0 !important;
+      outline: none !important;
+      box-sizing: border-box !important;
+      flex-shrink: 0 !important;
+    `;
+
+    // 새로고침 버튼 클릭 이벤트
+    this.refreshButton.addEventListener('click', (event) => {
+      event.stopPropagation();
+      this.handleRefreshButtonClick();
+    });
+
+    // 컨테이너에 아이콘, 버튼, 새로고침 버튼 추가
     buttonContainer.appendChild(svgIcon);
     buttonContainer.appendChild(this.bottomFloatingButton);
+    buttonContainer.appendChild(this.refreshButton);
 
-    borderContainer.appendChild(border1);
-    this.bottomFloatingUI.appendChild(borderContainer);
+    // 버튼 컨테이너를 직접 추가
     this.bottomFloatingUI.appendChild(buttonContainer);
     
     // 이벤트 리스너
@@ -2880,6 +3829,9 @@ class TTSManager {
     });
 
     document.body.appendChild(this.bottomFloatingUI);
+    
+    // 하단 스크롤 영역 추가
+    this.addBottomScrollSpacer();
     
     // 테마 적용 후 상태 업데이트
     this.updateBottomFloatingUITheme();
@@ -2895,7 +3847,7 @@ class TTSManager {
     if (speed <= 1.0) return '보통 빠르기로';
     if (speed <= 1.2) return '조금 빠르게';
     if (speed <= 1.4) return '빠르게';
-    if (speed <= 1.6) return '제법 빠르게';
+    if (speed <= 1.6) return '꽤 빠르게';
     return '정말 빠르게';
   }
 
@@ -2925,11 +3877,11 @@ class TTSManager {
       background: ${bgColor} !important;
       backdrop-filter: blur(10px) !important;
       -webkit-backdrop-filter: blur(10px) !important;
-      border: 1px solid ${borderColor} !important;
+      border: 1px solid rgba(125, 125, 125, 0.2) !important;
       border-radius: 3px !important;
       box-shadow: 0px 0px 60px ${textColor}50 !important;
       z-index: 100002 !important;
-      line-height: 1.5em !important;
+      line-height: 1.5rem !important;
       padding: 0 !important;
       overflow-y: auto !important;
       -ms-overflow-style: none !important;
@@ -3076,7 +4028,7 @@ class TTSManager {
     this.playbackSpeed = speedOption.speed;
     
     // 속도 설정 저장
-    this.saveSpeedSetting(speedOption.speed);
+    await this.saveSpeedSetting(speedOption.speed);
     
     console.log(`🎵 속도 선택: ${speedOption.speed}x (${speedOption.text})`);
     
@@ -3172,6 +4124,7 @@ class TTSManager {
       `;
     } else {
       // 정지 상태
+      const speedText = this.getSpeedText(this.playbackSpeed);
       this.bottomFloatingButton.innerHTML = `
         <span style="color: ${textColor};">
           <span style="
@@ -3186,6 +4139,17 @@ class TTSManager {
             ${this.selectedVoice.name}
           </span>
           님의 목소리로
+          <span style="
+            color: ${textColor};
+            margin: 0 2px;
+            cursor: pointer;
+            text-decoration: underline;
+            text-underline-position: under;
+            text-decoration-color: ${underlineColor};
+            text-underline-offset: 5%;
+          " data-action="speed-menu">
+            ${speedText}
+          </span>
           <span style="
             text-decoration: underline;
             text-underline-position: under;
@@ -3236,6 +4200,737 @@ class TTSManager {
     } else {
       // 정지 상태에서 버튼 클릭 시도 '읽어 보세요' 클릭과 동일하게 처리
       await this.startReadingFromFirst();
+    }
+  }
+
+  // 🤖 Zeta AI / ChatGPT 새로운 글 업데이트 모니터링
+  startZetaAIMonitoring() {
+    if (!this.isZetaOrChatGPTMode()) {
+      return; // Zeta AI / ChatGPT 사이트가 아니면 모니터링 중지
+    }
+    
+    // 이미 모니터링 중이면 중복 시작 방지
+    if (this.zetaAIMonitorInterval) {
+      console.log('🤖 Zeta AI: 이미 모니터링 중입니다.');
+      return;
+    }
+    
+    console.log('🤖 Zeta AI / ChatGPT 모니터링 시작 (1번 테이크 모니터링)');
+    
+    // 초기 1번 테이크 저장
+    this.previousFirstTake = this.preTakes && this.preTakes.length > 0 ? this.preTakes[0].text : '';
+    
+    // 모니터링 인터벌 설정 (1초마다)
+    this.zetaAIMonitorInterval = setInterval(async () => {
+      try {
+        // 현재 페이지 분석 (기존 테이크 유지하면서)
+        const previousTakesLength = this.preTakes ? this.preTakes.length : 0;
+        await this.analyzePageAndCreateTakes();
+        
+        // 1번 테이크 확인
+        const currentFirstTake = this.preTakes && this.preTakes.length > 0 ? this.preTakes[0].text : '';
+        
+        // 디버깅 로그 추가
+        console.log(`🤖 Zeta AI 모니터링: 현재 테이크 "${currentFirstTake?.substring(0, 30)}...", 이전 테이크 "${this.previousFirstTake?.substring(0, 30)}..."`);
+        
+        // 1번 테이크가 바뀐 경우 (빈 문자열이 아니고, 이전과 다른 경우)
+        if (currentFirstTake && 
+            currentFirstTake.trim() !== '' && 
+            currentFirstTake !== this.previousFirstTake) {
+          
+          console.log('🤖 Zeta AI: 1번 테이크 변경 감지!');
+          
+          // 🤖 Zeta AI: 화자 구분 로직 적용
+          this.determineZetaAISpeaker();
+          
+          // 바뀐 1번 테이크를 팝업으로 표시
+          this.showZetaAINewContentOverlay(currentFirstTake);
+          
+          // 🤖 Zeta AI: 바뀐 테이크를 발화 큐에 추가 (순차 발화)
+          const firstTake = this.preTakes[0];
+          this.addToZetaAISpeechQueue(currentFirstTake, firstTake.language);
+          
+          // 현재 1번 테이크를 이전 값으로 저장
+          this.previousFirstTake = currentFirstTake;
+          
+          console.log('🤖 Zeta AI: 테이크 변경 처리 완료');
+        }
+              } catch (error) {
+          console.error('🤖 Zeta AI / ChatGPT 모니터링 오류:', error);
+          // 에러가 발생해도 모니터링은 계속 유지
+          console.log('🤖 Zeta AI: 모니터링 계속 유지 중...');
+        }
+    }, 1000); // 1초마다로 변경
+  }
+  
+  // 🤖 Zeta AI 모니터링 중지
+  stopZetaAIMonitoring() {
+    if (this.zetaAIMonitorInterval) {
+      clearInterval(this.zetaAIMonitorInterval);
+      this.zetaAIMonitorInterval = null;
+      this.previousFirstTake = ''; // 이전 1번 테이크 초기화
+      
+          // 🤖 Zeta AI: 화자 관련 상태 초기화
+    this.zetaAIEnterFlag = false;
+    this.zetaAICurrentSpeaker = 'speaker2'; // 기본값을 화자2로 설정
+      
+      // 🤖 Zeta AI: 엔터키 감지 시스템 정리
+      this.cleanupZetaAIEnterKeyDetection();
+      
+      // 🤖 Zeta AI: 캐릭터 UI 정리
+      this.cleanupZetaAICharacterUI();
+      
+      // 🤖 Zeta AI: 발화 큐 정리
+      this.cleanupZetaAISpeechQueue();
+      
+      console.log('🤖 Zeta AI / ChatGPT 모니터링 중지 (화자 상태 초기화)');
+    }
+  }
+
+  // 🤖 Zeta AI: 엔터키 감지 시스템 정리
+  cleanupZetaAIEnterKeyDetection() {
+    // MutationObserver 정리
+    if (this.zetaAIMutationObserver) {
+      this.zetaAIMutationObserver.disconnect();
+      this.zetaAIMutationObserver = null;
+    }
+    
+    // 주기적 스캔 인터벌 정리
+    if (this.zetaAIInputScanInterval) {
+      clearInterval(this.zetaAIInputScanInterval);
+      this.zetaAIInputScanInterval = null;
+    }
+    
+    console.log('🤖 Zeta AI / ChatGPT: 엔터키 감지 시스템 정리 완료');
+  }
+
+  // 🤖 Zeta AI: 캐릭터 UI 정리
+  cleanupZetaAICharacterUI() {
+    // 좌하단 캐릭터 UI 제거
+    if (this.zetaAILeftCharacterUI) {
+      this.zetaAILeftCharacterUI.remove();
+      this.zetaAILeftCharacterUI = null;
+    }
+    
+    // 우하단 캐릭터 UI 제거
+    if (this.zetaAIRightCharacterUI) {
+      this.zetaAIRightCharacterUI.remove();
+      this.zetaAIRightCharacterUI = null;
+    }
+    
+    console.log('🤖 Zeta AI: 캐릭터 UI 정리 완료');
+  }
+
+  // 🤖 Zeta AI / ChatGPT: 발화 큐 정리
+  cleanupZetaAISpeechQueue() {
+    // 현재 재생 중인 오디오 중지
+    if (this.zetaAICurrentAudio) {
+      this.zetaAICurrentAudio.pause();
+      this.zetaAICurrentAudio = null;
+    }
+    
+    // 큐 비우기
+    this.zetaAISpeechQueue = [];
+    this.zetaAIIsPlaying = false;
+    
+    console.log('🤖 Zeta AI / ChatGPT: 발화 큐 정리 완료');
+  }
+
+  // 🤖 Zeta AI / ChatGPT: 모든 발화 강제 중단 (화자1 우선 발화용)
+  forceStopAllZetaAISpeech() {
+    console.log('🤖 Zeta AI / ChatGPT: 모든 발화 강제 중단 시작');
+    
+    // 현재 재생 중인 오디오 즉시 중지
+    if (this.zetaAICurrentAudio) {
+      this.zetaAICurrentAudio.pause();
+      this.zetaAICurrentAudio.currentTime = 0;
+      this.zetaAICurrentAudio = null;
+    }
+    
+    // 기존 TTS 재생도 중지
+    if (this.currentAudio) {
+      this.currentAudio.pause();
+      this.currentAudio = null;
+    }
+    
+    // 재생 상태 초기화
+    this.isPlaying = false;
+    this.isPaused = false;
+    
+    // 발화 큐는 유지 (화자1만 남기기 위해)
+    this.zetaAIIsPlaying = false;
+    
+    console.log('🤖 Zeta AI / ChatGPT: 모든 발화 강제 중단 완료');
+  }
+
+  // 🤖 Zeta AI / ChatGPT: 3초 지연 후 테이크 감지 시작
+  startZetaAIDelayedTakeDetection() {
+    if (!this.isZetaOrChatGPTMode()) {
+      return;
+    }
+    
+    console.log('🤖 Zeta AI: 3초 후 테이크 감지 시작 예정');
+    
+    setTimeout(() => {
+      console.log('🤖 Zeta AI: 테이크 감지 시작');
+      this.startZetaAIMonitoring();
+    }, 3000); // 3초 지연
+  }
+
+  // 🤖 Zeta AI: 기존 하단 플로팅 UI 숨김
+  hideBottomFloatingUIForZetaAI() {
+    if (!window.location.hostname.includes('zeta-ai')) {
+      return;
+    }
+    
+    // 하단 플로팅 UI 숨김
+    if (this.bottomFloatingUI) {
+      this.bottomFloatingUI.style.display = 'none !important';
+    }
+    
+    // 하단 스크롤 영역 제거
+    const scrollSpacer = document.getElementById('tts-bottom-scroll-spacer');
+    if (scrollSpacer) {
+      scrollSpacer.remove();
+    }
+    
+    console.log('🤖 Zeta AI: 기존 하단 플로팅 UI 숨김 완료');
+  }
+
+  // 🤖 Zeta AI: 모든 기존 플로팅 UI 숨김
+  hideAllFloatingUIForZetaAI() {
+    if (!window.location.hostname.includes('zeta-ai')) {
+      return;
+    }
+    
+    // 상단 플로팅 UI 숨김
+    if (this.floatingUI) {
+      this.floatingUI.style.display = 'none !important';
+    }
+    
+    // 테이크 호버 아이콘 숨김
+    this.hideTakeHoverIcon();
+    
+    // 모든 TTS 관련 오버레이 제거
+    this.removeAllHighlights();
+    
+    console.log('🤖 Zeta AI: 모든 기존 플로팅 UI 숨김 완료');
+  }
+
+  // 🤖 Zeta AI / ChatGPT: 발화 큐에 추가
+  addToZetaAISpeechQueue(text, language) {
+    if (!this.isZetaOrChatGPTMode()) {
+      return;
+    }
+    
+    // 현재 화자 정보 가져오기
+    const currentVoice = this.zetaAICurrentSpeaker === 'speaker1' ? 
+      this.zetaAISpeaker1Voice : this.zetaAISpeaker2Voice;
+    
+    // 큐에 추가
+    this.zetaAISpeechQueue.push({
+      text: text,
+      language: language,
+      voice: currentVoice,
+      speaker: this.zetaAICurrentSpeaker
+    });
+    
+    console.log(`🤖 Zeta AI / ChatGPT: 발화 큐에 추가 (${this.zetaAISpeechQueue.length}개 대기)`);
+    console.log(`🤖 Zeta AI: 추가된 텍스트: "${text.substring(0, 30)}..." (${currentVoice.name})`);
+    
+    // 큐 처리 시작 (이미 재생 중이 아니면)
+    if (!this.zetaAIIsPlaying) {
+      this.processZetaAISpeechQueue();
+    } else {
+      console.log(`🤖 Zeta AI: 이미 재생 중이므로 큐에만 추가 (${this.zetaAISpeechQueue.length}개 대기)`);
+    }
+  }
+
+  // 🤖 Zeta AI / ChatGPT: 발화 큐 처리
+  async processZetaAISpeechQueue() {
+    if (!this.isZetaOrChatGPTMode()) {
+      return;
+    }
+    
+    if (this.zetaAISpeechQueue.length === 0) {
+      this.zetaAIIsPlaying = false;
+      console.log('🤖 Zeta AI: 발화 큐 비움');
+      return;
+    }
+    
+    this.zetaAIIsPlaying = true;
+    const speechItem = this.zetaAISpeechQueue.shift();
+    
+          console.log(`🤖 Zeta AI / ChatGPT: 발화 시작 (${this.zetaAISpeechQueue.length}개 남음)`);
+    console.log(`🤖 Zeta AI: 발화 텍스트: "${speechItem.text.substring(0, 30)}..." (${speechItem.voice.name})`);
+    
+    try {
+      await this.playZetaAISpeechItem(speechItem);
+    } catch (error) {
+      console.error('🤖 Zeta AI: 발화 실패:', error);
+    } finally {
+      // 다음 큐 아이템 처리
+      setTimeout(() => {
+        // 큐가 비어있으면 재생 상태를 false로 설정
+        if (this.zetaAISpeechQueue.length === 0) {
+          this.zetaAIIsPlaying = false;
+          console.log('🤖 Zeta AI: 발화 큐 완료, 재생 상태 false로 설정');
+        } else {
+          this.processZetaAISpeechQueue();
+        }
+      }, 100); // 100ms 지연 후 다음 처리
+    }
+  }
+
+  // 🤖 Zeta AI / ChatGPT: 개별 발화 아이템 재생
+  async playZetaAISpeechItem(speechItem) {
+    return new Promise(async (resolve, reject) => {
+      try {
+        // 🤖 Zeta AI / ChatGPT: 기존 오디오 중지 (안전하게)
+        if (this.zetaAICurrentAudio) {
+          this.zetaAICurrentAudio.pause();
+          this.zetaAICurrentAudio = null;
+        }
+        
+        // 🤖 Zeta AI / ChatGPT: 화자별 음성으로 임시 설정 변경
+        const originalVoice = this.selectedVoice;
+        const originalSpeed = this.playbackSpeed;
+        this.selectedVoice = speechItem.voice;
+        this.playbackSpeed = 1.0; // Zeta AI / ChatGPT에서는 모든 캐릭터 속도 1.0 고정
+        
+        // 음성 생성
+        const zetaTake = {
+          id: 'zeta-ai-take',
+          text: speechItem.text,
+          language: speechItem.language,
+          element: null
+        };
+        
+        const audioUrl = await this.convertToSpeech(zetaTake);
+        
+        // 🤖 Zeta AI / ChatGPT: 원래 음성과 속도로 복원
+        this.selectedVoice = originalVoice;
+        this.playbackSpeed = originalSpeed;
+        
+        if (!audioUrl) {
+          throw new Error('음성 생성 실패');
+        }
+        
+        // 오디오 재생
+        this.zetaAICurrentAudio = new Audio(audioUrl);
+        this.zetaAICurrentAudio.volume = 1.0;
+        
+        // 재생 완료 시 정리
+        this.zetaAICurrentAudio.addEventListener('ended', () => {
+          console.log('🤖 Zeta AI / ChatGPT: 발화 완료');
+          this.zetaAICurrentAudio = null;
+          resolve();
+        });
+        
+        // 오류 처리
+        this.zetaAICurrentAudio.addEventListener('error', (error) => {
+          console.error('🤖 Zeta AI / ChatGPT: 발화 오류:', error);
+          this.zetaAICurrentAudio = null;
+          reject(error);
+        });
+        
+        // 재생 시작
+        await this.zetaAICurrentAudio.play();
+        console.log('🤖 Zeta AI / ChatGPT: 발화 재생 중...');
+        
+      } catch (error) {
+        console.error('🤖 Zeta AI / ChatGPT: 발화 아이템 재생 실패:', error);
+        reject(error);
+      }
+    });
+  }
+
+  // 🤖 Zeta AI / ChatGPT: 캐릭터 선택 UI 생성
+  createZetaAICharacterSelectionUI() {
+    if (!this.isZetaOrChatGPTMode()) {
+      return; // Zeta AI / ChatGPT 사이트가 아니면 생성하지 않음
+    }
+    
+    console.log('🤖 Zeta AI / ChatGPT: 캐릭터 선택 UI 생성 시작');
+    
+    // 테마별 배경색 설정 (다른 플로팅 UI와 동일)
+    const isDark = this.currentTheme === 'dark';
+    const bgColor = isDark ? 'rgba(0, 0, 0, 0.2)' : 'rgba(255, 255, 255, 0.2)';
+    const textColor = isDark ? 'rgba(255, 255, 255, 0.8)' : '#1d1d1d';
+    const borderColor = 'rgba(125, 125, 125, 0.5)';
+    
+    // 좌하단 캐릭터 선택 UI (화자2용)
+    this.createZetaAICharacterUI('left', bgColor, textColor, borderColor);
+    
+    // 우하단 캐릭터 선택 UI (화자1용)
+    this.createZetaAICharacterUI('right', bgColor, textColor, borderColor);
+    
+    console.log('🤖 Zeta AI / ChatGPT: 캐릭터 선택 UI 생성 완료');
+  }
+
+  // 🤖 Zeta AI: 개별 캐릭터 선택 UI 생성
+  createZetaAICharacterUI(position, bgColor, textColor, borderColor) {
+    const container = document.createElement('div');
+    container.id = `zeta-ai-character-${position}`;
+    container.style.cssText = `
+      position: fixed !important;
+      bottom: 60px !important;
+      ${position}: 20px !important;
+      background: ${bgColor} !important;
+      backdrop-filter: blur(10px) !important;
+      -webkit-backdrop-filter: blur(10px) !important;
+      border: 1px solid ${borderColor} !important;
+      border-radius: 8px !important;
+      padding: 12px !important;
+      max-width: 200px !important;
+      max-height: 400px !important;
+      overflow-y: auto !important;
+      z-index: 99999 !important;
+      font-family: system-ui, -apple-system, sans-serif !important;
+      font-size: 12px !important;
+      color: ${textColor} !important;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2) !important;
+    `;
+    
+    // 제목 제거 (화자1 설명, 화자2 설명 맨 윗줄 필요 없으니까 지워줘)
+    
+          // 캐릭터 목록 생성
+      this.VOICES.forEach((voice, index) => {
+        const characterItem = document.createElement('div');
+        characterItem.style.cssText = `
+          padding: 0px 8px !important;
+          margin: 0px !important;
+          border-radius: 4px !important;
+          cursor: pointer !important;
+          transition: background-color 0.2s !important;
+          font-size: 11px !important;
+          white-space: nowrap !important;
+          overflow: hidden !important;
+          text-overflow: ellipsis !important;
+          color: ${textColor} !important;
+        `;
+      
+      // 현재 선택된 캐릭터 하이라이트
+      const isSelected = (position === 'left' && this.zetaAISpeaker2Voice.id === voice.id) ||
+                        (position === 'right' && this.zetaAISpeaker1Voice.id === voice.id);
+      
+      if (isSelected) {
+        characterItem.style.backgroundColor = 'rgba(34, 124, 255, 0.2) !important';
+        characterItem.style.border = '1px solid rgba(34, 124, 255, 0.5) !important';
+        characterItem.style.setProperty('text-decoration', 'underline', 'important');
+        characterItem.style.setProperty('text-underline-offset', '3px', 'important');
+        characterItem.style.setProperty('text-decoration-color', this.currentTheme === 'dark' ? 'rgba(255, 255, 255, 0.4)' : 'rgba(29, 29, 29, 0.4)', 'important');
+      }
+      
+      characterItem.textContent = voice.name;
+      
+      // 클릭 이벤트
+      characterItem.addEventListener('click', () => {
+        this.handleZetaAICharacterSelection(position, voice);
+      });
+      
+      // 호버 효과 (테마에 맞게)
+      characterItem.addEventListener('mouseenter', () => {
+        if (!isSelected) {
+          const isDark = this.currentTheme === 'dark';
+          const hoverColor = isDark ? 'rgba(255, 255, 255, 0.1) !important' : 'rgba(0, 0, 0, 0.1) !important';
+          characterItem.style.backgroundColor = hoverColor;
+        }
+      });
+      
+      characterItem.addEventListener('mouseleave', () => {
+        if (!isSelected) {
+          characterItem.style.backgroundColor = 'transparent !important';
+        }
+      });
+      
+      container.appendChild(characterItem);
+    });
+    
+    document.body.appendChild(container);
+    
+    // UI 참조 저장
+    if (position === 'left') {
+      this.zetaAILeftCharacterUI = container;
+    } else {
+      this.zetaAIRightCharacterUI = container;
+    }
+  }
+
+  // 🤖 Zeta AI / ChatGPT: 캐릭터 선택 처리
+  handleZetaAICharacterSelection(position, selectedVoice) {
+    if (!this.isZetaOrChatGPTMode()) {
+      return;
+    }
+    
+    console.log(`🤖 Zeta AI / ChatGPT 캐릭터 선택: ${position} - ${selectedVoice.name}`);
+    
+    if (position === 'left') {
+      // 좌하단: 화자2 (AI 응답) 변경
+      this.zetaAISpeaker2Voice = selectedVoice;
+      console.log(`🤖 Zeta AI / ChatGPT 화자2 변경: ${selectedVoice.name}`);
+    } else {
+      // 우하단: 화자1 (사용자 질문) 변경
+      this.zetaAISpeaker1Voice = selectedVoice;
+      console.log(`🤖 Zeta AI / ChatGPT 화자1 변경: ${selectedVoice.name}`);
+    }
+    
+    // UI 업데이트
+    this.updateZetaAICharacterUI();
+  }
+
+  // 🤖 Zeta AI / ChatGPT: 캐릭터 UI 업데이트
+  updateZetaAICharacterUI() {
+    if (!this.isZetaOrChatGPTMode()) {
+      return;
+    }
+    
+    // 좌하단 UI 업데이트 (화자2)
+    if (this.zetaAILeftCharacterUI) {
+      const items = this.zetaAILeftCharacterUI.querySelectorAll('div[style*="cursor: pointer"]');
+      items.forEach((item, index) => {
+        const voice = this.VOICES[index];
+        const isSelected = this.zetaAISpeaker2Voice.id === voice.id;
+        
+        if (isSelected) {
+          item.style.backgroundColor = 'rgba(34, 124, 255, 0.2) !important';
+          item.style.border = '1px solid rgba(34, 124, 255, 0.5) !important';
+          item.style.setProperty('text-decoration', 'underline', 'important');
+          item.style.setProperty('text-underline-offset', '3px', 'important');
+          item.style.setProperty('text-decoration-color', this.currentTheme === 'dark' ? 'rgba(255, 255, 255, 0.4)' : 'rgba(29, 29, 29, 0.4)', 'important');
+        } else {
+          item.style.backgroundColor = 'transparent !important';
+          item.style.border = 'none !important';
+          item.style.setProperty('text-decoration', 'none', 'important');
+        }
+      });
+    }
+    
+    // 우하단 UI 업데이트 (화자1)
+    if (this.zetaAIRightCharacterUI) {
+      const items = this.zetaAIRightCharacterUI.querySelectorAll('div[style*="cursor: pointer"]');
+      items.forEach((item, index) => {
+        const voice = this.VOICES[index];
+        const isSelected = this.zetaAISpeaker1Voice.id === voice.id;
+        
+        if (isSelected) {
+          item.style.backgroundColor = 'rgba(34, 124, 255, 0.2) !important';
+          item.style.border = '1px solid rgba(34, 124, 255, 0.5) !important';
+          item.style.setProperty('text-decoration', 'underline', 'important');
+          item.style.setProperty('text-underline-offset', '3px', 'important');
+          item.style.setProperty('text-decoration-color', this.currentTheme === 'dark' ? 'rgba(255, 255, 255, 0.4)' : 'rgba(29, 29, 29, 0.4)', 'important');
+        } else {
+          item.style.backgroundColor = 'transparent !important';
+          item.style.border = 'none !important';
+          item.style.setProperty('text-decoration', 'none', 'important');
+        }
+      });
+    }
+  }
+
+  // 🤖 Zeta AI / ChatGPT: 캐릭터 UI 테마 업데이트
+  updateZetaAICharacterUITheme() {
+    if (!this.isZetaOrChatGPTMode()) {
+      return;
+    }
+    
+    console.log('🤖 Zeta AI / ChatGPT: 캐릭터 UI 테마 업데이트 시작');
+    
+    // 기존 캐릭터 UI 제거
+    this.cleanupZetaAICharacterUI();
+    
+    // 새로운 테마로 캐릭터 UI 재생성
+    this.createZetaAICharacterSelectionUI();
+    
+    console.log('🤖 Zeta AI / ChatGPT: 캐릭터 UI 테마 업데이트 완료');
+  }
+  
+  // 🤖 Zeta AI 새로운 콘텐츠 오버레이 표시
+  showZetaAINewContentOverlay(text) {
+    // 기존 오버레이 제거
+    const existingOverlay = document.getElementById('tts-zeta-ai-overlay');
+    if (existingOverlay) {
+      existingOverlay.remove();
+    }
+    
+    // 새로운 오버레이 생성
+    const overlay = document.createElement('div');
+    overlay.id = 'tts-zeta-ai-overlay';
+    overlay.style.cssText = `
+      position: fixed !important;
+      top: 50% !important;
+      left: 50% !important;
+      transform: translate(-50%, -50%) !important;
+      max-width: 80% !important;
+      max-height: 60% !important;
+      background: rgba(0, 0, 0, 0.9) !important;
+      color: white !important;
+      padding: 20px !important;
+      border-radius: 8px !important;
+      font-size: 16px !important;
+      line-height: 1.5 !important;
+      z-index: 100000 !important;
+      text-align: center !important;
+      overflow-y: auto !important;
+      word-wrap: break-word !important;
+      animation: fadeInOut 1s ease-in-out !important;
+    `;
+    
+    // 애니메이션 키프레임 추가
+    if (!document.getElementById('tts-zeta-ai-keyframes')) {
+      const style = document.createElement('style');
+      style.id = 'tts-zeta-ai-keyframes';
+      style.textContent = `
+        @keyframes fadeInOut {
+          0% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
+          20% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+          80% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+          100% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+    
+    overlay.textContent = text;
+    document.body.appendChild(overlay);
+    
+    // 1초 후 제거
+    setTimeout(() => {
+      if (overlay && overlay.parentNode) {
+        overlay.remove();
+      }
+    }, 1000);
+    
+    console.log('🤖 Zeta AI 새로운 콘텐츠 오버레이 표시:', text.substring(0, 50) + '...');
+  }
+
+  // 🤖 Zeta AI 바뀐 테이크 자동 생성 및 발화
+  async autoPlayZetaAITake(text, language) {
+    if (!window.location.hostname.includes('zeta-ai')) {
+      return; // Zeta AI 사이트가 아니면 실행하지 않음
+    }
+    
+    console.log('🤖 Zeta AI 자동 발화 시작:', text.substring(0, 30) + '...');
+    console.log('🤖 Zeta AI 언어:', language);
+    
+    try {
+      // 기존 오디오 중지 (Zeta AI 자동 발화용)
+      if (this.zetaAIAudio) {
+        this.zetaAIAudio.pause();
+        this.zetaAIAudio.currentTime = 0;
+        this.zetaAIAudio = null;
+      }
+      
+      // 🤖 Zeta AI: 화자별 음성 선택
+      const currentVoice = this.zetaAICurrentSpeaker === 'speaker1' ? 
+        this.zetaAISpeaker1Voice : this.zetaAISpeaker2Voice;
+      
+      console.log(`🤖 Zeta AI 화자별 음성 적용: ${this.zetaAICurrentSpeaker} (${currentVoice.name})`);
+      
+      // 현재 화자와 속도로 음성 생성 (제타 AI 전용 테이크 객체 생성)
+      const zetaTake = {
+        id: 'zeta-ai-take',
+        text: text,
+        language: language, // 테이크 분석 시점에 분석된 언어 사용
+        element: null
+      };
+      
+      // 🤖 Zeta AI: 화자별 음성으로 임시 설정 변경
+      const originalVoice = this.selectedVoice;
+      this.selectedVoice = currentVoice;
+      
+      const audioUrl = await this.convertToSpeech(zetaTake);
+      
+      // 🤖 Zeta AI: 원래 음성으로 복원
+      this.selectedVoice = originalVoice;
+      
+      if (audioUrl) {
+        // Zeta AI 전용 오디오 객체 생성
+        this.zetaAIAudio = new Audio(audioUrl);
+        this.zetaAIAudio.volume = 1.0; // 기본 볼륨
+        
+        // 재생 완료 시 정리
+        this.zetaAIAudio.addEventListener('ended', () => {
+          console.log('🤖 Zeta AI 자동 발화 완료');
+          this.zetaAIAudio = null;
+        });
+        
+        // 오류 처리
+        this.zetaAIAudio.addEventListener('error', (error) => {
+          console.error('🤖 Zeta AI 자동 발화 오류:', error);
+          this.zetaAIAudio = null;
+        });
+        
+        // 자동 발화 시작
+        await this.zetaAIAudio.play();
+        console.log('🤖 Zeta AI 자동 발화 재생 중...');
+        
+      } else {
+        console.error('🤖 Zeta AI 음성 생성 실패');
+      }
+      
+    } catch (error) {
+      console.error('🤖 Zeta AI 자동 발화 실패:', error);
+    }
+  }
+
+  // 🔄 새로고침 버튼 클릭 처리
+  async handleRefreshButtonClick() {
+    console.log('🔄 새로고침 버튼 클릭: 글감 재수집 시작');
+    
+    // 새로고침 버튼 회전 애니메이션 시작 (반시계방향)
+    if (this.refreshButton) {
+      this.refreshButton.style.transform = 'rotate(-360deg)';
+      this.refreshButton.style.transition = 'transform 0.5s ease-in-out';
+    }
+    
+    // 상태 업데이트
+    this.updateStatus('글감 재수집 중...', '#FF9800');
+    
+    try {
+      // 기존 테이크 초기화
+      this.preTakes = [];
+      this.currentPlayList = [];
+      this.currentTakeIndex = 0;
+      this.currentPlayingTakeId = null;
+      
+      // 현재 페이지 기준으로 글감 재수집
+      await this.analyzePageAndCreateTakes();
+      
+      // 재수집 결과 확인
+      if (this.preTakes && this.preTakes.length > 0) {
+        console.log(`✅ 글감 재수집 완료: ${this.preTakes.length}개 테이크`);
+        this.updateStatus(`재수집 완료 (${this.preTakes.length}개)`, '#4CAF50');
+        this.updateTakeCount();
+        
+        // 우하단 플로팅 UI 다시 표시
+        this.showUI();
+        
+        // 🤖 Zeta AI 모니터링 시작
+        this.startZetaAIMonitoring();
+      } else {
+        console.log('⚠️ 재수집된 테이크가 없습니다');
+        this.updateStatus('재수집된 내용이 없습니다', '#F44336');
+      }
+      
+    } catch (error) {
+      console.error('글감 재수집 실패:', error);
+      this.updateStatus('재수집 실패', '#F44336');
+    } finally {
+      // 애니메이션 완료 후 360도 상태 유지 (원래 상태로 복원하지 않음)
+      // 다음 클릭을 위해 transform 초기화
+      setTimeout(() => {
+        if (this.refreshButton) {
+          this.refreshButton.style.transition = 'none';
+          this.refreshButton.style.transform = 'rotate(0deg)';
+          // 다음 애니메이션을 위해 transition 복원
+          setTimeout(() => {
+            if (this.refreshButton) {
+              this.refreshButton.style.transition = 'transform 0.5s ease-in-out';
+            }
+          }, 10);
+        }
+      }, 500);
     }
   }
 
@@ -3291,11 +4986,11 @@ class TTSManager {
       background: ${bgColor} !important;
       backdrop-filter: blur(10px) !important;
       -webkit-backdrop-filter: blur(10px) !important;
-      border: 1px solid ${borderColor} !important;
+      border: 1px solid rgba(125, 125, 125, 0.2) !important;
       border-radius: 3px !important;
       box-shadow: 0px 0px 60px ${textColor}50 !important;
       z-index: 100002 !important;
-      line-height: 1.5em !important;
+      line-height: 1.5rem !important;
       padding: 0 !important;
       overflow-y: auto !important;
       -ms-overflow-style: none !important;
@@ -3458,12 +5153,12 @@ class TTSManager {
   }
 
   // 🎯 화자 선택
-  selectVoice(voice) {
+  async selectVoice(voice) {
     const previousVoiceId = this.selectedVoice.id;
     this.selectedVoice = voice;
     
     // 화자 설정 저장
-    this.saveVoiceSetting(voice);
+    await this.saveVoiceSetting(voice);
     
     console.log(`🎤 화자 변경: ${voice.name} (${voice.id})`);
     
@@ -4097,7 +5792,7 @@ class TTSManager {
     
     // 1순위: 완전한 문장 끝 기호들 (일본어 포함)
     const sentenceEndCandidates = [
-      lastPeriod, lastExclam, lastQuestion, lastTilde,
+      lastPeriod, lastExclam, lastQuestion, lastTilde, 
       lastJapanesePeriod, lastJapaneseComma, lastJapaneseExclam, lastJapaneseQuestion,
       lastJapaneseQuote1, lastJapaneseQuote2, lastJapaneseQuote3, lastJapaneseQuote4,
       lastQuote1, lastQuote2, lastQuote3, lastQuote4
@@ -4155,435 +5850,51 @@ class TTSManager {
 
   // 🆕 선택된 요소의 모든 텍스트 추출 (DOM 탐색에서 이미 검증된 요소용)
   extractAllTextFromElement(element) {
-    if (!element) return '';
-
-    // p, h 태그 등 이미 검증된 요소는 직접 textContent 사용
-    const tagName = element.tagName.toLowerCase();
-    if (['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tagName)) {
-      const text = element.textContent?.trim() || '';
-      console.log(`📝 ${tagName.toUpperCase()} 태그 직접 추출: "${text}" (${text.length}자)`);
-      return text;
-    }
-
-    // 다른 요소들은 기존 로직 사용
-    const allTexts = [];
-    const walker = document.createTreeWalker(
-      element,
-      NodeFilter.SHOW_TEXT,
-      null,
-      false
-    );
-
-    let node;
-    while (node = walker.nextNode()) {
-      const text = node.textContent.trim();
-      if (text.length > 0) {
-        const parentElement = node.parentElement;
-        
-        // 🎯 다층 필터링: 본문 콘텐츠만 추출
-        if (parentElement && this.isMainContentText(parentElement, text)) {
-          allTexts.push(text);
-        }
-      }
-    }
-
-    console.log(`총 ${allTexts.length}개 텍스트 블록 추출`);
-    return allTexts.join(' ');
+    return window.htmlAnalyzerCommon.extractAllTextFromElement(element);
   }
 
   // 🔍 본문 콘텐츠인지 판단 (제목, 캡션 포함)
   isMainContentText(element, text) {
-    // 🎯 우선 포함: 의미 있는 콘텐츠 요소들
-    if (this.isImportantContent(element, text)) {
-      return true;
-    }
-
-    // 1차: 기본 제외 요소 확인
-    if (this.isExcludedElement(element)) {
-      return false;
-    }
-
-    // 2차: 텍스트 품질 확인
-    const textLength = text.length;
+    const hostname = window.location.hostname.toLowerCase();
     
-    // 🎯 버튼/인터페이스 텍스트 패턴 제외 (영어+한국어)
-    const buttonPatterns = [
-      // 영어 패턴
-      /^(click|tap|press|button|btn)/i,           // "Click here", "Button"
-      /^(more|view|show|hide|toggle)/i,           // "More info", "View all"
-      /^(close|cancel|ok|yes|no|submit)/i,        // "Close", "Cancel", "OK"
-      /^(login|logout|sign\s*in|sign\s*up)/i,     // "Login", "Sign in"
-      /^(share|like|follow|subscribe)/i,          // "Share", "Like", "Follow"
-      /^(next|prev|previous|back|home)/i,         // "Next", "Previous", "Back"
-      /^(menu|nav|navigation)/i,                  // "Menu", "Navigation"
-      /^(search|filter|sort)/i,                   // "Search", "Filter", "Sort"
-      /^(select|choose|option)/i,                 // "Select", "Choose"
-      /^(edit|delete|remove|add)/i,               // "Edit", "Delete", "Add"
-      /^(save|download|upload|print)/i,           // "Save", "Download"
-      /^(play|pause|stop|mute)/i,                 // "Play", "Pause", "Stop"
-      
-      // 한국어 패턴
-      /^(클릭|탭|누르|버튼|눌러)/,                   // "클릭", "버튼", "누르세요"
-      /^(더보기|더|보기|숨기기|토글)/,               // "더보기", "보기", "숨기기"
-      /^(닫기|취소|확인|예|아니|전송)/,               // "닫기", "취소", "확인"
-      /^(로그인|로그아웃|가입|회원)/,                // "로그인", "회원가입"
-      /^(공유|좋아|팔로|구독)/,                     // "공유", "좋아요", "구독"
-      /^(다음|이전|뒤로|홈)/,                       // "다음", "이전", "뒤로"
-      /^(메뉴|네비|내비)/,                         // "메뉴", "네비게이션"
-      /^(검색|필터|정렬)/,                         // "검색", "필터", "정렬"
-      /^(선택|선택하|옵션)/,                       // "선택", "옵션"
-      /^(편집|삭제|제거|추가)/,                     // "편집", "삭제", "추가"
-      /^(저장|다운|업로드|인쇄)/,                   // "저장", "다운로드", "인쇄"
-      /^(재생|정지|음소거)/,                       // "재생", "정지", "음소거"
-      
-      // 숫자, 날짜 패턴
-      /^\d+$/, /^\d{1,2}\/\d{1,2}\/\d{4}$/       // 숫자만, 날짜
-    ];
-    
-    // 버튼 패턴 확인
-    if (buttonPatterns.some(pattern => pattern.test(text.trim()))) {
-      return false;
+    // 🎯 사이트별 특화 본문 텍스트 판단
+    const siteSpecificResult = window.htmlAnalyzerSites.isSiteSpecificMainContent(hostname, element, text);
+    if (siteSpecificResult !== null) {
+      return siteSpecificResult;
     }
     
-    // 🎯 Daum 뉴스: 더 짧은 텍스트도 허용 (뉴스 본문 보호)
-    if (textLength < 5) {  // 8자 → 5자로 완화
-      return false;
-    }
-    
-    // 3차: 본문다운 텍스트인지 확인
-    const sentences = text.split(/[.!?]/).filter(s => s.trim().length > 0);
-    
-    // 문장이 하나도 없으면 제외
-    if (sentences.length === 0) {
-      return false;
-    }
-    
-    // 한 문장이라도 3글자 이상이면 본문으로 간주 (한글 3자 기준)
-    const hasSubstantialSentence = sentences.some(sentence => sentence.trim().length >= 3);
-    if (!hasSubstantialSentence) {
-      return false;
-    }
-    
-    // 4차: CNN 특화 본문 패턴 확인
-    const articleKeywords = [
-      'said', 'according to', 'reported', 'told', 'sources', 
-      'officials', 'president', 'government', 'said in a statement'
-    ];
-    
-    const hasArticlePattern = articleKeywords.some(keyword => 
-      text.toLowerCase().includes(keyword)
-    );
-    
-    // 긴 텍스트이거나 기사 패턴이 있으면 본문으로 간주
-    if (textLength >= 50 || hasArticlePattern) {
-      return true;
-    }
-    
-    // 5차: 컨텍스트 확인 (주변 요소들)
-    const elementTag = element.tagName.toLowerCase();
-    const isContentTag = ['p', 'div', 'article', 'section', 'span'].includes(elementTag);
-    
-    if (isContentTag && textLength >= 20) {
-      return true;
-    }
-    
-    return false;
+    // 공통 로직
+    return window.htmlAnalyzerCommon.isMainContentText(element, text);
   }
 
   // 🎯 중요한 콘텐츠인지 판단 (제목, 캡션, 의미 있는 메타데이터)
   isImportantContent(element, text) {
-    const textLength = text.length;
-    
-    // 너무 짧은 텍스트는 제외 (한글은 2자도 의미 있음)
-    if (textLength < 2) {
-      return false;
-    }
-
-    // 1. 제목 태그들 (H1~H6)
-    const headingTags = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
-    if (headingTags.includes(element.tagName.toLowerCase())) {
-      console.log(`제목 포함: ${text.substring(0, 30)}...`);
-      return true;
-    }
-
-    // 2. itemprop 속성 기반 (구조화 데이터)
-    const itemprop = element.getAttribute('itemprop');
-    if (itemprop) {
-      const importantItemProps = [
-        'headline', 'name', 'title', 'caption', 'description',
-        'author', 'datePublished', 'articleBody', 'summary',
-        'alternativeHeadline', 'disambiguatingDescription'
-      ];
-      
-      if (importantItemProps.includes(itemprop.toLowerCase())) {
-        console.log(`중요 itemprop 포함 (${itemprop}): ${text.substring(0, 30)}...`);
-        return true;
-      }
-    }
-
-    // 3. Schema.org 클래스들
-    const className = (element.className || '').toLowerCase();
-    const importantSchemaClasses = [
-      'headline', 'title', 'caption', 'summary', 'description',
-      'article-title', 'article-headline', 'post-title'
-    ];
-    
-    if (importantSchemaClasses.some(cls => className.includes(cls))) {
-      console.log(`중요 클래스 포함: ${text.substring(0, 30)}...`);
-      return true;
-    }
-
-    // 4. role 속성 기반
-    const role = element.getAttribute('role');
-    if (role) {
-      const importantRoles = ['heading', 'article', 'main'];
-      if (importantRoles.includes(role.toLowerCase())) {
-        console.log(`중요 role 포함 (${role}): ${text.substring(0, 30)}...`);
-        return true;
-      }
-    }
-
-    // 5. 의미론적 HTML5 태그들
-    const semanticTags = ['article', 'section', 'header', 'main', 'aside'];
-    if (semanticTags.includes(element.tagName.toLowerCase()) && textLength >= 10) {
-      console.log(`의미론적 태그 포함: ${text.substring(0, 30)}...`);
-      return true;
-    }
-
-    // 6. 캡션 관련 특별 처리
-    const parentElement = element.parentElement;
-    if (parentElement) {
-      const parentClass = (parentElement.className || '').toLowerCase();
-      const parentTag = parentElement.tagName.toLowerCase();
-      
-      // figure > figcaption 패턴
-      if (parentTag === 'figure' || parentClass.includes('figure') ||
-          element.tagName.toLowerCase() === 'figcaption' ||
-          className.includes('caption') || className.includes('photo')) {
-        console.log(`캡션 요소 포함: ${text.substring(0, 30)}...`);
-        return true;
-      }
-    }
-
-    // 7. 저자, 날짜 등 기사 메타데이터 (적당한 길이)
-    if (textLength >= 5 && textLength <= 100) {
-      const metadataPatterns = [
-        /^by\s+[\w\s]+$/i,           // "By John Doe"
-        /\d{4}년?\s*\d{1,2}월?\s*\d{1,2}일?/,  // 날짜 패턴
-        /^updated?\s*:/i,            // "Updated:"
-        /^published?\s*:/i,          // "Published:"
-        /\w+\s+(ago|전)$/i          // "3 hours ago"
-      ];
-      
-      if (metadataPatterns.some(pattern => pattern.test(text.trim()))) {
-        console.log(`메타데이터 포함: ${text.substring(0, 30)}...`);
-        return true;
-      }
-    }
-
-    return false;
+    return window.htmlAnalyzerCommon.isImportantContent(element, text);
   }
 
   // 🔍 제외할 요소 판단 (버튼, 메타데이터, 접근성 텍스트 등)
   isExcludedElement(element) {
-    // 1. 태그 기반 제외 (스크립트, 스타일, 폼 요소 등)
-    const excludedTags = [
-      'SCRIPT', 'STYLE', 'NOSCRIPT', 'IFRAME', 'BUTTON', 'INPUT', 
-      'SELECT', 'TEXTAREA', 'FORM', 'LABEL', 'FIELDSET', 'LEGEND'
-    ];
-    
-    if (excludedTags.includes(element.tagName)) {
-      return true;
-    }
-
-    // 2. Role 기반 제외 (대형 사이트 호환성을 위해 최소화)
-    const excludedRoles = [
-      'button', 'menu', 'menubar', 'menuitem', 'toolbar', 'navigation', 
-      'banner', 'contentinfo', 'form', 'search', 'dialog', 'alertdialog'
-      // 'complementary', 'tab', 'tabpanel', 'alert', 'status' 제거 (너무 광범위)
-    ];
-    
-    const role = element.getAttribute('role');
-    if (role && excludedRoles.includes(role.toLowerCase())) {
-      return true;
-    }
-
-    // 3. 클래스명 기반 제외 (클리앙 호환성을 위해 매우 관대하게)
-    const excludedClasses = [
-      // 광고 관련 (정확한 매칭만)
-      'advertisement', 'ad-banner', 'ad-container', 'sponsored-content',
-      // 명확한 네비게이션만 제외 (navigation은 너무 광범위)
-      'navbar', 'header-nav', 'footer-nav', 'sidebar-nav',
-      // 명확한 버튼만 제외
-      'button-container', 'btn-container',
-      // 숨김 요소만 제외
-      'screen-reader-only', 'sr-only', 'visually-hidden', 'hidden',
-      // 팝업/모달만 제외
-      'popup-overlay', 'modal-backdrop', 'overlay'
-    ];
-
+    const hostname = window.location.hostname.toLowerCase();
     const className = (element.className || '').toLowerCase();
-    
-    // 🎯 버튼 관련 div 및 하위 요소 제외 (클리앙 호환성 고려)
-    if (className.includes('btn') && (className.includes('button') || className.includes('click'))) {
-      console.log(`🚫 버튼 div 제외: <${element.tagName.toLowerCase()}> class="${element.className}"`);
-      return true;
-    }
-    
-    // 부모 요소 중에 btn 클래스가 있는지 확인 (최대 3레벨까지)
-    let parent = element.parentElement;
-    let level = 0;
-    while (parent && level < 3) {
-      const parentClassName = (parent.className || '').toLowerCase();
-      if (parentClassName.includes('btn')) {
-        console.log(`🚫 버튼 부모 요소로 인한 제외: <${element.tagName.toLowerCase()}> (부모: <${parent.tagName.toLowerCase()}> class="${parent.className}")`);
-        return true;
-      }
-      parent = parent.parentElement;
-      level++;
-    }
-    
-    // 🔍 Daum 뉴스 디버깅: 클래스 기반 제외 상세 분석
-    const matchedClass = excludedClasses.find(cls => className.includes(cls));
-    if (matchedClass) {
-      console.log(`🚫 클래스 제외: "${matchedClass}" in "${className}" - 요소: <${element.tagName.toLowerCase()}>`);
-      console.log(`📝 요소 텍스트: "${element.textContent?.substring(0, 50)}..."`);
-      return true;
-    }
-
-    // 4. ID 기반 제외
-    const excludedIds = [
-      'ad', 'advertisement', 'banner', 'header', 'footer', 'nav',
-      'menu', 'sidebar', 'poll', 'newsletter', 'feedback'
-    ];
-
     const elementId = (element.id || '').toLowerCase();
-    if (excludedIds.some(id => elementId.includes(id))) {
+    
+    // 🎯 사이트별 특화 제외 로직
+    if (window.htmlAnalyzerSites.isSiteSpecificExcludedElement(hostname, element, className, elementId)) {
       return true;
     }
-
-    // 5. ARIA 속성 기반 제외
-    const ariaLabel = element.getAttribute('aria-label');
-    const ariaDescribedBy = element.getAttribute('aria-describedby');
     
-    if (ariaLabel && (ariaLabel.includes('button') || ariaLabel.includes('menu') || 
-                     ariaLabel.includes('navigation') || ariaLabel.includes('link'))) {
-      return true;
-    }
-
-    // 6. 데이터 속성 기반 제외 (추적, 분석 등)
-    const dataAttributes = element.getAttributeNames().filter(name => name.startsWith('data-'));
-    const hasTrackingData = dataAttributes.some(attr => 
-      attr.includes('track') || attr.includes('analytics') || attr.includes('click')
-    );
-    
-    if (hasTrackingData) {
-      return true;
-    }
-
-    // 7. 텍스트 길이 기반 필터링 (너무 짧은 텍스트는 버튼일 가능성)
-    const textContent = element.textContent?.trim() || '';
-    if (textContent.length > 0 && textContent.length < 3) {
-      // 2글자 이하의 아주 짧은 텍스트만 버튼으로 간주 (한글 호환성)
-      const shortButtonTexts = ['ok', 'no'];
-      if (shortButtonTexts.includes(textContent.toLowerCase())) {
-        return true;
-      }
-    }
-
-    // 8. 부모 요소 확인 (2단계까지)
-    let currentElement = element.parentElement;
-    let depth = 0;
-    
-    while (currentElement && depth < 2) {
-      const parentClass = (currentElement.className || '').toLowerCase();
-      const parentId = (currentElement.id || '').toLowerCase();
-      const parentRole = currentElement.getAttribute('role');
-      
-      // 부모가 제외 대상이면 자식도 제외
-      if (excludedClasses.some(cls => parentClass.includes(cls)) ||
-          excludedIds.some(id => parentId.includes(id)) ||
-          (parentRole && excludedRoles.includes(parentRole.toLowerCase()))) {
-        return true;
-      }
-      
-      currentElement = currentElement.parentElement;
-      depth++;
-    }
-
-    return false;
+    // 공통 제외 로직
+    return window.htmlAnalyzerCommon.isExcludedElement(element);
   }
 
   // 화면에 보이는 텍스트만 추출
   extractVisibleText() {
-    const selectedElement = window.ttsSelector?.currentElement;
-    if (!selectedElement) return '';
-
-    const visibleTexts = [];
-    
-    // 모든 텍스트 노드를 찾아서 화면에 보이는지 확인
-    const walker = document.createTreeWalker(
-      selectedElement,
-      NodeFilter.SHOW_TEXT,
-      null,
-      false
-    );
-
-    let node;
-    while (node = walker.nextNode()) {
-      const text = node.textContent.trim();
-      if (text.length > 0) {
-        // 텍스트 노드의 부모 요소가 화면에 보이는지 확인
-        const parentElement = node.parentElement;
-        if (parentElement && this.isElementVisible(parentElement)) {
-          visibleTexts.push(text);
-        }
-      }
-    }
-
-    return visibleTexts.join(' ');
+    return window.htmlAnalyzerCommon.extractVisibleText();
   }
 
   // 요소가 화면에 보이는지 확인
   isElementVisible(element) {
-    // 요소가 존재하지 않으면 false
-    if (!element) return false;
-
-    // display: none 또는 visibility: hidden 체크
-    const style = window.getComputedStyle(element);
-    if (style.display === 'none' || style.visibility === 'hidden') {
-      return false;
-    }
-
-    // opacity가 0이면 보이지 않음
-    if (parseFloat(style.opacity) === 0) {
-      return false;
-    }
-
-    // 요소의 크기가 0이면 보이지 않음
-    const rect = element.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) {
-      return false;
-    }
-
-    // 뷰포트 내에 있는지 확인
-    const viewport = {
-      top: 0,
-      left: 0,
-      bottom: window.innerHeight,
-      right: window.innerWidth
-    };
-
-    // 요소가 뷰포트와 겹치는지 확인
-    const isInViewport = !(
-      rect.bottom < viewport.top ||
-      rect.top > viewport.bottom ||
-      rect.right < viewport.left ||
-      rect.left > viewport.right
-    );
-
-    // 부분적으로라도 보이면 true
-    return isInViewport;
+    return window.htmlAnalyzerCommon.isElementVisible(element);
   }
 
   // 언어 감지
@@ -4688,17 +5999,20 @@ class TTSManager {
     try {
       let audioUrl;
       
-      // 🚀 이미 버퍼링된 경우 바로 재생
-      if (this.audioBuffer[takeIndex]) {
-        console.log(`테이크 ${takeIndex + 1} 버퍼에서 즉시 재생`);
-        audioUrl = this.audioBuffer[takeIndex];
+      // 🎯 메모리 최적화: 새로운 캐시 시스템 사용
+      const cacheKey = `take_${takeIndex}_${this.selectedVoice.id}`;
+      const cachedAudio = this.getFromAudioCache(cacheKey);
+      
+      if (cachedAudio) {
+        this.log(`테이크 ${takeIndex + 1} 캐시에서 즉시 재생`);
+        audioUrl = cachedAudio;
         this.updateStatus(`재생 중... (${takeIndex + 1}/${this.takes.length})`, '#4CAF50');
       } else {
-        // 버퍼링되지 않은 경우에만 생성
-        console.log(`테이크 ${takeIndex + 1} 실시간 생성 중...`);
+        // 캐시되지 않은 경우에만 생성
+        this.log(`테이크 ${takeIndex + 1} 실시간 생성 중...`);
         this.updateStatus(`음성 생성 중... (${takeIndex + 1}/${this.takes.length})`, '#FF9800');
         audioUrl = await this.convertToSpeech(take);
-        this.audioBuffer[takeIndex] = audioUrl;
+        this.addToAudioCache(cacheKey, audioUrl);
       }
       
       // 오디오 재생
@@ -5031,9 +6345,10 @@ class TTSManager {
           if (takeIndex + 1 < this.takes.length) {
             this.currentTakeIndex = takeIndex + 1;
             
-            // 🚀 버퍼링된 테이크는 즉시, 아니면 짧은 간격
-            const nextTakeBuffered = this.audioBuffer[this.currentTakeIndex];
-            const delay = nextTakeBuffered ? 50 : 200; // 버퍼링된 경우 50ms, 아니면 200ms
+            // 🎯 메모리 최적화: 캐시된 테이크는 즉시, 아니면 짧은 간격
+            const nextCacheKey = `take_${this.currentTakeIndex}_${this.selectedVoice.id}`;
+            const nextTakeBuffered = this.getFromAudioCache(nextCacheKey);
+            const delay = nextTakeBuffered ? 50 : 200; // 캐시된 경우 50ms, 아니면 200ms
             
             console.log(`다음 테이크 ${this.currentTakeIndex + 1} ${nextTakeBuffered ? '버퍼링됨 (즉시)' : '생성 필요 (200ms 대기)'}`);
             
@@ -5681,22 +6996,24 @@ class TTSManager {
     console.log(`전체 TTS span 개수: ${allTTSSpans.length}`);
   }
 
-  // 다음 테이크 미리 생성
+  // 🎯 메모리 최적화: 다음 테이크 미리 생성 (새로운 캐시 시스템)
   async prepareNextTake(takeIndex) {
-    if (takeIndex >= this.takes.length || this.audioBuffer[takeIndex]) {
+    const cacheKey = `take_${takeIndex}_${this.selectedVoice.id}`;
+    
+    if (takeIndex >= this.takes.length || this.getFromAudioCache(cacheKey)) {
       return; // 이미 생성됨 또는 범위 초과
     }
     
     try {
       const take = this.takes[takeIndex];
-      console.log(`테이크 ${takeIndex} 미리 생성 중...`);
+      this.log(`테이크 ${takeIndex} 미리 생성 중...`);
       
       const audioUrl = await this.convertToSpeech(take);
-      this.audioBuffer[takeIndex] = audioUrl;
+      this.addToAudioCache(cacheKey, audioUrl);
       
-      console.log(`테이크 ${takeIndex} 미리 생성 완료`);
+      this.log(`테이크 ${takeIndex} 미리 생성 완료`);
     } catch (error) {
-      console.error(`테이크 ${takeIndex} 미리 생성 실패:`, error);
+      this.error(`테이크 ${takeIndex} 미리 생성 실패:`, error);
     }
   }
 
@@ -5717,6 +7034,13 @@ class TTSManager {
       this.currentAudio = null;
     }
     
+    // Zeta AI 자동 발화 오디오 중지
+    if (this.zetaAIAudio) {
+      this.zetaAIAudio.pause();
+      this.zetaAIAudio.currentTime = 0;
+      this.zetaAIAudio = null;
+    }
+    
     // 단어 트래킹 중지 및 래핑 해제
     this.stopWordTracking();
     this.unwrapWords();
@@ -5734,13 +7058,23 @@ class TTSManager {
     this.cachedContainer = null;
     
     // 버퍼 정리
-    Object.values(this.audioBuffer).forEach(url => {
-      if (url.startsWith('blob:')) {
+    // 🎯 메모리 최적화: 새로운 캐시 시스템으로 오디오 URL 해제
+    for (const [key, url] of this.audioBuffer.entries()) {
+      if (url && url.startsWith('blob:')) {
         URL.revokeObjectURL(url);
       }
-    });
-    this.audioBuffer = {};
+    }
+    this.audioBuffer.clear();
+    this.audioBufferTTL.clear();
     this.takes = [];
+    
+    // 🎯 메모리 최적화: 캐시 정리 타이머도 정리
+    if (this.cacheCleanupInterval) {
+      clearInterval(this.cacheCleanupInterval);
+    }
+    
+    // 🤖 Zeta AI 모니터링 중지
+    this.stopZetaAIMonitoring();
     
     // UI 업데이트
     this.updateStatus('중지됨', '#FF5722');
@@ -5748,6 +7082,8 @@ class TTSManager {
     
     setTimeout(() => this.hideUI(), 2000);
   }
+
+
 }
 
 // TTS Manager 전역 인스턴스 생성

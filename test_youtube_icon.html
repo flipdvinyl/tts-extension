@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube 아이콘 테스트</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f9f9f9;
+        }
+        
+        .youtube-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .title-container {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f8f8;
+            border-radius: 4px;
+        }
+        
+        h1 {
+            margin: 0;
+            color: #333;
+            font-size: 24px;
+        }
+        
+        .description {
+            color: #666;
+            margin-top: 10px;
+        }
+        
+        .test-info {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 20px;
+        }
+        
+        .test-info h3 {
+            margin-top: 0;
+            color: #1976d2;
+        }
+        
+        .debug-info {
+            background: #fff3cd;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 20px;
+            border: 1px solid #ffeaa7;
+        }
+        
+        .debug-info h3 {
+            margin-top: 0;
+            color: #856404;
+        }
+        
+        .debug-info pre {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="youtube-container">
+        <div class="title-container">
+            <h1>YouTube 동영상 제목이 여기에 표시됩니다</h1>
+            <div class="description">이 페이지는 YouTube 아이콘 테스트를 위한 것입니다.</div>
+        </div>
+        
+        <div class="test-info">
+            <h3>테스트 정보</h3>
+            <p>이 페이지는 YouTube와 유사한 구조로 만들어져 있어서, TTS 확장 프로그램의 YouTube 아이콘이 제목 오른쪽에 나타나야 합니다.</p>
+            <p>아이콘이 보이지 않는다면:</p>
+            <ul>
+                <li>브라우저 개발자 도구의 콘솔을 확인해보세요</li>
+                <li>페이지를 새로고침해보세요</li>
+                <li>TTS 확장 프로그램이 활성화되어 있는지 확인해보세요</li>
+            </ul>
+        </div>
+        
+        <div class="debug-info">
+            <h3>디버그 정보</h3>
+            <div id="debug-output">
+                <p>디버그 정보가 여기에 표시됩니다...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- TTS 확장 프로그램 스크립트 로드 -->
+    <script src="html-analyzer-common.js"></script>
+    <script src="html-analyzer-sites.js"></script>
+    <script src="perplexity-api.js"></script>
+    <script src="tts.js"></script>
+
+    <script>
+        // 디버그 출력 함수
+        function debugLog(message) {
+            const debugOutput = document.getElementById('debug-output');
+            const timestamp = new Date().toLocaleTimeString();
+            debugOutput.innerHTML += `<p>[${timestamp}] ${message}</p>`;
+            console.log(message);
+        }
+        
+        debugLog('YouTube 아이콘 테스트 페이지 로드됨');
+        
+        // Chrome API 모킹 (TTS 확장 프로그램 오류 방지)
+        if (typeof chrome === 'undefined') {
+            window.chrome = {
+                runtime: {
+                    onMessage: {
+                        addListener: function() {}
+                    },
+                    sendMessage: function() {}
+                },
+                storage: {
+                    sync: {
+                        get: function(keys, callback) {
+                            callback({});
+                        },
+                        set: function() {}
+                    },
+                    onChanged: {
+                        addListener: function() {}
+                    }
+                }
+            };
+            debugLog('Chrome API 모킹 완료');
+        }
+        
+        // YouTube 모드 시뮬레이션
+        const originalLocation = window.location;
+        const mockLocation = {
+            hostname: 'youtube.com',
+            pathname: '/watch',
+            href: 'https://youtube.com/watch?v=test',
+            origin: 'https://youtube.com',
+            protocol: 'https:',
+            host: 'youtube.com'
+        };
+        
+        // location 속성 오버라이드
+        try {
+            Object.defineProperty(window, 'location', {
+                get: function() {
+                    return mockLocation;
+                },
+                configurable: true
+            });
+            debugLog('Location 오버라이드 성공');
+        } catch (error) {
+            debugLog('Location 오버라이드 실패: ' + error.message);
+        }
+        
+        debugLog('현재 URL: ' + window.location.href);
+        debugLog('현재 hostname: ' + window.location.hostname);
+        debugLog('현재 pathname: ' + window.location.pathname);
+        
+        // TTS 매니저 로드 대기 및 YouTube 모드 활성화
+        function waitForTTSManager() {
+            if (window.ttsManager) {
+                debugLog('TTS 매니저 발견, YouTube 모드 강제 활성화');
+                
+                // isYouTubeMode 함수를 테스트용으로 오버라이드
+                window.ttsManager.isYouTubeMode = function() {
+                    debugLog('YouTube 모드 확인: true');
+                    return true;
+                };
+                
+                // YouTube 모드 시작
+                if (window.ttsManager.startYouTubeMode) {
+                    debugLog('YouTube 모드 시작');
+                    window.ttsManager.startYouTubeMode();
+                }
+            } else {
+                debugLog('TTS 매니저 대기 중...');
+                setTimeout(waitForTTSManager, 100);
+            }
+        }
+        
+        // TTS 매니저 로드 대기 시작
+        setTimeout(waitForTTSManager, 1000);
+        
+        // YouTube 아이콘 생성 함수
+        function createYouTubeIcon() {
+            debugLog('🎥 YouTube: 아이콘 생성 함수 시작');
+            
+            // 기존 아이콘 제거
+            const existingIcon = document.getElementById('youtube-perplexity-icon');
+            if (existingIcon) {
+                existingIcon.remove();
+                debugLog('기존 아이콘 제거됨');
+            }
+
+            // 제목 요소 찾기
+            const titleElement = document.querySelector('h1');
+            debugLog('제목 요소 발견: ' + (titleElement ? '성공' : '실패'));
+            
+            if (!titleElement) {
+                debugLog('제목 요소를 찾을 수 없음');
+                return;
+            }
+
+            const iconSize = 24;
+            
+            // YouTube 아이콘 생성
+            const youtubeIcon = document.createElement('div');
+            youtubeIcon.id = 'youtube-perplexity-icon';
+            youtubeIcon.innerHTML = `
+                <svg width="${iconSize}" height="${iconSize}" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <circle cx="12" cy="12" r="11" fill="#000000" opacity="0.9"/>
+                    <path d="M8 6v12l10-6z" fill="#ffffff"/>
+                </svg>
+            `;
+            
+            // 위치 설정 - 제목 행 오른쪽
+            const rect = titleElement.getBoundingClientRect();
+            
+            youtubeIcon.style.cssText = `
+                position: fixed !important;
+                top: ${rect.top + (rect.height - iconSize) / 2}px !important;
+                left: ${rect.right + 15}px !important;
+                z-index: 100000 !important;
+                opacity: 1 !important;
+                pointer-events: auto !important;
+                cursor: pointer !important;
+                background: transparent !important;
+                border-radius: 50% !important;
+                width: ${iconSize}px !important;
+                height: ${iconSize}px !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                transition: transform 0.2s ease, opacity 0.2s ease !important;
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
+            `;
+
+            debugLog('제목 요소 위치: ' + JSON.stringify({
+                top: rect.top,
+                left: rect.left,
+                right: rect.right,
+                width: rect.width,
+                height: rect.height
+            }));
+            
+            debugLog('아이콘 위치 설정: top=' + (rect.top + (rect.height - iconSize) / 2) + 'px, left=' + (rect.right + 15) + 'px');
+
+            // 클릭 이벤트 설정
+            youtubeIcon.addEventListener('click', (event) => {
+                event.stopPropagation();
+                debugLog('🎥 YouTube: 아이콘 클릭됨');
+                alert('YouTube 아이콘이 클릭되었습니다!');
+            });
+
+            // 호버 효과
+            youtubeIcon.addEventListener('mouseenter', () => {
+                youtubeIcon.style.transform = 'scale(1.2)';
+                youtubeIcon.style.opacity = '1';
+                debugLog('아이콘 호버 효과 적용');
+            });
+
+            youtubeIcon.addEventListener('mouseleave', () => {
+                youtubeIcon.style.transform = 'scale(1.0)';
+                youtubeIcon.style.opacity = '0.9';
+            });
+
+            document.body.appendChild(youtubeIcon);
+            debugLog('🎥 YouTube: Perplexity 아이콘 생성 완료');
+            debugLog('아이콘이 DOM에 추가됨: ' + document.body.contains(youtubeIcon));
+            
+            // 아이콘 스타일 확인
+            setTimeout(() => {
+                const computedStyle = window.getComputedStyle(youtubeIcon);
+                debugLog('아이콘 계산된 스타일: ' + JSON.stringify({
+                    display: computedStyle.display,
+                    visibility: computedStyle.visibility,
+                    opacity: computedStyle.opacity,
+                    zIndex: computedStyle.zIndex,
+                    position: computedStyle.position,
+                    top: computedStyle.top,
+                    left: computedStyle.left
+                }));
+            }, 100);
+        }
+        
+        // 페이지 로드 후 아이콘 생성
+        setTimeout(() => {
+            debugLog('첫 번째 아이콘 생성 시도');
+            createYouTubeIcon();
+        }, 500);
+        
+        // 추가로 2초 후에도 한 번 더 시도
+        setTimeout(() => {
+            debugLog('두 번째 아이콘 생성 시도');
+            createYouTubeIcon();
+        }, 2000);
+        
+        // 5초 후에도 한 번 더 시도
+        setTimeout(() => {
+            debugLog('세 번째 아이콘 생성 시도');
+            createYouTubeIcon();
+        }, 5000);
+        
+        debugLog('스크립트 로드 완료');
+    </script>
+</body>
+</html>
