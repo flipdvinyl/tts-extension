@@ -199,6 +199,21 @@ class HTMLAnalyzerSites {
       return null;
     }
     
+    // Time.com 특화 로직
+    if (hostname.includes('time.com')) {
+      console.log('⏰ Time.com 사이트 감지');
+      
+      // Time.com은 <article> 태그가 있다면 그 내부에서만 테이크 수집
+      const articleElement = body.querySelector('article');
+      if (articleElement) {
+        console.log('✅ Time.com <article> 태그 발견 - 내부에서만 테이크 수집');
+        return articleElement;
+      } else {
+        console.log('⚠️ Time.com <article> 태그 없음 - 전체에서 테이크 수집');
+        return null; // null을 반환하면 전체 body에서 수집
+      }
+    }
+    
     console.log(`⚠️ ${hostname}에 대한 특화 로직에서 본문을 찾지 못함`);
     return null;
   }

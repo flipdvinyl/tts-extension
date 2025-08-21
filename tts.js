@@ -340,7 +340,7 @@ class TTSManager {
     // 테마별 색상 설정
     const isDark = this.currentTheme === 'dark';
     const bgColor = isDark ? 'rgba(0, 0, 0, 0.9)' : 'rgba(255, 255, 255, 0.95)';
-    const textColor = isDark ? 'rgba(255, 255, 255, 0.9)' : '#1d1d1d';
+    const textColor = isDark ? 'rgba(255, 255, 255, 0.6)' : '#1d1d1d';
     const borderColor = isDark ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.1)';
     
     // 익스텐션 아이콘 바로 아래 위치 계산 (위로 25px 이동)
@@ -497,7 +497,7 @@ class TTSManager {
     const labelElement = document.createElement('span');
     labelElement.textContent = label;
     labelElement.style.cssText = `
-      color: ${this.currentTheme === 'dark' ? 'rgba(255, 255, 255, 0.9)' : '#1d1d1d'} !important;
+      color: ${this.currentTheme === 'dark' ? 'rgba(255, 255, 255, 0.6)' : '#1d1d1d'} !important;
       font-size: 14px !important;
     `;
     
@@ -2432,7 +2432,7 @@ class TTSManager {
     if (this.takeListContainer) {
       // 테마 색상 가져오기
       const isDark = this.currentTheme === 'dark';
-      const textColor = isDark ? '#aaaaaa' : '#1d1d1d';
+      const textColor = isDark ? 'rgba(255, 255, 255, 0.6)' : '#1d1d1d';
       const itemBgColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
       
       let html = '';
@@ -2469,7 +2469,7 @@ class TTSManager {
     // 테마별 배경색 설정 (하단 플로팅 UI와 동일)
     const isDark = this.currentTheme === 'dark';
     const bgColor = isDark ? 'rgba(0, 0, 0, 0.2)' : 'rgba(255, 255, 255, 0.2)';
-    const textColor = isDark ? 'rgba(255, 255, 255, 0.8)' : '#1d1d1d';
+    const textColor = isDark ? 'rgba(255, 255, 255, 0.6)' : '#1d1d1d';
     const borderColor = isDark ? 'rgba(125, 125, 125, 0.25)' : 'rgba(125, 125, 125, 0.5)';
 
     // 플로팅 컨테이너 생성 (테이크 리스트 포함)
@@ -2562,10 +2562,10 @@ class TTSManager {
     if (this.consoleLogStatusLabel) {
       if (this.DEBUG_MODE) {
         this.consoleLogStatusLabel.textContent = 'Console log: ON\n⚠️ 성능저하 있음 ⚠️';
-        this.consoleLogStatusLabel.style.color = this.currentTheme === 'dark' ? 'rgba(255, 255, 255, 0.9)' : '#1d1d1d'; // 기본 색상
+        this.consoleLogStatusLabel.style.color = this.currentTheme === 'dark' ? 'rgba(255, 255, 255, 0.6)' : '#1d1d1d'; // 기본 색상
       } else {
         this.consoleLogStatusLabel.textContent = 'Console log: OFF';
-        this.consoleLogStatusLabel.style.color = this.currentTheme === 'dark' ? 'rgba(255, 255, 255, 0.9)' : '#1d1d1d'; // 기본 색상
+        this.consoleLogStatusLabel.style.color = this.currentTheme === 'dark' ? 'rgba(255, 255, 255, 0.6)' : '#1d1d1d'; // 기본 색상
       }
     }
   }
@@ -4555,7 +4555,7 @@ class TTSManager {
     
     // 라이트 테마는 흰색, 다크 테마는 검정 + 블러 효과
     const bgColor = isDark ? 'rgba(0, 0, 0, 0.2)' : 'rgba(255, 255, 255, 0.2)';
-    const textColor = isDark ? 'rgba(255, 255, 255, 0.8)' : '#1d1d1d';
+    const textColor = isDark ? 'rgba(255, 255, 255, 0.6)' : '#1d1d1d';
     const borderColor = isDark ? 'rgba(125, 125, 125, 0.25)' : 'rgba(100, 100, 100, 0.4)';
 
     // 컨테이너 배경 업데이트 (블러 효과 포함)
@@ -4588,9 +4588,36 @@ class TTSManager {
       svgStyle.textContent = `.company-logo { fill: ${textColor}; }`;
     }
 
-    // 보더 색상 업데이트 - 상위 컨테이너에 직접 적용
+    // TLDRL 텍스트 색상 업데이트
+    const tldlrText = document.getElementById('tts-tldlr-text');
+    if (tldlrText) {
+      tldlrText.style.color = textColor;
+      this.log(`🎨 TLDRL 텍스트 색상 업데이트: ${textColor}`);
+    }
+
+    // 보더 색상 업데이트 - 현재 위치에 맞는 보더만 적용
     if (this.bottomFloatingUI) {
-      this.bottomFloatingUI.style.borderTop = `1px solid ${borderColor} !important`;
+      // 현재 위치를 확인하여 적절한 보더 설정
+      const currentBottom = parseInt(this.bottomFloatingUI.style.bottom) || 0;
+      const currentTransform = this.bottomFloatingUI.style.transform || '';
+      
+      if (currentTransform.includes('rotate(90deg)')) {
+        // 좌측 모드: 상단 보더만
+        this.updateFloatingBarBorder('left');
+      } else if (currentTransform.includes('rotate(-90deg)')) {
+        // 우측 모드: 상단 보더만
+        this.updateFloatingBarBorder('right');
+      } else if (currentBottom === 0) {
+        // 하단 모드: 상단 보더만
+        this.updateFloatingBarBorder('bottom');
+      } else if (currentBottom >= window.innerHeight - 44) {
+        // 상단 모드: 하단 보더만
+        this.updateFloatingBarBorder('top');
+      } else {
+        // 중간 영역: 모든 보더 보임
+        this.updateFloatingBarBorder('middle');
+      }
+      
       this.log(`🎨 구분선 색상 업데이트: ${borderColor}`);
     }
 
@@ -4627,7 +4654,7 @@ class TTSManager {
     // 테마별 배경색 설정
     const isDark = this.currentTheme === 'dark';
     const bgColor = isDark ? 'rgba(0, 0, 0, 0.2)' : 'rgba(255, 255, 255, 0.2)';
-    const textColor = isDark ? 'rgba(255, 255, 255, 0.8)' : '#1d1d1d';
+    const textColor = isDark ? 'rgba(255, 255, 255, 0.6)' : '#1d1d1d';
     const borderColor = isDark ? 'rgba(125, 125, 125, 0.25)' : 'rgba(100, 100, 100, 0.4)';
 
     this.bottomFloatingUI = document.createElement('div');
@@ -4637,7 +4664,7 @@ class TTSManager {
       left: 0 !important;
       bottom: 0 !important;
       width: 100% !important;
-      z-index: 99997 !important;
+      z-index: 99999 !important;
       padding: 0 !important;
       margin: 0 !important;
       background: ${bgColor} !important;
@@ -4646,7 +4673,10 @@ class TTSManager {
       color: ${textColor} !important;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
       display: none !important;
-      border-top: 1px solid ${borderColor} !important;
+      border: none !important;
+      cursor: grab !important;
+      user-select: none !important;
+      transition: all 0.3s ease !important;
     `;
 
     // 메인 버튼 컨테이너 (아이콘 + 텍스트 + 새로고침)
@@ -4660,9 +4690,18 @@ class TTSManager {
       padding: 0 16px !important;
       box-sizing: border-box !important;
       flex-wrap: nowrap !important;
+      position: relative !important;
     `;
 
-    // 좌측: SVG 아이콘
+    // 좌측: SVG 아이콘 + TLDLR 텍스트
+    const leftContainer = document.createElement('div');
+    leftContainer.style.cssText = `
+      display: flex !important;
+      align-items: center !important;
+      gap: 8px !important;
+      flex-shrink: 0 !important;
+    `;
+    
     const svgIcon = document.createElement('div');
     svgIcon.innerHTML = `
       <svg width="20" height="20" viewBox="281 404 33 33" xmlns="http://www.w3.org/2000/svg">
@@ -4679,6 +4718,23 @@ class TTSManager {
       align-items: center !important;
       justify-content: center !important;
     `;
+    
+    // TLDRL 텍스트
+    const tldlrText = document.createElement('div');
+    tldlrText.id = 'tts-tldlr-text';
+    tldlrText.textContent = 'TLDRL';
+    tldlrText.style.cssText = `
+      color: ${textColor} !important;
+      font-size: calc(${this.UI_FONT_SIZE} * 0.6) !important;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+      white-space: nowrap !important;
+      flex-shrink: 0 !important;
+      z-index: 1 !important;
+      text-align: left !important;
+    `;
+    
+    leftContainer.appendChild(svgIcon);
+    leftContainer.appendChild(tldlrText);
 
     // 로고 클릭 시 Supertone 웹사이트 새창으로 열기
     svgIcon.addEventListener('click', (event) => {
@@ -4686,10 +4742,13 @@ class TTSManager {
       window.open('https://supertone.ai/', '_blank');
     });
 
-    // 중앙: 메인 버튼 (텍스트만)
+    // 중앙: 메인 버튼 (텍스트만) - 절대 위치로 중앙 고정
     this.bottomFloatingButton = document.createElement('button');
     this.bottomFloatingButton.style.cssText = `
-      flex: 1 !important;
+      position: absolute !important;
+      left: 50% !important;
+      top: 50% !important;
+      transform: translate(-50%, -50%) !important;
       height: 44px !important;
       line-height: 39px !important;
       background: transparent !important;
@@ -4703,9 +4762,11 @@ class TTSManager {
       transition: all 0.3s !important;
       font-family: inherit !important;
       outline: none !important;
-      padding-top: 0 !important;
-      margin-top: 0px !important;
+      padding: 0 8px !important;
+      margin: 0 !important;
       text-align: center !important;
+      white-space: nowrap !important;
+      z-index: 1 !important;
     `;
 
     // 우측: 테이크 수 표시 + 새로고침 버튼
@@ -4715,9 +4776,11 @@ class TTSManager {
       color: ${textColor} !important;
       font-size: calc(${this.UI_FONT_SIZE} * 0.6) !important;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
-      margin-right: 8px !important;
+      margin-right: 0px !important;
       white-space: nowrap !important;
       flex-shrink: 0 !important;
+      z-index: 1 !important;
+      text-align: right !important;
     `;
     this.bottomTakeCountLabel.textContent = '0개 문단';
     
@@ -4743,6 +4806,7 @@ class TTSManager {
       outline: none !important;
       box-sizing: border-box !important;
       flex-shrink: 0 !important;
+      z-index: 1 !important;
     `;
 
     // 새로고침 버튼 클릭 이벤트
@@ -4751,24 +4815,43 @@ class TTSManager {
       this.handleRefreshButtonClick();
     });
 
-    // 컨테이너에 아이콘, 버튼, 테이크 수, 새로고침 버튼 추가
-    buttonContainer.appendChild(svgIcon);
+    // 컨테이너에 아이콘, 테이크 수, 새로고침 버튼 추가 (버튼은 절대 위치로 중앙에)
+    buttonContainer.appendChild(leftContainer);
+    
+    // 우측 영역을 위한 컨테이너
+    const rightContainer = document.createElement('div');
+    rightContainer.style.cssText = `
+      display: flex !important;
+      align-items: center !important;
+      gap: 8px !important;
+      flex-shrink: 0 !important;
+    `;
+    rightContainer.appendChild(this.bottomTakeCountLabel);
+    rightContainer.appendChild(this.refreshButton);
+    
+    buttonContainer.appendChild(rightContainer);
     buttonContainer.appendChild(this.bottomFloatingButton);
-    buttonContainer.appendChild(this.bottomTakeCountLabel);
-    buttonContainer.appendChild(this.refreshButton);
 
     // 버튼 컨테이너를 직접 추가
     this.bottomFloatingUI.appendChild(buttonContainer);
+
+
     
     // 이벤트 리스너
     this.bottomFloatingButton.addEventListener('click', (event) => {
       this.handleBottomFloatingButtonClick(event);
     });
 
+    // 드래그 기능 추가
+    this.setupDraggableFloatingBar();
+
     document.body.appendChild(this.bottomFloatingUI);
     
     // 초기에는 숨김 상태로 시작 (showUI에서 설정에 따라 표시)
     this.bottomFloatingUI.style.display = 'none';
+    
+    // 초기 보더 설정: 하단 모드 (상단 보더만 보임)
+    this.updateFloatingBarBorder('bottom');
     
     // 하단 스크롤 영역 추가
     this.addBottomScrollSpacer();
@@ -4778,6 +4861,335 @@ class TTSManager {
     this.updateBottomFloatingUIState();
     
     this.log('🎯 하단 플로팅 UI 생성 완료');
+  }
+
+  // 🎯 드래그 가능한 플로팅바 설정
+  setupDraggableFloatingBar() {
+    if (!this.bottomFloatingUI) return;
+
+    let isDragging = false;
+    let startY = 0;
+    let startX = 0;
+    let startBottom = 0;
+    let startLeft = 0;
+    let originalPosition = 'bottom';
+    let draggedPosition = null;
+
+    // 드래그 시작
+    const handleMouseDown = (e) => {
+      // 버튼 클릭은 드래그로 처리하지 않음
+      if (e.target.tagName === 'BUTTON' || e.target.closest('button')) {
+        return;
+      }
+
+      isDragging = true;
+      startY = e.clientY;
+      startX = e.clientX;
+      startBottom = parseInt(this.bottomFloatingUI.style.bottom) || 0;
+      startLeft = parseInt(this.bottomFloatingUI.style.left) || 0;
+      
+      this.bottomFloatingUI.style.cursor = 'grabbing';
+      this.bottomFloatingUI.style.transition = 'none';
+      
+      // 드래그 중임을 표시
+      this.bottomFloatingUI.style.opacity = '0.8';
+      
+      e.preventDefault();
+    };
+
+    // 드래그 중
+    const handleMouseMove = (e) => {
+      if (!isDragging) return;
+
+      // 좌우 스냅 영역 먼저 확인 (플로팅바 높이만큼)
+      const sideSnapZone = 44; // 플로팅바 높이 44px
+      const isLeftSnap = e.clientX <= sideSnapZone;
+      const isRightSnap = e.clientX >= window.innerWidth - sideSnapZone;
+      
+      // 좌우 스냅 처리 (Y 좌표 계산 없이)
+      if (isLeftSnap) {
+        // 왼쪽 스냅: 90도 회전, 왼쪽 끝에 고정
+        this.bottomFloatingUI.style.transformOrigin = '0 0'; // 좌상단 기준 회전
+        this.bottomFloatingUI.style.transform = 'rotate(90deg)';
+        this.bottomFloatingUI.style.left = '44px'; // 플로팅바 폭만큼
+        this.bottomFloatingUI.style.bottom = 'auto';
+        this.bottomFloatingUI.style.top = '0%';
+        this.bottomFloatingUI.style.width = '100vh'; // 세로 100%로 변경
+        this.bottomFloatingUI.style.padding = '0';
+        this.bottomFloatingUI.style.borderRadius = '0';
+        // 좌측 모드: 상단 보더만 보임
+        this.updateFloatingBarBorder('left');
+        return; // 좌우 스냅 시 포인터 반응 중단
+      } else if (isRightSnap) {
+        // 오른쪽 스냅: -90도 회전, 오른쪽 끝에 고정
+        this.bottomFloatingUI.style.transformOrigin = '0 0'; // 좌상단 기준 회전
+        this.bottomFloatingUI.style.transform = 'rotate(-90deg)';
+        this.bottomFloatingUI.style.left = `${window.innerWidth - 44}px`;
+        this.bottomFloatingUI.style.bottom = 'auto';
+        this.bottomFloatingUI.style.top = '100%';
+        this.bottomFloatingUI.style.width = '100vh'; // 세로 100%로 변경
+        this.bottomFloatingUI.style.padding = '0';
+        this.bottomFloatingUI.style.borderRadius = '0';
+        // 우측 모드: 상단 보더만 보임
+        this.updateFloatingBarBorder('right');
+        return; // 좌우 스냅 시 포인터 반응 중단
+      }
+      
+      // 중앙 영역에서만 Y 좌표 계산
+      // 스냅 상태에서 이탈할 때는 현재 마우스 Y 위치를 기준으로 재계산
+      let currentBottom = parseInt(this.bottomFloatingUI.style.bottom) || 0;
+      if (this.bottomFloatingUI.style.transform !== 'rotate(0deg)') {
+        // 스냅 상태에서 이탈하는 경우, 현재 마우스 Y 위치를 기준으로 bottom 계산
+        const mouseY = e.clientY;
+        const windowHeight = window.innerHeight;
+        currentBottom = Math.max(0, windowHeight - mouseY - 22); // 플로팅바 높이의 절반만큼 조정
+        startBottom = currentBottom; // 새로운 시작점으로 설정
+      }
+      
+      const deltaY = startY - e.clientY;
+      const newBottom = Math.max(0, startBottom + deltaY);
+      
+      // 최상단에서 플로팅바 높이만큼 아래로 제한 (화면을 벗어나지 않도록)
+      const maxBottom = window.innerHeight - 44; // 플로팅바 높이 44px
+      const clampedBottom = Math.max(0, Math.min(newBottom, maxBottom));
+      
+      // 스냅 기능: 하단/상단 영역에서는 고정
+      const snapZone = 10; // 10px 스냅 영역
+      let finalBottom = clampedBottom;
+      
+      // 하단 스냅 (0~10px 영역)
+      if (clampedBottom <= snapZone) {
+        finalBottom = 0; // 하단에 고정
+        // 하단 모드: 상단 보더만 보임
+        this.updateFloatingBarBorder('bottom');
+      }
+      // 상단 스냅 (maxBottom-10~maxBottom 영역)
+      else if (clampedBottom >= maxBottom - snapZone) {
+        finalBottom = maxBottom; // 상단에 고정
+        // 상단 모드: 하단 보더만 보임
+        this.updateFloatingBarBorder('top');
+      }
+      // 중간 영역에서는 포인터 따라오기
+      else {
+        finalBottom = clampedBottom;
+        // 중간 영역: 모든 보더 보임
+        this.updateFloatingBarBorder('middle');
+      }
+      
+      // 중앙 영역: 회전 해제, 일반 모드로 완전 복원
+      this.bottomFloatingUI.style.transformOrigin = 'center center'; // 기본 회전축으로 복원
+      this.bottomFloatingUI.style.transform = 'rotate(0deg)';
+      
+      // 스냅 상태가 아닐 때: 폭 800px, 마우스 위치에 따라 이동
+      if (finalBottom > 10 && finalBottom < maxBottom - 10) {
+        // 스냅 영역 밖: 폭 800px, Y축처럼 상대적 이동
+        const deltaX = e.clientX - startX;
+        const deltaY = startY - e.clientY;
+        const newLeft = startLeft + deltaX;
+        const halfWidth = 700;
+        
+        // 화면 경계 제한
+        let leftPosition = Math.max(0, Math.min(newLeft, window.innerWidth - halfWidth));
+        
+        this.bottomFloatingUI.style.left = `${leftPosition}px`;
+        this.bottomFloatingUI.style.bottom = `${finalBottom}px`;
+        this.bottomFloatingUI.style.top = 'auto';
+        this.bottomFloatingUI.style.width = '700px';
+        this.bottomFloatingUI.style.padding = '10px';
+        this.bottomFloatingUI.style.borderRadius = '5px';
+      } else {
+        // 스냅 영역: 기본 모양으로 복귀
+        this.bottomFloatingUI.style.left = '0px';
+        this.bottomFloatingUI.style.bottom = `${finalBottom}px`;
+        this.bottomFloatingUI.style.top = 'auto';
+        this.bottomFloatingUI.style.width = '100%';
+        this.bottomFloatingUI.style.padding = '0';
+        this.bottomFloatingUI.style.borderRadius = '0';
+      }
+      
+      // 위치에 따라 원본 위치 추적
+      if (finalBottom < 10) {
+        originalPosition = 'bottom';
+      } else {
+        originalPosition = 'dragged';
+        draggedPosition = finalBottom;
+      }
+    };
+
+    // 드래그 종료
+    const handleMouseUp = () => {
+      if (!isDragging) return;
+
+      isDragging = false;
+      this.bottomFloatingUI.style.cursor = 'grab';
+      this.bottomFloatingUI.style.transition = 'all 0.3s ease';
+      this.bottomFloatingUI.style.opacity = '1';
+    };
+
+    // 이벤트 리스너 추가
+    this.bottomFloatingUI.addEventListener('mousedown', handleMouseDown);
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    // 터치 이벤트도 지원
+    this.bottomFloatingUI.addEventListener('touchstart', (e) => {
+      if (e.target.tagName === 'BUTTON' || e.target.closest('button')) {
+        return;
+      }
+      isDragging = true;
+      startY = e.touches[0].clientY;
+      startX = e.touches[0].clientX;
+      startBottom = parseInt(this.bottomFloatingUI.style.bottom) || 0;
+      startLeft = parseInt(this.bottomFloatingUI.style.left) || 0;
+      
+      this.bottomFloatingUI.style.cursor = 'grabbing';
+      this.bottomFloatingUI.style.transition = 'none';
+      this.bottomFloatingUI.style.opacity = '0.8';
+      
+      e.preventDefault();
+    });
+
+    document.addEventListener('touchmove', (e) => {
+      if (!isDragging) return;
+      
+      // 좌우 스냅 영역 먼저 확인 (플로팅바 높이만큼)
+      const sideSnapZone = 44; // 플로팅바 높이 44px
+      const isLeftSnap = e.touches[0].clientX <= sideSnapZone;
+      const isRightSnap = e.touches[0].clientX >= window.innerWidth - sideSnapZone;
+      
+      // 좌우 스냅 처리 (Y 좌표 계산 없이)
+      if (isLeftSnap) {
+        // 왼쪽 스냅: 90도 회전, 왼쪽 끝에 고정
+        this.bottomFloatingUI.style.transformOrigin = '0 0'; // 좌상단 기준 회전
+        this.bottomFloatingUI.style.transform = 'rotate(90deg)';
+        this.bottomFloatingUI.style.left = '44px'; // 플로팅바 폭만큼
+        this.bottomFloatingUI.style.bottom = 'auto';
+        this.bottomFloatingUI.style.top = '0%';
+        this.bottomFloatingUI.style.width = '100vh'; // 세로 100%로 변경
+        this.bottomFloatingUI.style.padding = '0';
+        this.bottomFloatingUI.style.borderRadius = '0';
+        e.preventDefault();
+        return; // 좌우 스냅 시 포인터 반응 중단
+      } else if (isRightSnap) {
+        // 오른쪽 스냅: -90도 회전, 오른쪽 끝에 고정
+        this.bottomFloatingUI.style.transformOrigin = '0 0'; // 좌상단 기준 회전
+        this.bottomFloatingUI.style.transform = 'rotate(-90deg)';
+        this.bottomFloatingUI.style.left = `${window.innerWidth - 44}px`;
+        this.bottomFloatingUI.style.bottom = 'auto';
+        this.bottomFloatingUI.style.top = '100%';
+        this.bottomFloatingUI.style.width = '100vh'; // 세로 100%로 변경
+        this.bottomFloatingUI.style.padding = '0';
+        this.bottomFloatingUI.style.borderRadius = '0';
+        e.preventDefault();
+        return; // 좌우 스냅 시 포인터 반응 중단
+      }
+      
+      // 중앙 영역에서만 Y 좌표 계산
+      // 스냅 상태에서 이탈할 때는 현재 터치 Y 위치를 기준으로 재계산
+      let currentBottom = parseInt(this.bottomFloatingUI.style.bottom) || 0;
+      if (this.bottomFloatingUI.style.transform !== 'rotate(0deg)') {
+        // 스냅 상태에서 이탈하는 경우, 현재 터치 Y 위치를 기준으로 bottom 계산
+        const touchY = e.touches[0].clientY;
+        const windowHeight = window.innerHeight;
+        currentBottom = Math.max(0, windowHeight - touchY - 22); // 플로팅바 높이의 절반만큼 조정
+        startBottom = currentBottom; // 새로운 시작점으로 설정
+      }
+      
+      const deltaY = startY - e.touches[0].clientY;
+      const newBottom = Math.max(0, startBottom + deltaY);
+      
+      // 최상단에서 플로팅바 높이만큼 아래로 제한 (화면을 벗어나지 않도록)
+      const maxBottom = window.innerHeight - 44; // 플로팅바 높이 44px
+      const clampedBottom = Math.max(0, Math.min(newBottom, maxBottom));
+      
+      // 스냅 기능: 하단/상단 영역에서는 고정
+      const snapZone = 10; // 10px 스냅 영역
+      let finalBottom = clampedBottom;
+      
+      // 하단 스냅 (0~10px 영역)
+      if (clampedBottom <= snapZone) {
+        finalBottom = 0; // 하단에 고정
+      }
+      // 상단 스냅 (maxBottom-10~maxBottom 영역)
+      else if (clampedBottom >= maxBottom - snapZone) {
+        finalBottom = maxBottom; // 상단에 고정
+      }
+      // 중간 영역에서는 포인터 따라오기
+      else {
+        finalBottom = clampedBottom;
+      }
+      
+      // 중앙 영역: 회전 해제, 일반 모드로 완전 복원
+      this.bottomFloatingUI.style.transformOrigin = 'center center'; // 기본 회전축으로 복원
+      this.bottomFloatingUI.style.transform = 'rotate(0deg)';
+      
+      // 스냅 상태가 아닐 때: 폭 800px, 터치 위치에 따라 이동
+      if (finalBottom > 10 && finalBottom < maxBottom - 10) {
+        // 스냅 영역 밖: 폭 800px, Y축처럼 상대적 이동
+        const deltaX = e.touches[0].clientX - startX;
+        const deltaY = startY - e.touches[0].clientY;
+        const newLeft = startLeft + deltaX;
+        const halfWidth = 700;
+        
+        // 화면 경계 제한
+        let leftPosition = Math.max(0, Math.min(newLeft, window.innerWidth - halfWidth));
+        
+        this.bottomFloatingUI.style.left = `${leftPosition}px`;
+        this.bottomFloatingUI.style.bottom = `${finalBottom}px`;
+        this.bottomFloatingUI.style.top = 'auto';
+        this.bottomFloatingUI.style.width = '700px';
+        this.bottomFloatingUI.style.padding = '10px';
+        this.bottomFloatingUI.style.borderRadius = '5px';
+      } else {
+        // 스냅 영역: 기본 모양으로 복귀
+        this.bottomFloatingUI.style.left = '0px';
+        this.bottomFloatingUI.style.bottom = `${finalBottom}px`;
+        this.bottomFloatingUI.style.top = 'auto';
+        this.bottomFloatingUI.style.width = '100%';
+        this.bottomFloatingUI.style.padding = '0';
+        this.bottomFloatingUI.style.borderRadius = '0';
+      }
+      
+      if (finalBottom < 10) {
+        originalPosition = 'bottom';
+      } else {
+        originalPosition = 'dragged';
+        draggedPosition = finalBottom;
+      }
+      
+      e.preventDefault();
+    });
+
+    document.addEventListener('touchend', handleMouseUp);
+
+    // 더블클릭으로 원래 위치로 되돌리기
+    this.bottomFloatingUI.addEventListener('dblclick', (e) => {
+      // 버튼 클릭은 무시
+      if (e.target.tagName === 'BUTTON' || e.target.closest('button')) {
+        return;
+      }
+      
+      this.resetFloatingBarPosition();
+    });
+  }
+
+  // 🎯 플로팅바 위치 초기화 (원래 위치로 되돌리기)
+  resetFloatingBarPosition() {
+    if (!this.bottomFloatingUI) return;
+
+    this.bottomFloatingUI.style.bottom = '0px';
+    this.bottomFloatingUI.style.left = '0px';
+    this.bottomFloatingUI.style.width = '100%';
+    this.bottomFloatingUI.style.transform = 'rotate(0deg)';
+    this.bottomFloatingUI.style.top = 'auto'; // top 초기화
+    this.bottomFloatingUI.style.padding = '0'; // 패딩 초기화
+    this.bottomFloatingUI.style.borderRadius = '0'; // 라운드값 초기화
+    this.bottomFloatingUI.style.transition = 'all 0.3s ease';
+    
+    // 하단 모드로 복귀 시 상단 보더만 보임
+    this.updateFloatingBarBorder('bottom');
+    
+    this.log('🎯 플로팅바 위치 초기화 완료');
   }
 
   // 🎵 재생 속도를 텍스트로 변환
@@ -4800,7 +5212,7 @@ class TTSManager {
     // 테마 색상 가져오기 (하단 플로팅과 동일한 스타일)
     const isDark = this.currentTheme === 'dark';
     const bgColor = isDark ? 'rgba(0, 0, 0, 0.8)' : 'rgba(255, 255, 255, 0.8)';
-    const textColor = isDark ? '#aaaaaa' : '#1d1d1d';
+    const textColor = isDark ? 'rgba(255, 255, 255, 0.6)' : '#1d1d1d';
     const borderColor = isDark ? 'rgba(255, 255, 255, 1.0)' : 'rgba(29, 29, 29, 0.3)';
     
     // 팝업 카드 컨테이너 생성 (app.js PopupCard 스타일)
@@ -4867,13 +5279,13 @@ class TTSManager {
         text-transform: none !important;
       `;
       
-      // 속도 텍스트 (언더라인 있음, app.js 스타일)
+      // 속도 텍스트 (언더라인 있음, 하단 플로팅과 동일한 스타일)
       const speedText = document.createElement('span');
       speedText.style.cssText = `
         color: ${textColor} !important;
         text-decoration: underline !important;
         text-underline-offset: 5px !important;
-        text-decoration-color: ${textColor}66 !important;
+        text-decoration-color: ${this.currentTheme === 'dark' ? 'rgba(170, 170, 170, 0.4)' : 'rgba(29, 29, 29, 0.4)'} !important;
         cursor: inherit !important;
         display: inline !important;
         font-size: ${this.UI_FONT_SIZE} !important;
@@ -4984,12 +5396,56 @@ class TTSManager {
     }
   }
 
+  // 🎯 플로팅바 보더 업데이트 (상하좌우 모드별)
+  updateFloatingBarBorder(mode) {
+    if (!this.bottomFloatingUI) return;
+    
+    const isDark = this.currentTheme === 'dark';
+    const borderColor = isDark ? 'rgba(125, 125, 125, 0.25)' : 'rgba(100, 100, 100, 0.4)';
+    
+    // 모든 보더 초기화
+    this.bottomFloatingUI.style.borderTop = 'none';
+    this.bottomFloatingUI.style.borderBottom = 'none';
+    this.bottomFloatingUI.style.borderLeft = 'none';
+    this.bottomFloatingUI.style.borderRight = 'none';
+    
+    // 모드별 보더 설정
+    switch (mode) {
+      case 'top':
+        // 상단 모드: 하단 보더만 보임
+        this.bottomFloatingUI.style.borderBottom = `1px solid ${borderColor}`;
+        break;
+      case 'bottom':
+        // 하단 모드: 상단 보더만 보임
+        this.bottomFloatingUI.style.borderTop = `1px solid ${borderColor}`;
+        break;
+      case 'left':
+        // 좌측 모드: 상단 보더만 보임
+        this.bottomFloatingUI.style.borderTop = `1px solid ${borderColor}`;
+        break;
+      case 'right':
+        // 우측 모드: 상단 보더만 보임
+        this.bottomFloatingUI.style.borderTop = `1px solid ${borderColor}`;
+        break;
+      case 'middle':
+        // 중간 영역: 모든 보더 보임
+        this.bottomFloatingUI.style.border = `1px solid ${borderColor}`;
+        break;
+      default:
+        // 기본값: 하단 모드 (상단 보더만)
+        this.bottomFloatingUI.style.borderTop = `1px solid ${borderColor}`;
+        break;
+    }
+    
+    this.log(`🎨 플로팅바 보더 업데이트: ${mode} 모드`);
+  }
+
   // 🎯 하단 플로팅 UI 상태 업데이트
   updateBottomFloatingUIState() {
     if (!this.bottomFloatingButton) return;
 
     // 테마별 색상 설정 (audiobook-ui 원래 색상)
-    const textColor = this.currentTheme === 'dark' ? '#aaaaaa' : '#1d1d1d';
+    const textColor = this.currentTheme === 'dark' ? 'rgba(255, 255, 255, 0.6)' : '#1d1d1d';
     const underlineColor = this.currentTheme === 'dark' ? 'rgba(170, 170, 170, 0.4)' : 'rgba(29, 29, 29, 0.4)';
 
     if (this.isPlaying && !this.isPaused) {
@@ -5518,7 +5974,7 @@ class TTSManager {
     // 테마별 배경색 설정 (다른 플로팅 UI와 동일)
     const isDark = this.currentTheme === 'dark';
     const bgColor = isDark ? 'rgba(0, 0, 0, 0.2)' : 'rgba(255, 255, 255, 0.2)';
-    const textColor = isDark ? 'rgba(255, 255, 255, 0.8)' : '#1d1d1d';
+    const textColor = isDark ? 'rgba(255, 255, 255, 0.6)' : '#1d1d1d';
     const borderColor = isDark ? 'rgba(125, 125, 125, 0.25)' : 'rgba(125, 125, 125, 0.5)';
     
     // 좌하단 캐릭터 선택 UI (화자2용)
@@ -5927,7 +6383,7 @@ class TTSManager {
     // 테마 색상 가져오기 (하단 플로팅과 동일한 스타일)
     const isDark = this.currentTheme === 'dark';
     const bgColor = isDark ? 'rgba(0, 0, 0, 0.8)' : 'rgba(255, 255, 255, 0.8)';
-    const textColor = isDark ? '#aaaaaa' : '#1d1d1d';
+    const textColor = isDark ? 'rgba(255, 255, 255, 0.6)' : '#1d1d1d';
     const borderColor = isDark ? 'rgba(255, 255, 255, 1.0)' : 'rgba(29, 29, 29, 0.3)';
     
     // 팝업 카드 컨테이너 생성 (app.js PopupCard 스타일)
@@ -6012,23 +6468,23 @@ class TTSManager {
         text-transform: none !important;
       `;
       
-      // 음성 이름 (언더라인 있음, app.js 스타일)
+      // 음성 이름 (언더라인 있음, 하단 플로팅과 동일한 스타일)
       const voiceName = document.createElement('span');
       voiceName.style.cssText = `
         color: ${textColor} !important;
         text-decoration: underline !important;
         text-underline-offset: 5px !important;
-        text-decoration-color: ${textColor}66 !important;
+        text-decoration-color: ${this.currentTheme === 'dark' ? 'rgba(170, 170, 170, 0.4)' : 'rgba(29, 29, 29, 0.4)'} !important;
         cursor: inherit !important;
         display: inline !important;
         font-size: ${this.UI_FONT_SIZE} !important;
       `;
       voiceName.textContent = voice.name;
       
-      // 음성 설명 (투명도 70%, app.js 스타일)
+      // 음성 설명 (다크모드: 0.4 투명도, 라이트모드: 기본)
       const voiceDescription = document.createElement('span');
       voiceDescription.style.cssText = `
-        color: ${textColor}B3 !important;
+        color: ${this.currentTheme === 'dark' ? 'rgba(255, 255, 255, 0.4)' : textColor} !important;
         white-space: pre-line !important;
         cursor: default !important;
         font-size: ${this.UI_FONT_SIZE} !important;
