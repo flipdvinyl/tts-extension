@@ -124,7 +124,7 @@ class HTMLAnalyzerCommon {
       const fullText = this.extractAllTextFromElement(currentNode);
       const isHeading = tagName.match(/^h[1-6]$/);
       const isParagraph = tagName === 'p';
-      const minLength = isHeading ? 2 : 3; // p태그 3자, h태그 2자 (한글 기준)
+      const minLength = isHeading ? 1 : 1; // p태그 1자, h태그 1자 (한글 기준)
       
       if (isParagraph || isHeading) {
         // p 태그나 헤딩 태그는 항상 개별 처리 (전체 텍스트 사용)
@@ -153,7 +153,7 @@ class HTMLAnalyzerCommon {
             reason: !fullText ? '텍스트 없음' : fullText.length <= minLength ? '길이 부족' : '기타'
           });
         }
-      } else if (directText && directText.length > 3) { // div도 3자로 완화 (한글 기준)
+      } else if (directText && directText.length > 1) { // div도 1자로 완화 (한글 기준)
         // div 등에서 직접 텍스트가 있는 경우 (직접 텍스트만 사용)
         console.log(`✅ 직접 텍스트 테이크 추가: <${tagName}> "${directText.substring(0, 30)}..."`);
         contentElements.push(currentNode);
@@ -176,7 +176,7 @@ class HTMLAnalyzerCommon {
           }
           
           const pText = pElement.textContent?.trim() || '';
-          if (pText && pText.length > 3) { // p 태그는 3자 이상
+          if (pText && pText.length > 1) { // p 태그는 1자 이상
             console.log(`✅ div 하위 p 태그 테이크 추가: "${pText.substring(0, 30)}..."`);
             contentElements.push(pElement);
             processedElements.add(pElement);
@@ -357,13 +357,14 @@ class HTMLAnalyzerCommon {
       level++;
     }
     
-    // 🔍 Daum 뉴스 디버깅: 클래스 기반 제외 상세 분석
+    /* 🔍 Daum 뉴스 디버깅: 클래스 기반 제외 상세 분석
     const matchedClass = excludedClasses.find(cls => className.includes(cls));
     if (matchedClass) {
       console.log(`🚫 클래스 제외: "${matchedClass}" in "${className}" - 요소: <${element.tagName.toLowerCase()}>`);
       console.log(`📝 요소 텍스트: "${element.textContent?.substring(0, 50)}..."`);
       return true;
     }
+    */
 
     // 4. ID 기반 제외
     const excludedIds = [
@@ -394,7 +395,7 @@ class HTMLAnalyzerCommon {
       return true;
     }
 
-    // 7. 텍스트 길이 기반 필터링 (너무 짧은 텍스트는 버튼일 가능성)
+    /*/ 7. 텍스트 길이 기반 필터링 (너무 짧은 텍스트는 버튼일 가능성)
     const textContent = element.textContent?.trim() || '';
     if (textContent.length > 0 && textContent.length < 3) {
       // 2글자 이하의 아주 짧은 텍스트만 버튼으로 간주 (한글 호환성)
@@ -403,6 +404,7 @@ class HTMLAnalyzerCommon {
         return true;
       }
     }
+    */
 
     // 8. 부모 요소 확인 (2단계까지)
     let currentElement = element.parentElement;
@@ -530,8 +532,8 @@ class HTMLAnalyzerCommon {
     }
     
     // 3차: 길이 기반 필터링
-    if (textLength < 3) {
-      return false; // 너무 짧은 텍스트 제외
+    if (textLength < 1) {
+      return false; // 너무 짧은 텍스트 제외 (1자 이상)
     }
     
     // 4차: 의미 있는 콘텐츠로 판단
@@ -624,3 +626,4 @@ class HTMLAnalyzerCommon {
 window.htmlAnalyzerCommon = new HTMLAnalyzerCommon();
 
 console.log('HTML 분석 공통 모듈 로드 완료');
+

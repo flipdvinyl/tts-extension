@@ -71,6 +71,8 @@ class TTSManager {
     
     // 플러그인 활성화 상태
     this.isPluginEnabled = true;
+    this.takeListVisible = true;
+    this.floatingBarVisible = true;
     
     // API URL
     this.apiUrl = 'https://quiet-ink-groq.vercel.app';
@@ -118,7 +120,7 @@ class TTSManager {
     
     // 🎥 YouTube 모드 즉시 확인 및 시작
     if (this.isYouTubeMode()) {
-      console.log('🎥 YouTube 모드 즉시 감지됨 - YouTube 모드 시작');
+      this.log('🎥 YouTube 모드 즉시 감지됨 - YouTube 모드 시작');
       setTimeout(() => {
         this.startYouTubeMode();
       }, 1000); // 1초 후 시작
@@ -244,6 +246,22 @@ class TTSManager {
   setupStorageListener() {
     chrome.storage.onChanged.addListener((changes, areaName) => {
       if (areaName === 'sync') {
+        // 플러그인 활성화 설정이 다른 탭에서 변경됨
+        if (changes['tts-plugin-enabled']) {
+          const newEnabled = changes['tts-plugin-enabled'].newValue;
+          if (newEnabled !== undefined && newEnabled !== this.isPluginEnabled) {
+            this.isPluginEnabled = newEnabled;
+            this.log(`🔄 다른 탭에서 플러그인 활성화 변경 감지: ${newEnabled ? 'ON' : 'OFF'}`);
+            
+            // UI 상태 업데이트
+            if (newEnabled) {
+              this.showUI();
+            } else {
+              this.hideUI();
+            }
+          }
+        }
+        
         // 화자 설정이 다른 탭에서 변경됨
         if (changes['tts-voice']) {
           const newVoiceData = changes['tts-voice'].newValue;
@@ -266,14 +284,52 @@ class TTSManager {
             this.log(`🔄 다른 탭에서 속도 변경 감지: ${newSpeed}x`);
           }
         }
+        
+        // 테이크 리스트 표시 설정이 다른 탭에서 변경됨
+        if (changes['tts-take-list-visible']) {
+          const newVisible = changes['tts-take-list-visible'].newValue;
+          if (newVisible !== undefined && newVisible !== this.takeListVisible) {
+            this.takeListVisible = newVisible;
+            if (this.floatingUI && this.isPluginEnabled) {
+              this.floatingUI.style.display = newVisible ? 'block' : 'none';
+            }
+            this.log(`🔄 다른 탭에서 테이크 리스트 표시 변경 감지: ${newVisible ? 'ON' : 'OFF'}`);
+          }
+        }
+        
+        // 플로팅바 표시 설정이 다른 탭에서 변경됨
+        if (changes['tts-floating-bar-visible']) {
+          const newVisible = changes['tts-floating-bar-visible'].newValue;
+          if (newVisible !== undefined && newVisible !== this.floatingBarVisible) {
+            this.floatingBarVisible = newVisible;
+            if (this.bottomFloatingUI && this.isPluginEnabled) {
+              this.bottomFloatingUI.style.display = newVisible ? 'block' : 'none';
+            }
+            this.log(`🔄 다른 탭에서 플로팅바 표시 변경 감지: ${newVisible ? 'ON' : 'OFF'}`);
+          }
+        }
+        
+        // 콘솔 로그 설정이 다른 탭에서 변경됨
+        if (changes['tts-console-log-enabled']) {
+          const newEnabled = changes['tts-console-log-enabled'].newValue;
+          if (newEnabled !== undefined && newEnabled !== this.DEBUG_MODE) {
+            this.DEBUG_MODE = newEnabled;
+            this.updateConsoleLogStatus();
+            this.log(`🔄 다른 탭에서 콘솔 로그 설정 변경 감지: ${newEnabled ? 'ON' : 'OFF'}`);
+          }
+        }
       }
     });
   }
 
   // 🔄 플러그인 on/off 토글
   togglePlugin(iconPosition = 'top-right') {
-    // 플로팅 옵션 메뉴 표시 (아이콘 위치 정보 전달)
-    this.showFloatingOptionsMenu(iconPosition);
+    // 플로팅 옵션 메뉴가 이미 열려있으면 닫기, 없으면 열기
+    if (this.floatingOptionsMenu && document.body.contains(this.floatingOptionsMenu)) {
+      this.removeFloatingOptionsMenu();
+    } else {
+      this.showFloatingOptionsMenu(iconPosition);
+    }
   }
 
   // 🎛️ 플로팅 옵션 메뉴 표시
@@ -312,7 +368,7 @@ class TTSManager {
       border: 1px solid ${borderColor} !important;
       border-radius: 12px !important;
       padding: 20px !important;
-      min-width: 280px !important;
+      min-width: 240px !important;
       z-index: 100001 !important;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
       font-size: 14px !important;
@@ -322,7 +378,7 @@ class TTSManager {
     
     // 제목
     const title = document.createElement('div');
-    title.textContent = 'TLDRL Options';
+    title.textContent = 'TLDRL';
     title.style.cssText = `
       font-weight: 600 !important;
       font-size: 16px !important;
@@ -339,10 +395,10 @@ class TTSManager {
       'enable-extension'
     );
     
-    // 옵션 2: Show the take list (Enable the extension이 On일 때만 작동)
+    // 옵션 2: Take list (Enable the extension이 On일 때만 작동)
     const showTakeListOption = this.createToggleOption(
-      'Show the take list',
-      this.isPluginEnabled && this.floatingUI && this.floatingUI.style.display !== 'none',
+      'Take list',
+      this.isPluginEnabled && this.takeListVisible,
       (enabled) => {
         if (this.isPluginEnabled) {
           this.toggleTakeListVisibility(enabled);
@@ -357,10 +413,10 @@ class TTSManager {
       showTakeListOption.style.pointerEvents = 'none';
     }
     
-    // 옵션 3: Show the floating toolbar
+    // 옵션 3: Floating bar
     const showFloatingToolbarOption = this.createToggleOption(
-      'Show the floating toolbar',
-      this.isPluginEnabled && this.bottomFloatingUI && this.bottomFloatingUI.style.display !== 'none',
+      'Floating bar',
+      this.isPluginEnabled && this.floatingBarVisible,
       (enabled) => {
         if (this.isPluginEnabled) {
           this.toggleBottomFloatingToolbar(enabled);
@@ -375,11 +431,20 @@ class TTSManager {
       showFloatingToolbarOption.style.pointerEvents = 'none';
     }
     
+    // 옵션 4: Console log (기본 Off)
+    const consoleLogOption = this.createToggleOption(
+      'Console log',
+      this.DEBUG_MODE,
+      (enabled) => this.toggleConsoleLog(enabled),
+      'console-log'
+    );
+    
     // 메뉴 조립
     this.floatingOptionsMenu.appendChild(title);
     this.floatingOptionsMenu.appendChild(enableOption);
-    this.floatingOptionsMenu.appendChild(showTakeListOption);
     this.floatingOptionsMenu.appendChild(showFloatingToolbarOption);
+    this.floatingOptionsMenu.appendChild(showTakeListOption);
+    this.floatingOptionsMenu.appendChild(consoleLogOption);
     
     // 배경 클릭 시 메뉴 닫기 기능 제거 (외부 영역 클릭으로만 닫기)
     // this.floatingOptionsMenu.addEventListener('click', (e) => {
@@ -410,7 +475,7 @@ class TTSManager {
     document.addEventListener('keydown', handleEsc);
     
     document.body.appendChild(this.floatingOptionsMenu);
-    console.log('🎛️ 플로팅 옵션 메뉴 표시');
+    this.log('🎛️ 플로팅 옵션 메뉴 표시');
   }
 
   // 🎛️ 토글 옵션 생성
@@ -420,8 +485,7 @@ class TTSManager {
       display: flex !important;
       justify-content: space-between !important;
       align-items: center !important;
-      padding: 12px 0 !important;
-      border-bottom: 1px solid rgba(125, 125, 125, 0.2) !important;
+      padding: 6px 0 !important;
     `;
     
     // 옵션 타입을 data 속성으로 추가
@@ -489,6 +553,9 @@ class TTSManager {
   toggleExtensionEnabled(enabled) {
     this.isPluginEnabled = enabled;
     
+    // 설정 저장
+    this.savePluginEnabledSetting(enabled);
+    
     if (enabled) {
       this.log('🟢 TTS 플러그인 활성화');
       this.showUI();
@@ -496,7 +563,7 @@ class TTSManager {
         this.bottomFloatingUI.style.display = 'block';
       }
     } else {
-      console.log('🔴 TTS 플러그인 비활성화');
+      this.log('🔴 TTS 플러그인 비활성화');
       this.stopAll();
       this.hideUI();
       if (this.bottomFloatingUI) {
@@ -546,25 +613,69 @@ class TTSManager {
           showFloatingToolbarOption.style.pointerEvents = 'auto';
         }
       }
+      
+      // Console log 옵션 업데이트
+      const consoleLogOption = this.floatingOptionsMenu.querySelector('[data-option="console-log"]');
+      if (consoleLogOption) {
+        if (!enabled) {
+          consoleLogOption.style.opacity = '0.5';
+          consoleLogOption.style.pointerEvents = 'none';
+        } else {
+          consoleLogOption.style.opacity = '1';
+          consoleLogOption.style.pointerEvents = 'auto';
+        }
+      }
     }
     
-    console.log(`🔄 플러그인 상태: ${this.isPluginEnabled ? '활성화' : '비활성화'}`);
+    this.log(`🔄 플러그인 상태: ${this.isPluginEnabled ? '활성화' : '비활성화'}`);
   }
 
   // 🎛️ 테이크 리스트 표시/숨김 토글
   toggleTakeListVisibility(enabled) {
+    this.takeListVisible = enabled;
+    
     if (this.floatingUI) {
       this.floatingUI.style.display = enabled ? 'block' : 'none';
-      console.log(`🎛️ 테이크 리스트 ${enabled ? '표시' : '숨김'}`);
+      this.log(`🎛️ 테이크 리스트 ${enabled ? '표시' : '숨김'}`);
     }
+    
+    // 설정 저장
+    this.saveTakeListVisibilitySetting(enabled);
   }
 
   // 🎛️ 하단 플로팅바 표시/숨김 토글
   toggleBottomFloatingToolbar(enabled) {
+    this.floatingBarVisible = enabled;
+    
     if (this.bottomFloatingUI) {
       this.bottomFloatingUI.style.display = enabled ? 'block' : 'none';
-      console.log(`🎛️ 하단 플로팅바 ${enabled ? '표시' : '숨김'}`);
+      this.log(`🎛️ 하단 플로팅바 ${enabled ? '표시' : '숨김'}`);
     }
+    
+    // 설정 저장
+    this.saveFloatingBarVisibilitySetting(enabled);
+  }
+
+  // 🎛️ 콘솔 로그 표시/숨김 토글
+  toggleConsoleLog(enabled) {
+    this.DEBUG_MODE = enabled;
+    
+    // HTML 분석 모듈들의 DEBUG_MODE도 함께 제어
+    if (window.htmlAnalyzerCommon) {
+      window.htmlAnalyzerCommon.DEBUG_MODE = enabled;
+    }
+    if (window.htmlAnalyzerSites) {
+      window.htmlAnalyzerSites.DEBUG_MODE = enabled;
+    }
+    
+    // UI 상태 업데이트
+    this.updateConsoleLogStatus();
+    
+    // 설정 저장
+    this.saveConsoleLogSetting(enabled);
+    
+    // DEBUG_MODE 변경은 항상 console.log로 출력 (사용자 피드백)
+    console.log(`🎛️ 콘솔 로그 ${enabled ? '활성화' : '비활성화'} - 메모리 및 성능 최적화`);
   }
 
   // 🎛️ 플로팅 옵션 메뉴 제거
@@ -572,7 +683,7 @@ class TTSManager {
     if (this.floatingOptionsMenu) {
       this.floatingOptionsMenu.remove();
       this.floatingOptionsMenu = null;
-      console.log('🎛️ 플로팅 옵션 메뉴 제거');
+      this.log('🎛️ 플로팅 옵션 메뉴 제거');
     }
     
     // 외부 클릭 이벤트 리스너 정리
@@ -608,19 +719,95 @@ class TTSManager {
     if (this.youtubeIcon) {
       this.youtubeIcon.remove();
       this.youtubeIcon = null;
-      console.log('🎥 YouTube: 아이콘 제거됨');
+      this.log('🎥 YouTube: 아이콘 제거됨');
     }
     
     if (this.youtubeTitleObserver) {
       this.youtubeTitleObserver.disconnect();
       this.youtubeTitleObserver = null;
-      console.log('🎥 YouTube: 제목 감지 옵저버 제거됨');
+      this.log('🎥 YouTube: 제목 감지 옵저버 제거됨');
     }
     
     if (this.youtubeIconMonitoringInterval) {
       clearInterval(this.youtubeIconMonitoringInterval);
       this.youtubeIconMonitoringInterval = null;
-      console.log('🎥 YouTube: 아이콘 모니터링 제거됨');
+      this.log('🎥 YouTube: 아이콘 모니터링 제거됨');
+    }
+  }
+
+  // 🎯 탭 간 동기화: Chrome storage API 기반 플러그인 활성화 설정 저장
+  async savePluginEnabledSetting(enabled) {
+    try {
+      await chrome.storage.sync.set({ 'tts-plugin-enabled': enabled });
+      this.log(`💾 플러그인 활성화 설정 저장 (모든 탭 동기화): ${enabled ? 'ON' : 'OFF'}`);
+      
+      // 백업용 localStorage도 저장
+      localStorage.setItem('tts-extension-plugin-enabled', JSON.stringify(enabled));
+    } catch (error) {
+      this.warn('플러그인 활성화 설정 저장 실패:', error);
+      // Chrome storage 실패 시 localStorage로 폴백
+      try {
+        localStorage.setItem('tts-extension-plugin-enabled', JSON.stringify(enabled));
+      } catch (localError) {
+        this.error('localStorage 백업도 실패:', localError);
+      }
+    }
+  }
+
+  // 🎯 탭 간 동기화: Chrome storage API 기반 테이크 리스트 표시 설정 저장
+  async saveTakeListVisibilitySetting(enabled) {
+    try {
+      await chrome.storage.sync.set({ 'tts-take-list-visible': enabled });
+      this.log(`💾 테이크 리스트 표시 설정 저장 (모든 탭 동기화): ${enabled ? 'ON' : 'OFF'}`);
+      
+      // 백업용 localStorage도 저장
+      localStorage.setItem('tts-extension-take-list-visible', JSON.stringify(enabled));
+    } catch (error) {
+      this.warn('테이크 리스트 표시 설정 저장 실패:', error);
+      // Chrome storage 실패 시 localStorage로 폴백
+      try {
+        localStorage.setItem('tts-extension-take-list-visible', JSON.stringify(enabled));
+      } catch (localError) {
+        this.error('localStorage 백업도 실패:', localError);
+      }
+    }
+  }
+
+  // 🎯 탭 간 동기화: Chrome storage API 기반 플로팅바 표시 설정 저장
+  async saveFloatingBarVisibilitySetting(enabled) {
+    try {
+      await chrome.storage.sync.set({ 'tts-floating-bar-visible': enabled });
+      this.log(`💾 플로팅바 표시 설정 저장 (모든 탭 동기화): ${enabled ? 'ON' : 'OFF'}`);
+      
+      // 백업용 localStorage도 저장
+      localStorage.setItem('tts-extension-floating-bar-visible', JSON.stringify(enabled));
+    } catch (error) {
+      this.warn('플로팅바 표시 설정 저장 실패:', error);
+      // Chrome storage 실패 시 localStorage로 폴백
+      try {
+        localStorage.setItem('tts-extension-floating-bar-visible', JSON.stringify(enabled));
+      } catch (localError) {
+        this.error('localStorage 백업도 실패:', localError);
+      }
+    }
+  }
+
+  // 🎯 탭 간 동기화: Chrome storage API 기반 콘솔 로그 설정 저장
+  async saveConsoleLogSetting(enabled) {
+    try {
+      await chrome.storage.sync.set({ 'tts-console-log-enabled': enabled });
+      this.log(`💾 콘솔 로그 설정 저장 (모든 탭 동기화): ${enabled ? 'ON' : 'OFF'}`);
+      
+      // 백업용 localStorage도 저장
+      localStorage.setItem('tts-extension-console-log-enabled', JSON.stringify(enabled));
+    } catch (error) {
+      this.warn('콘솔 로그 설정 저장 실패:', error);
+      // Chrome storage 실패 시 localStorage로 폴백
+      try {
+        localStorage.setItem('tts-extension-console-log-enabled', JSON.stringify(enabled));
+      } catch (localError) {
+        this.error('localStorage 백업도 실패:', localError);
+      }
     }
   }
 
@@ -651,6 +838,218 @@ class TTSManager {
         this.error('localStorage 백업도 실패:', localError);
       }
     }
+  }
+
+  // 🎯 탭 간 동기화: Chrome storage API 우선 플러그인 활성화 설정 불러오기
+  async loadPluginEnabledSetting() {
+    return new Promise((resolve) => {
+      try {
+        // Chrome storage 우선 시도 (콜백 방식)
+        chrome.storage.sync.get(['tts-plugin-enabled'], (result) => {
+          if (result['tts-plugin-enabled'] !== undefined) {
+            const enabled = result['tts-plugin-enabled'];
+            this.log(`💾 플러그인 활성화 설정 불러오기 (Chrome storage): ${enabled ? 'ON' : 'OFF'}`);
+            resolve(enabled);
+            return;
+          }
+          
+          // Chrome storage에 없으면 localStorage 백업 시도
+          try {
+            const localEnabled = localStorage.getItem('tts-extension-plugin-enabled');
+            if (localEnabled !== null) {
+              const enabled = JSON.parse(localEnabled);
+              this.log(`💾 플러그인 활성화 설정 불러오기 (localStorage 백업): ${enabled ? 'ON' : 'OFF'}`);
+              resolve(enabled);
+              return;
+            }
+          } catch (error) {
+            this.warn('localStorage 불러오기도 실패:', error);
+          }
+          
+          // 기본값 사용
+          this.log('기본 플러그인 활성화 설정 사용: ON');
+          resolve(true); // 기본값: 활성화
+        });
+      } catch (error) {
+        this.warn('Chrome storage 불러오기 실패, localStorage로 폴백:', error);
+        
+        // localStorage 백업 시도
+        try {
+          const localEnabled = localStorage.getItem('tts-extension-plugin-enabled');
+          if (localEnabled !== null) {
+            const enabled = JSON.parse(localEnabled);
+            this.log(`💾 플러그인 활성화 설정 불러오기 (localStorage): ${enabled ? 'ON' : 'OFF'}`);
+            resolve(enabled);
+            return;
+          }
+        } catch (localError) {
+          this.warn('localStorage 불러오기도 실패:', localError);
+        }
+        
+        // 기본값 사용
+        this.log('기본 플러그인 활성화 설정 사용: ON');
+        resolve(true); // 기본값: 활성화
+      }
+    });
+  }
+
+  // 🎯 탭 간 동기화: Chrome storage API 우선 테이크 리스트 표시 설정 불러오기
+  async loadTakeListVisibilitySetting() {
+    return new Promise((resolve) => {
+      try {
+        // Chrome storage 우선 시도 (콜백 방식)
+        chrome.storage.sync.get(['tts-take-list-visible'], (result) => {
+          if (result['tts-take-list-visible'] !== undefined) {
+            const enabled = result['tts-take-list-visible'];
+            this.log(`💾 테이크 리스트 표시 설정 불러오기 (Chrome storage): ${enabled ? 'ON' : 'OFF'}`);
+            resolve(enabled);
+            return;
+          }
+          
+          // Chrome storage에 없으면 localStorage 백업 시도
+          try {
+            const localEnabled = localStorage.getItem('tts-extension-take-list-visible');
+            if (localEnabled !== null) {
+              const enabled = JSON.parse(localEnabled);
+              this.log(`💾 테이크 리스트 표시 설정 불러오기 (localStorage 백업): ${enabled ? 'ON' : 'OFF'}`);
+              resolve(enabled);
+              return;
+            }
+          } catch (error) {
+            this.warn('localStorage 불러오기도 실패:', error);
+          }
+          
+          // 기본값 사용
+          this.log('기본 테이크 리스트 표시 설정 사용: ON');
+          resolve(true); // 기본값: 표시
+        });
+      } catch (error) {
+        this.warn('Chrome storage 불러오기 실패, localStorage로 폴백:', error);
+        
+        // localStorage 백업 시도
+        try {
+          const localEnabled = localStorage.getItem('tts-extension-take-list-visible');
+          if (localEnabled !== null) {
+            const enabled = JSON.parse(localEnabled);
+            this.log(`💾 테이크 리스트 표시 설정 불러오기 (localStorage): ${enabled ? 'ON' : 'OFF'}`);
+            resolve(enabled);
+            return;
+          }
+        } catch (localError) {
+          this.warn('localStorage 불러오기도 실패:', localError);
+        }
+        
+        // 기본값 사용
+        this.log('기본 테이크 리스트 표시 설정 사용: ON');
+        resolve(true); // 기본값: 표시
+      }
+    });
+  }
+
+  // 🎯 탭 간 동기화: Chrome storage API 우선 플로팅바 표시 설정 불러오기
+  async loadFloatingBarVisibilitySetting() {
+    return new Promise((resolve) => {
+      try {
+        // Chrome storage 우선 시도 (콜백 방식)
+        chrome.storage.sync.get(['tts-floating-bar-visible'], (result) => {
+          if (result['tts-floating-bar-visible'] !== undefined) {
+            const enabled = result['tts-floating-bar-visible'];
+            this.log(`💾 플로팅바 표시 설정 불러오기 (Chrome storage): ${enabled ? 'ON' : 'OFF'}`);
+            resolve(enabled);
+            return;
+          }
+          
+          // Chrome storage에 없으면 localStorage 백업 시도
+          try {
+            const localEnabled = localStorage.getItem('tts-extension-floating-bar-visible');
+            if (localEnabled !== null) {
+              const enabled = JSON.parse(localEnabled);
+              this.log(`💾 플로팅바 표시 설정 불러오기 (localStorage 백업): ${enabled ? 'ON' : 'OFF'}`);
+              resolve(enabled);
+              return;
+            }
+          } catch (error) {
+            this.warn('localStorage 불러오기도 실패:', error);
+          }
+          
+          // 기본값 사용
+          this.log('기본 플로팅바 표시 설정 사용: ON');
+          resolve(true); // 기본값: 표시
+        });
+      } catch (error) {
+        this.warn('Chrome storage 불러오기 실패, localStorage로 폴백:', error);
+        
+        // localStorage 백업 시도
+        try {
+          const localEnabled = localStorage.getItem('tts-extension-floating-bar-visible');
+          if (localEnabled !== null) {
+            const enabled = JSON.parse(localEnabled);
+            this.log(`💾 플로팅바 표시 설정 불러오기 (localStorage): ${enabled ? 'ON' : 'OFF'}`);
+            resolve(enabled);
+            return;
+          }
+        } catch (localError) {
+          this.warn('localStorage 불러오기도 실패:', localError);
+        }
+        
+        // 기본값 사용
+        this.log('기본 플로팅바 표시 설정 사용: ON');
+        resolve(true); // 기본값: 표시
+      }
+    });
+  }
+
+  // 🎯 탭 간 동기화: Chrome storage API 우선 콘솔 로그 설정 불러오기
+  async loadConsoleLogSetting() {
+    return new Promise((resolve) => {
+      try {
+        // Chrome storage 우선 시도 (콜백 방식)
+        chrome.storage.sync.get(['tts-console-log-enabled'], (result) => {
+          if (result['tts-console-log-enabled'] !== undefined) {
+            const enabled = result['tts-console-log-enabled'];
+            this.log(`💾 콘솔 로그 설정 불러오기 (Chrome storage): ${enabled ? 'ON' : 'OFF'}`);
+            resolve(enabled);
+            return;
+          }
+          
+          // Chrome storage에 없으면 localStorage 백업 시도
+          try {
+            const localEnabled = localStorage.getItem('tts-extension-console-log-enabled');
+            if (localEnabled !== null) {
+              const enabled = JSON.parse(localEnabled);
+              this.log(`💾 콘솔 로그 설정 불러오기 (localStorage 백업): ${enabled ? 'ON' : 'OFF'}`);
+              resolve(enabled);
+              return;
+            }
+          } catch (error) {
+            this.warn('localStorage 불러오기도 실패:', error);
+          }
+          
+          // 기본값 사용
+          this.log('기본 콘솔 로그 설정 사용: OFF');
+          resolve(false); // 기본값: 비활성화
+        });
+      } catch (error) {
+        this.warn('Chrome storage 불러오기 실패, localStorage로 폴백:', error);
+        
+        // localStorage 백업 시도
+        try {
+          const localEnabled = localStorage.getItem('tts-extension-console-log-enabled');
+          if (localEnabled !== null) {
+            const enabled = JSON.parse(localEnabled);
+            this.log(`💾 콘솔 로그 설정 불러오기 (localStorage): ${enabled ? 'ON' : 'OFF'}`);
+            resolve(enabled);
+            return;
+          }
+        } catch (localError) {
+          this.warn('localStorage 불러오기도 실패:', localError);
+        }
+        
+        // 기본값 사용
+        this.log('기본 콘솔 로그 설정 사용: OFF');
+        resolve(false); // 기본값: 비활성화
+      }
+    });
   }
 
   // 🎯 탭 간 동기화: Chrome storage API 우선 화자 설정 불러오기
@@ -767,6 +1166,14 @@ class TTSManager {
     try {
       let settingsChanged = false;
       
+      // 플러그인 활성화 설정 로딩
+      const pluginEnabled = await this.loadPluginEnabledSetting();
+      if (pluginEnabled !== this.isPluginEnabled) {
+        this.isPluginEnabled = pluginEnabled;
+        settingsChanged = true;
+        this.log(`🎯 플러그인 활성화 설정 로딩: ${pluginEnabled ? 'ON' : 'OFF'}`);
+      }
+      
       // 화자 설정 로딩
       const voice = await this.loadVoiceSetting();
       if (voice && voice.id !== this.selectedVoice.id) {
@@ -781,6 +1188,24 @@ class TTSManager {
         this.playbackSpeed = speed;
         settingsChanged = true;
         this.log(`🎯 속도 설정 로딩: ${speed}x`);
+      }
+      
+      // 테이크 리스트 표시 설정 로딩
+      const takeListVisible = await this.loadTakeListVisibilitySetting();
+      this.takeListVisible = takeListVisible;
+      this.log(`🎯 테이크 리스트 표시 설정 로딩: ${takeListVisible ? 'ON' : 'OFF'}`);
+      
+      // 플로팅바 표시 설정 로딩
+      const floatingBarVisible = await this.loadFloatingBarVisibilitySetting();
+      this.floatingBarVisible = floatingBarVisible;
+      this.log(`🎯 플로팅바 표시 설정 로딩: ${floatingBarVisible ? 'ON' : 'OFF'}`);
+      
+      // 콘솔 로그 설정 로딩
+      const consoleLogEnabled = await this.loadConsoleLogSetting();
+      if (consoleLogEnabled !== this.DEBUG_MODE) {
+        this.DEBUG_MODE = consoleLogEnabled;
+        settingsChanged = true;
+        this.log(`🎯 콘솔 로그 설정 로딩: ${consoleLogEnabled ? 'ON' : 'OFF'}`);
       }
       
       this.log('🎯 모든 설정 로딩 완료');
@@ -808,6 +1233,37 @@ class TTSManager {
   updateAllUIWithSettings() {
     this.log('🎯 설정 로딩 완료: 모든 UI 업데이트');
     
+    // 플러그인 활성화 상태에 따라 UI 초기화
+    if (this.isPluginEnabled) {
+      this.log('🟢 플러그인 활성화 상태로 UI 초기화');
+      this.showUI();
+      
+      // 콘솔 로그 상태 업데이트
+      this.updateConsoleLogStatus();
+    } else {
+      this.hideUI();
+      if (this.bottomFloatingUI) {
+        this.bottomFloatingUI.style.display = 'none';
+      }
+      this.hideTakeHoverIcon();
+      this.removeYouTubeIcon();
+      this.removeAllHighlights();
+      
+      // Enable the extension이 Off일 때 Show the take list와 floating toolbar도 자동으로 Off
+      if (this.floatingUI) {
+        this.floatingUI.style.display = 'none';
+      }
+      if (this.bottomFloatingUI) {
+        this.bottomFloatingUI.style.display = 'none';
+      }
+    }
+    
+    // 백그라운드 스크립트에 아이콘 상태 업데이트 요청
+    chrome.runtime.sendMessage({ 
+      action: 'updateIcon', 
+      enabled: this.isPluginEnabled 
+    });
+    
     // 하단 플로팅 UI 업데이트
     this.updateBottomFloatingUIState();
     
@@ -815,13 +1271,16 @@ class TTSManager {
     this.updateVoiceUI();
     this.updateSpeedUI();
     
+    // Console log 상태 업데이트
+    this.updateConsoleLogStatus();
+    
     // 기타 UI 요소들 업데이트 (필요시 확장)
     // this.updateFloatingUI(); // 함수가 정의되지 않아 주석 처리
   }
 
   // 🎯 페이지 로딩 완료 시 초기화 (다단계 시점 확보)
   async initializeWhenReady() {
-    console.log(`📊 페이지 상태: ${document.readyState}`);
+    this.log(`📊 페이지 상태: ${document.readyState}`);
     
     // 🎯 1차: 최초 시점 - 본문 텍스트 로드 완료 시점
     if (document.readyState === 'loading') {
@@ -837,37 +1296,50 @@ class TTSManager {
   
   // 🎯 최적 타이밍에서 초기화 시도 (다단계 접근)
   async tryInitializeAtOptimalTiming() {
-    console.log('🎯 최적 타이밍 초기화 시작');
+    this.log('🎯 최적 타이밍 초기화 시작');
     
-    // UI 먼저 생성 (사용자 피드백)
+    // 설정 로드 완료 대기
+    await this.loadSettingsAsync();
+    
+    // UI 생성 (설정 로드 완료 후)
     this.createFloatingUI();
     this.setupKeyboardShortcuts();
-    this.showUI();
-    this.updateStatus('페이지 분석 중...', '#FF9800');
+    
+    // 플러그인 활성화 상태에 따라 UI 표시/숨김
+    if (this.isPluginEnabled) {
+      this.showUI();
+      this.updateStatus('페이지 분석 중...', '#FF9800');
+    } else {
+      this.hideUI();
+    }
     
     // 🎯 1차: 최초 시점 - 기본 본문 텍스트 확보
     let bestTakeCount = 0;
     try {
       await this.analyzePageAndCreateTakes();
       bestTakeCount = this.preTakes.length;
-      console.log(`📊 1차 시점 결과: ${bestTakeCount}개 테이크`);
+      this.log(`📊 1차 시점 결과: ${bestTakeCount}개 테이크`);
       
       if (bestTakeCount >= 3) {
-        console.log('✅ 1차 시점에서 충분한 테이크 확보');
+        this.log('✅ 1차 시점에서 충분한 테이크 확보');
         this.updateTakeCount();
-        this.showUI();
+        
+        // 플러그인 활성화 상태에 따라 UI 표시
+        if (this.isPluginEnabled) {
+          this.showUI();
+        }
         
         // 🤖 Zeta AI 모니터링 시작
         this.startZetaAIMonitoring();
         return;
       }
     } catch (error) {
-      console.log('⚠️ 1차 시점 실패:', error.message);
+      this.log('⚠️ 1차 시점 실패:', error.message);
     }
     
     // 🎯 2차: 추가 확보 시점 - 외부 솔루션 로딩 직전 (비디오 플레이어 오버라이트 방지로 주석처리)
     /*
-    console.log('🔄 2차 시점 시도 중... (외부 솔루션 로딩 전)');
+    this.log('🔄 2차 시점 시도 중... (외부 솔루션 로딩 전)');
     this.updateStatus('추가 콘텐츠 분석 중...', '#FF9800');
     
     await new Promise(resolve => setTimeout(resolve, 800)); // 외부 솔루션 로딩 전 대기
@@ -875,27 +1347,27 @@ class TTSManager {
     try {
       await this.analyzePageAndCreateTakes();
       const secondTakeCount = this.preTakes.length;
-      console.log(`📊 2차 시점 결과: ${secondTakeCount}개 테이크 (이전: ${bestTakeCount}개)`);
+      this.log(`📊 2차 시점 결과: ${secondTakeCount}개 테이크 (이전: ${bestTakeCount}개)`);
       
       if (secondTakeCount > bestTakeCount) {
         bestTakeCount = secondTakeCount;
-        console.log(`📈 2차 시점에서 개선: ${secondTakeCount}개`);
+        this.log(`📈 2차 시점에서 개선: ${secondTakeCount}개`);
       }
       
       if (bestTakeCount >= 2) {
-        console.log('✅ 2차 시점에서 최소 테이크 확보');
+        this.log('✅ 2차 시점에서 최소 테이크 확보');
         this.updateTakeCount();
         this.showUI();
         return;
       }
     } catch (error) {
-      console.log('⚠️ 2차 시점 실패:', error.message);
+      this.log('⚠️ 2차 시점 실패:', error.message);
     }
     */
     
     // 🎯 3차: 최종 확보 시점 - 모든 로딩 완료 후 (비디오 플레이어 오버라이트 방지로 주석처리)
     /*
-    console.log('🔄 3차 시점 시도 중... (최종 로딩 완료 후)');
+    this.log('🔄 3차 시점 시도 중... (최종 로딩 완료 후)');
     this.updateStatus('최종 콘텐츠 분석 중...', '#FF9800');
     
     // window.load 이벤트 대기 또는 추가 시간 대기
@@ -911,53 +1383,58 @@ class TTSManager {
     try {
       await this.analyzePageAndCreateTakes();
       const finalTakeCount = this.preTakes.length;
-      console.log(`📊 3차 시점 결과: ${finalTakeCount}개 테이크 (이전: ${bestTakeCount}개)`);
+      this.log(`📊 3차 시점 결과: ${finalTakeCount}개 테이크 (이전: ${bestTakeCount}개)`);
       
       if (finalTakeCount > 0) {
-        console.log(`✅ 최종 시점에서 ${finalTakeCount}개 테이크 확보`);
+        this.log(`✅ 최종 시점에서 ${finalTakeCount}개 테이크 확보`);
         this.updateTakeCount();
         this.showUI();
       } else {
-        console.log('❌ 모든 시점에서 테이크 생성 실패');
+        this.log('❌ 모든 시점에서 테이크 생성 실패');
         this.updateStatus('테이크 생성 실패 - 페이지를 새로고침해주세요', '#F44336');
       }
     } catch (error) {
-      console.error('❌ 3차 시점 실패:', error);
+      this.error('❌ 3차 시점 실패:', error);
       this.updateStatus('초기화 오류 - 페이지를 새로고침해주세요', '#F44336');
     }
     */
     
     // 🎯 1단계만 사용하여 비디오 플레이어 오버라이트 방지
     if (bestTakeCount > 0) {
-      console.log(`✅ 1단계 시점에서 ${bestTakeCount}개 테이크 확보 (비디오 플레이어 오버라이트 방지)`);
+      this.log(`✅ 1단계 시점에서 ${bestTakeCount}개 테이크 확보 (비디오 플레이어 오버라이트 방지)`);
       this.updateTakeCount();
       this.showUI();
       
       // 🤖 Zeta AI 모니터링 시작
       this.startZetaAIMonitoring();
     } else {
-      console.log('❌ 1단계 시점에서 테이크 생성 실패');
+      this.log('❌ 1단계 시점에서 테이크 생성 실패');
       this.updateStatus('테이크 생성 실패 - 페이지를 새로고침해주세요', '#F44336');
     }
     
     // 🎥 YouTube 모드 시작 (테이크 생성 성공 여부와 관계없이)
     if (this.isYouTubeMode()) {
-      console.log('🎥 YouTube 모드 감지됨 - YouTube 모드 시작');
+      this.log('🎥 YouTube 모드 감지됨 - YouTube 모드 시작');
       this.startYouTubeMode();
     }
   }
   
   // 🎯 웹페이지 분석 및 테이크 사전 생성
   async analyzePageAndCreateTakes() {
-    console.log('🔍 웹페이지 분석 시작...');
+    // 플러그인이 비활성화된 경우 분석 중지
+    if (!this.isPluginEnabled) {
+      return;
+    }
+    
+    this.log('🔍 웹페이지 분석 시작...');
     
     // 🔍 클리앙 디버깅: 현재 URL 확인
-    console.log(`🌐 현재 URL: ${window.location.href}`);
-    console.log(`🌐 도메인: ${window.location.hostname}`);
+    this.log(`🌐 현재 URL: ${window.location.href}`);
+    this.log(`🌐 도메인: ${window.location.hostname}`);
     
     // 🎥 YouTube에서는 일반적인 테이크 감지 비활성화
     if (this.isYouTubeMode()) {
-      console.log('🎥 YouTube: 일반적인 테이크 감지 비활성화');
+      this.log('🎥 YouTube: 일반적인 테이크 감지 비활성화');
       this.preTakes = [];
       this.updateTakeCount();
       return;
@@ -969,7 +1446,7 @@ class TTSManager {
     // div, p 기준으로 텍스트 정보가 있는 요소들을 순차적으로 찾기
     const contentElements = this.findContentElements(bodyContent);
     
-    console.log(`📄 발견된 콘텐츠 요소: ${contentElements.length}개`);
+    this.log(`📄 발견된 콘텐츠 요소: ${contentElements.length}개`);
     
     // 각 요소를 테이크로 변환
     this.preTakes = [];
@@ -977,14 +1454,14 @@ class TTSManager {
       const element = contentElements[i];
       const text = this.extractTextFromElement(element);
       
-      if (text && text.length > 3) { // 최소 길이 체크 (한글 3자)
+      if (text && text.length > 1) { // 최소 길이 체크 (2자 이상)
         // 중복 테이크 방지: 바로 이전 테이크와 내용이 같으면 스킵
         const previousTake = this.preTakes[this.preTakes.length - 1];
         const normalizedText = text.trim().replace(/\s+/g, ' '); // 공백 정규화
         const previousNormalizedText = previousTake ? previousTake.text.trim().replace(/\s+/g, ' ') : '';
         
         if (previousTake && normalizedText === previousNormalizedText) {
-          console.log(`🔄 중복 테이크 스킵: "${text.substring(0, 30)}..." (이전 테이크와 동일)`);
+          this.log(`🔄 중복 테이크 스킵: "${text.substring(0, 30)}..." (이전 테이크와 동일)`);
           continue; // 중복이면 스킵
         }
         
@@ -1003,11 +1480,11 @@ class TTSManager {
         };
         
         this.preTakes.push(preTake);
-        console.log(`📝 테이크 ${this.preTakes.length} 생성: "${normalizedText.substring(0, 50)}..." (${language})`);
+        this.log(`📝 테이크 ${this.preTakes.length} 생성: "${normalizedText.substring(0, 50)}..." (${language})`);
       }
     }
     
-    console.log(`✅ 총 ${this.preTakes.length}개 테이크 사전 생성 완료`);
+    this.log(`✅ 총 ${this.preTakes.length}개 테이크 사전 생성 완료`);
     this.updateTakeListUI();
     this.updateTakeCount();
     
@@ -1019,13 +1496,13 @@ class TTSManager {
   setupTakeHoverIcons() {
     // 🤖 Zeta AI / ChatGPT에서는 테이크 호버 아이콘 비활성화
     if (this.isZetaOrChatGPTMode()) {
-      console.log('🤖 Zeta AI / ChatGPT: 테이크 호버 아이콘 비활성화');
+      this.log('🤖 Zeta AI / ChatGPT: 테이크 호버 아이콘 비활성화');
       return;
     }
 
     // 🎥 YouTube에서는 테이크 호버 아이콘 비활성화하고 YouTube 전용 아이콘 생성
     if (this.isYouTubeMode()) {
-      console.log('🎥 YouTube: 테이크 호버 아이콘 비활성화, YouTube 전용 아이콘 생성');
+      this.log('🎥 YouTube: 테이크 호버 아이콘 비활성화, YouTube 전용 아이콘 생성');
       this.createYouTubeIcon();
       return;
     }
@@ -1222,7 +1699,7 @@ class TTSManager {
 
   // 🎥 YouTube 전용 아이콘 생성 (제목 행 오른쪽)
   createYouTubeIcon() {
-    console.log('🎥 YouTube: 아이콘 생성 함수 시작');
+    this.log('🎥 YouTube: 아이콘 생성 함수 시작');
     
     // 기존 YouTube 아이콘 제거
     if (this.youtubeIcon) {
@@ -1261,19 +1738,19 @@ class TTSManager {
     for (const selector of selectors) {
       titleElement = document.querySelector(selector);
       if (titleElement) {
-        console.log(`🎥 YouTube: 제목 요소 발견 (${selector}):`, titleElement);
-        console.log(`🎥 YouTube: 제목 텍스트: "${titleElement.textContent.trim()}"`);
+        this.log(`🎥 YouTube: 제목 요소 발견 (${selector}):`, titleElement);
+        this.log(`🎥 YouTube: 제목 텍스트: "${titleElement.textContent.trim()}"`);
         break;
       }
     }
     
     if (!titleElement) {
-      console.log('🎥 YouTube: 제목 요소를 찾을 수 없음');
-      console.log('🎥 YouTube: 페이지의 모든 h1 요소들:');
+      this.log('🎥 YouTube: 제목 요소를 찾을 수 없음');
+      this.log('🎥 YouTube: 페이지의 모든 h1 요소들:');
       document.querySelectorAll('h1').forEach((h1, index) => {
-        console.log(`  ${index + 1}. <h1> "${h1.textContent.trim()}" (클래스: ${h1.className})`);
+        this.log(`  ${index + 1}. <h1> "${h1.textContent.trim()}" (클래스: ${h1.className})`);
       });
-      console.log('🎥 YouTube: 기본 위치에 아이콘 생성');
+      this.log('🎥 YouTube: 기본 위치에 아이콘 생성');
       this.createYouTubeIconAtDefaultPosition();
       return;
     }
@@ -1315,15 +1792,15 @@ class TTSManager {
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
     `;
 
-    console.log('🎥 YouTube: 제목 요소 위치:', rect);
-    console.log('🎥 YouTube: 컨테이너 위치:', containerRect);
-    console.log('🎥 YouTube: 아이콘 위치 설정:', `${rect.top + (rect.height - iconSize) / 2}px, ${containerRect.right + 15}px`);
-    console.log('🎥 YouTube: 아이콘 요소 생성됨:', this.youtubeIcon);
+    this.log('🎥 YouTube: 제목 요소 위치:', rect);
+    this.log('🎥 YouTube: 컨테이너 위치:', containerRect);
+    this.log('🎥 YouTube: 아이콘 위치 설정:', `${rect.top + (rect.height - iconSize) / 2}px, ${containerRect.right + 15}px`);
+    this.log('🎥 YouTube: 아이콘 요소 생성됨:', this.youtubeIcon);
 
     // 클릭 이벤트 설정
     this.youtubeIcon.addEventListener('click', async (event) => {
       event.stopPropagation();
-      console.log('🎥 YouTube: 아이콘 클릭됨');
+      this.log('🎥 YouTube: 아이콘 클릭됨');
       await this.handleYouTubeGeminiRequest();
     });
 
@@ -1339,14 +1816,14 @@ class TTSManager {
     });
 
     document.body.appendChild(this.youtubeIcon);
-    console.log('🎥 YouTube: Perplexity 아이콘 생성 완료');
-    console.log('🎥 YouTube: 아이콘이 DOM에 추가됨:', document.body.contains(this.youtubeIcon));
+    this.log('🎥 YouTube: Perplexity 아이콘 생성 완료');
+    this.log('🎥 YouTube: 아이콘이 DOM에 추가됨:', document.body.contains(this.youtubeIcon));
     
     // 추가 확인: 아이콘이 실제로 보이는지 확인
     setTimeout(() => {
       if (this.youtubeIcon && document.body.contains(this.youtubeIcon)) {
         const computedStyle = window.getComputedStyle(this.youtubeIcon);
-        console.log('🎥 YouTube: 아이콘 계산된 스타일:', {
+        this.log('🎥 YouTube: 아이콘 계산된 스타일:', {
           display: computedStyle.display,
           visibility: computedStyle.visibility,
           opacity: computedStyle.opacity,
@@ -1361,7 +1838,7 @@ class TTSManager {
 
   // 🎥 YouTube 기본 위치에 아이콘 생성
   createYouTubeIconAtDefaultPosition() {
-    console.log('🎥 YouTube: 기본 위치 아이콘 생성 시작');
+    this.log('🎥 YouTube: 기본 위치 아이콘 생성 시작');
     
     const isDark = this.currentTheme === 'dark';
     const iconSize = 24;
@@ -1398,7 +1875,7 @@ class TTSManager {
     // 클릭 이벤트 설정
     this.youtubeIcon.addEventListener('click', async (event) => {
       event.stopPropagation();
-      console.log('🎥 YouTube: 기본 위치 아이콘 클릭됨');
+      this.log('🎥 YouTube: 기본 위치 아이콘 클릭됨');
       await this.handleYouTubeGeminiRequest();
     });
 
@@ -1414,20 +1891,20 @@ class TTSManager {
     });
 
     document.body.appendChild(this.youtubeIcon);
-    console.log('🎥 YouTube: 기본 위치에 Perplexity 아이콘 생성 완료');
-    console.log('🎥 YouTube: 기본 위치 아이콘이 DOM에 추가됨:', document.body.contains(this.youtubeIcon));
+    this.log('🎥 YouTube: 기본 위치에 Perplexity 아이콘 생성 완료');
+    this.log('🎥 YouTube: 기본 위치 아이콘이 DOM에 추가됨:', document.body.contains(this.youtubeIcon));
   }
 
   // 🎥 YouTube Gemini 요청 처리
   async handleYouTubeGeminiRequest() {
     try {
-      console.log('🎥 YouTube: Gemini 요청 시작');
+      this.log('🎥 YouTube: Gemini 요청 시작');
       
       const currentUrl = window.location.href;
       
       // Gemini API가 로드되었는지 확인
       if (!window.geminiAPI) {
-        console.log('🎥 YouTube: Gemini API가 로드되지 않음, 동적 로드 시도');
+        this.log('🎥 YouTube: Gemini API가 로드되지 않음, 동적 로드 시도');
         await this.loadGeminiAPI();
       }
       
@@ -1436,7 +1913,7 @@ class TTSManager {
         const response = await window.geminiAPI.convertYouTubeToBookContent(currentUrl);
         
         if (response) {
-          console.log('🎥 YouTube: Gemini 응답 받음, 테이크 생성 시작');
+          this.log('🎥 YouTube: Gemini 응답 받음, 테이크 생성 시작');
           
           // 응답을 테이크로 변환
           await this.createTakesFromGeminiResponse(response);
@@ -1447,11 +1924,11 @@ class TTSManager {
           }
         }
       } else {
-        console.error('🎥 YouTube: Gemini API를 사용할 수 없음');
+        this.error('🎥 YouTube: Gemini API를 사용할 수 없음');
         alert('Gemini API를 로드할 수 없습니다. 페이지를 새로고침해보세요.');
       }
     } catch (error) {
-      console.error('🎥 YouTube: Gemini 요청 실패:', error);
+      this.error('🎥 YouTube: Gemini 요청 실패:', error);
       alert('Gemini API 요청에 실패했습니다: ' + error.message);
     }
   }
@@ -1469,7 +1946,7 @@ class TTSManager {
         // 1. 먼저 content_scripts에서 로드되었는지 확인 (잠시 대기)
         setTimeout(() => {
           if (window.geminiAPI) {
-            console.log('🎥 YouTube: Gemini API가 이미 로드됨');
+            this.log('🎥 YouTube: Gemini API가 이미 로드됨');
             resolve();
             return;
           }
@@ -1478,11 +1955,11 @@ class TTSManager {
           const script = document.createElement('script');
           script.src = chrome.runtime.getURL('gemini-api.js');
           script.onload = () => {
-            console.log('🎥 YouTube: Gemini API 동적 로드 완료');
+            this.log('🎥 YouTube: Gemini API 동적 로드 완료');
             resolve();
           };
           script.onerror = () => {
-            console.error('🎥 YouTube: Gemini API 동적 로드 실패');
+            this.error('🎥 YouTube: Gemini API 동적 로드 실패');
             reject(new Error('Gemini API 로드 실패'));
           };
           
@@ -1490,7 +1967,7 @@ class TTSManager {
         }, 100); // 100ms 대기
         
       } catch (error) {
-        console.error('🎥 YouTube: Gemini API 로드 중 오류:', error);
+        this.error('🎥 YouTube: Gemini API 로드 중 오류:', error);
         reject(error);
       }
     });
@@ -1499,7 +1976,7 @@ class TTSManager {
   // 🎥 Gemini 응답을 테이크로 변환
   async createTakesFromGeminiResponse(response) {
     try {
-      console.log('🎥 YouTube: Gemini 응답을 테이크로 변환 시작');
+      this.log('🎥 YouTube: Gemini 응답을 테이크로 변환 시작');
       
       // 기존 테이크 초기화
       this.preTakes = [];
@@ -1525,26 +2002,26 @@ class TTSManager {
           };
           
           this.preTakes.push(take);
-          console.log(`🎥 YouTube: 테이크 ${i + 1} 생성: "${paragraph.substring(0, 50)}..." (${language})`);
+          this.log(`🎥 YouTube: 테이크 ${i + 1} 생성: "${paragraph.substring(0, 50)}..." (${language})`);
         }
       }
       
-      console.log(`🎥 YouTube: 총 ${this.preTakes.length}개 테이크 생성 완료`);
+      this.log(`🎥 YouTube: 총 ${this.preTakes.length}개 테이크 생성 완료`);
       this.updateTakeCount();
       
     } catch (error) {
-      console.error('🎥 YouTube: 테이크 변환 실패:', error);
+      this.error('🎥 YouTube: 테이크 변환 실패:', error);
     }
   }
 
   // 🎥 YouTube 모드 시작
   startYouTubeMode() {
     if (!this.isYouTubeMode()) {
-      console.log('🎥 YouTube 모드가 아닙니다');
+      this.log('🎥 YouTube 모드가 아닙니다');
       return;
     }
     
-    console.log('🎥 YouTube 모드 시작');
+    this.log('🎥 YouTube 모드 시작');
     
     // YouTube에서는 일반적인 테이크 감지 비활성화
     // 대신 Perplexity 아이콘만 생성
@@ -1563,7 +2040,7 @@ class TTSManager {
     
     createIconAttempts.forEach(({ delay, name }) => {
       setTimeout(() => {
-        console.log(`🎥 YouTube: ${name} - 아이콘 생성 시도`);
+        this.log(`🎥 YouTube: ${name} - 아이콘 생성 시도`);
         this.createYouTubeIcon();
       }, delay);
     });
@@ -1579,7 +2056,7 @@ class TTSManager {
   setupYouTubeTitleObserver() {
     if (!this.isYouTubeMode()) return;
     
-    console.log('🎥 YouTube: 제목 요소 변경 감지 설정');
+    this.log('🎥 YouTube: 제목 요소 변경 감지 설정');
     
     this.youtubeTitleObserver = new MutationObserver((mutations) => {
       mutations.forEach((mutation) => {
@@ -1589,7 +2066,7 @@ class TTSManager {
             if (node.nodeType === Node.ELEMENT_NODE) {
               // 제목 관련 요소가 추가되었는지 확인
               if (this.isYouTubeTitleElement(node)) {
-                console.log('🎥 YouTube: 새로운 제목 요소 감지, 아이콘 재생성');
+                this.log('🎥 YouTube: 새로운 제목 요소 감지, 아이콘 재생성');
                 setTimeout(() => this.createYouTubeIcon(), 100);
               }
             }
@@ -1629,7 +2106,7 @@ class TTSManager {
   startYouTubeIconMonitoring() {
     if (!this.isYouTubeMode()) return;
     
-    console.log('🎥 YouTube: 아이콘 모니터링 시작');
+    this.log('🎥 YouTube: 아이콘 모니터링 시작');
     
     // 30초마다 아이콘 상태 확인
     this.youtubeIconMonitoringInterval = setInterval(() => {
@@ -1637,10 +2114,10 @@ class TTSManager {
       const titleElement = document.querySelector('h1.ytd-watch-metadata, h1.style-scope.ytd-watch-metadata, ytd-watch-metadata h1');
       
       if (!existingIcon && titleElement) {
-        console.log('🎥 YouTube: 모니터링에서 제목 발견, 아이콘 재생성');
+        this.log('🎥 YouTube: 모니터링에서 제목 발견, 아이콘 재생성');
         this.createYouTubeIcon();
       } else if (existingIcon && !titleElement) {
-        console.log('🎥 YouTube: 모니터링에서 제목 사라짐, 아이콘 제거');
+        this.log('🎥 YouTube: 모니터링에서 제목 사라짐, 아이콘 제거');
         this.removeYouTubeIcon();
       }
     }, 30000); // 30초마다 확인
@@ -1905,7 +2382,7 @@ class TTSManager {
     if (!body) return null;
     
     const hostname = window.location.hostname.toLowerCase();
-    console.log(`🌐 사이트별 메인 콘텐츠 추출 시작: ${hostname}`);
+    this.log(`🌐 사이트별 메인 콘텐츠 추출 시작: ${hostname}`);
     
     // 🎯 사이트별 특화 본문 영역 식별
     let mainContent = window.htmlAnalyzerSites.getSiteSpecificMainContent(hostname, body);
@@ -2019,6 +2496,27 @@ class TTSManager {
       border: 1px solid ${borderColor} !important;
     `;
 
+    // 🎯 Console log 상태 표시
+    this.consoleLogStatusLabel = document.createElement('div');
+    this.consoleLogStatusLabel.id = 'tts-console-log-status';
+    this.consoleLogStatusLabel.style.cssText = `
+      color: ${textColor} !important;
+      font-size: 8px !important;
+      font-weight: normal !important;
+      margin-bottom: 4px !important;
+      text-align: left !important;
+      white-space: pre-line !important;
+      line-height: 1rem !important;
+    `;
+    
+    // 🎯 구분선
+    const divider = document.createElement('div');
+    divider.style.cssText = `
+      height: 1px !important;
+      background: ${borderColor} !important;
+      margin: 4px 0 8px 0 !important;
+    `;
+
     // 🎯 발견된 테이크 수 표시
     this.takeCountLabel = document.createElement('div');
     this.takeCountLabel.id = 'tts-take-count';
@@ -2041,19 +2539,55 @@ class TTSManager {
     `;
 
     // 🎯 요소 조립
+    this.floatingUI.appendChild(this.consoleLogStatusLabel);
+    this.floatingUI.appendChild(divider);
     this.floatingUI.appendChild(this.takeCountLabel);
     this.floatingUI.appendChild(this.takeListContainer);
 
     document.body.appendChild(this.floatingUI);
     
-    console.log('🎯 TTS UI 생성 완료 (간소화):', this.floatingUI);
+    // Console log 상태 초기화
+    this.updateConsoleLogStatus();
+    
+    // 플러그인 활성화 상태에 따라 초기 표시/숨김 설정
+    if (!this.isPluginEnabled) {
+      this.floatingUI.style.display = 'none';
+    }
+    
+    this.log('🎯 TTS UI 생성 완료 (간소화):', this.floatingUI);
+  }
+
+  // 🎯 Console log 상태 업데이트
+  updateConsoleLogStatus() {
+    if (this.consoleLogStatusLabel) {
+      if (this.DEBUG_MODE) {
+        this.consoleLogStatusLabel.textContent = 'Console log: ON\n⚠️ 성능저하 있음 ⚠️';
+        this.consoleLogStatusLabel.style.color = this.currentTheme === 'dark' ? 'rgba(255, 255, 255, 0.9)' : '#1d1d1d'; // 기본 색상
+      } else {
+        this.consoleLogStatusLabel.textContent = 'Console log: OFF';
+        this.consoleLogStatusLabel.style.color = this.currentTheme === 'dark' ? 'rgba(255, 255, 255, 0.9)' : '#1d1d1d'; // 기본 색상
+      }
+    }
   }
 
   // 🎯 테이크 수 업데이트
   updateTakeCount() {
+    const count = this.preTakes ? this.preTakes.length : 0;
+    
+    // 총 글자수 계산
+    let totalCharacters = 0;
+    if (this.preTakes && this.preTakes.length > 0) {
+      totalCharacters = this.preTakes.reduce((sum, take) => sum + (take.text ? take.text.length : 0), 0);
+    }
+    
+    // 우상단 테이크 플로팅 업데이트
     if (this.takeCountLabel) {
-      const count = this.preTakes ? this.preTakes.length : 0;
-      this.takeCountLabel.textContent = `${count}개 테이크 감지됨`;
+      this.takeCountLabel.textContent = `${count}개 테이크 수집`;
+    }
+    
+    // 하단 플로팅 업데이트 (문단 수 + 총 글자수)
+    if (this.bottomTakeCountLabel) {
+      this.bottomTakeCountLabel.textContent = `${count}개 문단 / ${totalCharacters}자`;
     }
   }
 
@@ -2158,7 +2692,7 @@ class TTSManager {
       return; // Zeta AI / ChatGPT 사이트가 아니면 설정하지 않음
     }
     
-    console.log('🤖 Zeta AI: 포괄적 엔터키 감지 시스템 설정 시작');
+    this.log('🤖 Zeta AI: 포괄적 엔터키 감지 시스템 설정 시작');
     
     // 1. 전역 keydown 이벤트 (이미 설정됨)
     // 2. 전역 keypress 이벤트 추가
@@ -2181,7 +2715,7 @@ class TTSManager {
     // 5. 주기적 입력 필드 스캔 (백업용)
     this.startZetaAIInputFieldScanning();
     
-    console.log('🤖 Zeta AI / ChatGPT: 포괄적 엔터키 감지 시스템 설정 완료');
+    this.log('🤖 Zeta AI / ChatGPT: 포괄적 엔터키 감지 시스템 설정 완료');
   }
 
   // 🤖 Zeta AI / ChatGPT: MutationObserver 설정 (동적 입력 필드 감지용)
@@ -2210,7 +2744,7 @@ class TTSManager {
       subtree: true
     });
     
-    console.log('🤖 Zeta AI / ChatGPT: MutationObserver 설정 완료');
+    this.log('🤖 Zeta AI / ChatGPT: MutationObserver 설정 완료');
   }
 
   // 🤖 Zeta AI / ChatGPT: 요소에 엔터키 리스너 추가
@@ -2230,7 +2764,7 @@ class TTSManager {
         }, true);
       });
       
-      console.log('🤖 Zeta AI / ChatGPT: 입력 필드에 엔터키 리스너 추가:', element.tagName, element.className);
+      this.log('🤖 Zeta AI / ChatGPT: 입력 필드에 엔터키 리스너 추가:', element.tagName, element.className);
     }
     
     // 자식 요소들도 재귀적으로 처리
@@ -2260,11 +2794,16 @@ class TTSManager {
       });
     }, 2000);
     
-    console.log('🤖 Zeta AI / ChatGPT: 주기적 입력 필드 스캔 시작');
+    this.log('🤖 Zeta AI / ChatGPT: 주기적 입력 필드 스캔 시작');
   }
 
   // 🤖 Zeta AI / ChatGPT 엔터키 처리 (화자 구분용)
   handleZetaAIEnterKey() {
+    // 플러그인이 비활성화된 경우 엔터키 처리 중지
+    if (!this.isPluginEnabled) {
+      return;
+    }
+    
     if (!this.isZetaOrChatGPTMode()) {
       return; // Zeta AI / ChatGPT 사이트가 아니면 무시
     }
@@ -2279,8 +2818,8 @@ class TTSManager {
     // 엔터키 입력 플래그를 true로 설정
     this.zetaAIEnterFlag = true;
     
-    console.log('🤖 Zeta AI / ChatGPT 엔터키 감지: 플래그 true로 설정');
-    console.log('🤖 Zeta AI / ChatGPT 감지 위치:', event?.target?.tagName, event?.target?.className);
+    this.log('🤖 Zeta AI / ChatGPT 엔터키 감지: 플래그 true로 설정');
+    this.log('🤖 Zeta AI / ChatGPT 감지 위치:', event?.target?.tagName, event?.target?.className);
   }
 
   // 🤖 Zeta AI / ChatGPT 화자 구분 로직
@@ -2292,25 +2831,30 @@ class TTSManager {
     // 엔터키 플래그가 true인 경우에만 화자1로 변경
     if (this.zetaAIEnterFlag) {
       this.zetaAICurrentSpeaker = 'speaker1';
-      console.log('🤖 Zeta AI / ChatGPT 화자1 감지: 엔터키 플래그 true');
+      this.log('🤖 Zeta AI / ChatGPT 화자1 감지: 엔터키 플래그 true');
       // 플래그를 false로 변경 (다음 테이크부터는 화자2)
       this.zetaAIEnterFlag = false;
     } else {
       // 엔터키 플래그가 false인 경우 화자2 (기본값)
       if (!this.zetaAICurrentSpeaker || this.zetaAICurrentSpeaker === 'speaker1') {
         this.zetaAICurrentSpeaker = 'speaker2';
-        console.log('🤖 Zeta AI / ChatGPT 화자2 감지: 엔터키 플래그 false');
+        this.log('🤖 Zeta AI / ChatGPT 화자2 감지: 엔터키 플래그 false');
       }
     }
     
     const currentVoice = this.zetaAICurrentSpeaker === 'speaker1' ? 
       this.zetaAISpeaker1Voice : this.zetaAISpeaker2Voice;
     
-    console.log(`🤖 Zeta AI / ChatGPT 최종 결정: ${this.zetaAICurrentSpeaker} (${currentVoice.name})`);
+    this.log(`🤖 Zeta AI / ChatGPT 최종 결정: ${this.zetaAICurrentSpeaker} (${currentVoice.name})`);
   }
 
   // 🎯 스페이스바 토글 처리 (하단 플로팅바와 동일한 로직)
   async handleSpacebarToggle() {
+    // 플러그인이 비활성화된 경우 토글 중지
+    if (!this.isPluginEnabled) {
+      return;
+    }
+    
     this.log('🎯 스페이스바 토글 처리');
     
     // 현재 재생 중인 경우
@@ -2343,7 +2887,7 @@ class TTSManager {
       // 화자 설정 저장
       await this.saveVoiceSetting(newVoice);
       
-      console.log(`🎵 단축키로 음성 선택: ${this.selectedVoice.name}`);
+      this.log(`🎵 단축키로 음성 선택: ${this.selectedVoice.name}`);
       
       // 하단 플로팅 UI 업데이트
       this.updateBottomFloatingUIState();
@@ -2352,7 +2896,7 @@ class TTSManager {
       if (previousVoiceId !== newVoice.id) {
         // 현재 재생 중이면 현재 테이크부터 새 목소리로 재시작
         if (this.isPlaying && this.currentPlayList && this.currentPlayList.length > 0) {
-          console.log(`🎤 단축키로 화자 변경: 현재 테이크부터 새 목소리로 재시작`);
+          this.log(`🎤 단축키로 화자 변경: 현재 테이크부터 새 목소리로 재시작`);
           this.clearAllBuffering();
           
           if (this.currentAudio) {
@@ -2376,10 +2920,10 @@ class TTSManager {
       const takeAtMouse = this.findTakeAtMousePosition();
       
       if (takeAtMouse) {
-        console.log(`🎯 마우스 위치에서 테이크 발견: ${takeAtMouse.id}`);
+        this.log(`🎯 마우스 위치에서 테이크 발견: ${takeAtMouse.id}`);
         await this.startPlaybackFromTake(takeAtMouse);
       } else {
-        console.log('🚫 마우스 위치에 테이크가 없습니다');
+        this.log('🚫 마우스 위치에 테이크가 없습니다');
         this.updateStatus('마우스 위치에 재생할 콘텐츠가 없습니다', '#FF9800');
       }
     }
@@ -2398,7 +2942,7 @@ class TTSManager {
       return null;
     }
     
-    console.log(`🔍 마우스 위치 요소: <${elementAtMouse.tagName.toLowerCase()}>`);
+    this.log(`🔍 마우스 위치 요소: <${elementAtMouse.tagName.toLowerCase()}>`);
     
     // 해당 요소나 부모 요소가 테이크에 해당하는지 확인
     let currentElement = elementAtMouse;
@@ -2408,7 +2952,7 @@ class TTSManager {
       const foundTake = this.preTakes.find(take => take.element === currentElement);
       
       if (foundTake) {
-        console.log(`✅ 테이크 발견: ${foundTake.id} (${foundTake.text.substring(0, 30)}...)`);
+        this.log(`✅ 테이크 발견: ${foundTake.id} (${foundTake.text.substring(0, 30)}...)`);
         return foundTake;
       }
       
@@ -2437,7 +2981,7 @@ class TTSManager {
     }
     
     if (closestTake && minDistance < 1000) { // 1000px 이내만
-      console.log(`📍 가장 가까운 테이크: ${closestTake.id} (거리: ${minDistance}px)`);
+      this.log(`📍 가장 가까운 테이크: ${closestTake.id} (거리: ${minDistance}px)`);
       return closestTake;
     }
     
@@ -2459,7 +3003,7 @@ class TTSManager {
   
   // 🎯 테이크부터 순차적 재생 시작
   async startPlaybackFromTake(startTake) {
-    console.log(`🎬 재생 시작: ${startTake.id} (${startTake.text.substring(0, 30)}...)`);
+    this.log(`🎬 재생 시작: ${startTake.id} (${startTake.text.substring(0, 30)}...)`);
     
     // 이전 재생 중지
     this.stopAll();
@@ -2470,7 +3014,7 @@ class TTSManager {
     this.currentTakeIndex = 0;
     this.currentPlayingTakeId = startTake.id;
     
-    console.log(`📋 재생 목록: ${this.currentPlayList.length}개 테이크 (${startIndex + 1}번째부터)`);
+    this.log(`📋 재생 목록: ${this.currentPlayList.length}개 테이크 (${startIndex + 1}번째부터)`);
     
     // UI 업데이트
     this.updateStatus(`재생 준비 중... (${startIndex + 1}/${this.preTakes.length})`, '#FF9800');
@@ -2483,7 +3027,7 @@ class TTSManager {
   // 🎯 인덱스에 해당하는 테이크 재생
   async playTakeAtIndex(playListIndex) {
     if (!this.currentPlayList || playListIndex >= this.currentPlayList.length) {
-      console.log('✅ 모든 테이크 재생 완료');
+      this.log('✅ 모든 테이크 재생 완료');
       this.updateStatus('재생 완료', '#4CAF50');
       return;
     }
@@ -2492,7 +3036,7 @@ class TTSManager {
     this.currentTakeIndex = playListIndex;
     this.currentPlayingTakeId = take.id;
     
-    console.log(`🎵 테이크 재생: ${take.id} (${playListIndex + 1}/${this.currentPlayList.length})`);
+    this.log(`🎵 테이크 재생: ${take.id} (${playListIndex + 1}/${this.currentPlayList.length})`);
     
     // UI 업데이트
     this.updatePlaybackUI(take);
@@ -2503,16 +3047,16 @@ class TTSManager {
       
       // 🚀 이미 버퍼링된 경우 바로 재생
       if (take.isBuffered && take.audioUrl) {
-        console.log(`🎯 버퍼링된 오디오 즉시 재생: ${take.id}`);
+        this.log(`🎯 버퍼링된 오디오 즉시 재생: ${take.id}`);
         audioUrl = take.audioUrl;
       } else {
         // 버퍼링되지 않은 경우 생성 (재생을 위한 생성)
-        console.log(`🔄 테이크 실시간 생성: ${take.id}`);
+        this.log(`🔄 테이크 실시간 생성: ${take.id}`);
         this.updateStatus(`음성 생성 중... (${playListIndex + 1}/${this.currentPlayList.length})`, '#FF9800');
         
         // 🎯 재생을 위한 생성 시 해당 테이크 위치로 자동 스크롤
         if (take.element) {
-          console.log(`📜 재생을 위한 생성 - 테이크 위치로 스크롤: <${take.element.tagName.toLowerCase()}>`);
+          this.log(`📜 재생을 위한 생성 - 테이크 위치로 스크롤: <${take.element.tagName.toLowerCase()}>`);
           take.element.scrollIntoView({ 
             behavior: 'smooth', 
             block: 'center',
@@ -2521,7 +3065,7 @@ class TTSManager {
         }
         
         // 🎯 현재 재생 테이크에도 버퍼링 애니메이션 적용
-        console.log(`🎭 현재 재생 테이크 애니메이션 시작: ${take.id}`);
+        this.log(`🎭 현재 재생 테이크 애니메이션 시작: ${take.id}`);
         this.applyBufferingAnimation(take.element);
         
         try {
@@ -2532,13 +3076,13 @@ class TTSManager {
           }
         } finally {
           // 🎯 생성 완료 후 애니메이션 제거
-          console.log(`🎭 현재 재생 테이크 애니메이션 종료: ${take.id}`);
+          this.log(`🎭 현재 재생 테이크 애니메이션 종료: ${take.id}`);
           this.removeBufferingAnimation(take.element);
         }
         
         // 🎯 현재 테이크 생성 완료 후 연속적 버퍼링 확인
         if (audioUrl) {
-          console.log(`✅ ${playListIndex + 1}번째 테이크 생성 완료 - 연속적 버퍼링 확인`);
+          this.log(`✅ ${playListIndex + 1}번째 테이크 생성 완료 - 연속적 버퍼링 확인`);
           this.maintainContinuousBuffering(playListIndex);
         }
       }
@@ -2546,25 +3090,25 @@ class TTSManager {
       if (audioUrl) {
         await this.playAudioWithTracking(audioUrl, take);
       } else {
-        console.error(`❌ 테이크 재생 실패: ${take.id}`);
+        this.error(`❌ 테이크 재생 실패: ${take.id}`);
         // 다음 테이크로 넘어가기
         await this.playTakeAtIndex(playListIndex + 1);
       }
       
     } catch (error) {
-      console.error(`❌ 테이크 재생 오류: ${take.id}`, error);
+      this.error(`❌ 테이크 재생 오류: ${take.id}`, error);
       await this.playTakeAtIndex(playListIndex + 1);
     }
   }
   
   // 🎯 연속적 버퍼링 유지 (현재 테이크 기준 뒤 3개 항상 유지)
   maintainContinuousBuffering(currentIndex) {
-    console.log(`🔄 연속적 버퍼링 확인: ${currentIndex + 1}번째 테이크 기준`);
+    this.log(`🔄 연속적 버퍼링 확인: ${currentIndex + 1}번째 테이크 기준`);
     
     const bufferAhead = 3; // 현재 테이크 뒤로 3개 유지
     const maxBufferIndex = Math.min(currentIndex + bufferAhead, this.currentPlayList.length - 1);
     
-    console.log(`📊 버퍼링 확인 범위: ${currentIndex + 1} ~ ${maxBufferIndex + 1}번째 테이크`);
+    this.log(`📊 버퍼링 확인 범위: ${currentIndex + 1} ~ ${maxBufferIndex + 1}번째 테이크`);
     
     // 🎯 현재 테이크 뒤 3개 중 버퍼링되지 않은 것들 찾기
     const unbufferedTakes = [];
@@ -2577,25 +3121,25 @@ class TTSManager {
           take: take,
           index: i
         });
-        console.log(`🔍 버퍼링 필요: ${i + 1}번째 테이크 "${take.id}"`);
+        this.log(`🔍 버퍼링 필요: ${i + 1}번째 테이크 "${take.id}"`);
       } else {
-        console.log(`✅ 이미 버퍼링됨: ${i + 1}번째 테이크 "${take.id}"`);
+        this.log(`✅ 이미 버퍼링됨: ${i + 1}번째 테이크 "${take.id}"`);
       }
     }
     
     // 🎯 필요한 테이크들만 순차적으로 버퍼링
     if (unbufferedTakes.length > 0) {
-      console.log(`🔄 ${unbufferedTakes.length}개 테이크 순차 버퍼링 시작`);
+      this.log(`🔄 ${unbufferedTakes.length}개 테이크 순차 버퍼링 시작`);
       this.bufferTakesSequentially(unbufferedTakes, 0);
     } else {
-      console.log(`✅ 모든 필요한 테이크가 이미 버퍼링됨`);
+      this.log(`✅ 모든 필요한 테이크가 이미 버퍼링됨`);
     }
   }
   
   // 🎯 테이크들을 순차적으로 버퍼링 (연속적)
   async bufferTakesSequentially(unbufferedTakes, index) {
     if (index >= unbufferedTakes.length) {
-      console.log(`✅ 순차 버퍼링 완료: ${unbufferedTakes.length}개 테이크`);
+      this.log(`✅ 순차 버퍼링 완료: ${unbufferedTakes.length}개 테이크`);
       return;
     }
     
@@ -2603,7 +3147,7 @@ class TTSManager {
     
     // 이미 버퍼링 중이거나 완료된 경우 스킵
     if (take.isBuffered || this.bufferingTakes.has(take.id)) {
-      console.log(`⏭️ 버퍼링 스킵: ${takeIndex + 1}번째 테이크 "${take.id}" (이미 처리됨)`);
+      this.log(`⏭️ 버퍼링 스킵: ${takeIndex + 1}번째 테이크 "${take.id}" (이미 처리됨)`);
       setTimeout(() => {
         this.bufferTakesSequentially(unbufferedTakes, index + 1);
       }, 50);
@@ -2612,7 +3156,7 @@ class TTSManager {
     
     // 버퍼링 시작
     this.bufferingTakes.add(take.id);
-    console.log(`🔄 순차 버퍼링: ${takeIndex + 1}번째 테이크 "${take.id}" (${index + 1}/${unbufferedTakes.length})`);
+    this.log(`🔄 순차 버퍼링: ${takeIndex + 1}번째 테이크 "${take.id}" (${index + 1}/${unbufferedTakes.length})`);
     
     // 🎯 버퍼링 애니메이션 적용
     this.applyBufferingAnimation(take.element);
@@ -2622,12 +3166,12 @@ class TTSManager {
       if (audioUrl) {
         take.audioUrl = audioUrl;
         take.isBuffered = true;
-        console.log(`✅ 순차 버퍼링 완료: ${takeIndex + 1}번째 "${take.id}" → 다음 테이크`);
+        this.log(`✅ 순차 버퍼링 완료: ${takeIndex + 1}번째 "${take.id}" → 다음 테이크`);
       } else {
-        console.error(`❌ 순차 버퍼링 실패: ${takeIndex + 1}번째 "${take.id}"`);
+        this.error(`❌ 순차 버퍼링 실패: ${takeIndex + 1}번째 "${take.id}"`);
       }
     } catch (error) {
-      console.error(`❌ 순차 버퍼링 오류: ${takeIndex + 1}번째 "${take.id}"`, error);
+      this.error(`❌ 순차 버퍼링 오류: ${takeIndex + 1}번째 "${take.id}"`, error);
     } finally {
       this.bufferingTakes.delete(take.id);
       this.removeBufferingAnimation(take.element);
@@ -2644,18 +3188,18 @@ class TTSManager {
   // 🎯 App.js 스타일 버퍼링 알파값 애니메이션 적용
   applyBufferingAnimation(element) {
     if (!element) {
-      console.warn('⚠️ 애니메이션 적용 실패: 요소가 없음');
+      this.warn('⚠️ 애니메이션 적용 실패: 요소가 없음');
       return;
     }
     
-    console.log(`🎭 버퍼링 애니메이션 적용 시작: <${element.tagName.toLowerCase()}> ${element.className || 'no-class'}`);
+    this.log(`🎭 버퍼링 애니메이션 적용 시작: <${element.tagName.toLowerCase()}> ${element.className || 'no-class'}`);
     
     // 기존 애니메이션 제거
     element.style.animation = '';
     
     // CSS 애니메이션이 없으면 스타일시트에 추가
     if (!document.querySelector('#tts-buffering-animation')) {
-      console.log('📝 CSS 애니메이션 스타일시트 추가');
+      this.log('📝 CSS 애니메이션 스타일시트 추가');
       const style = document.createElement('style');
       style.id = 'tts-buffering-animation';
       style.textContent = `
@@ -2670,30 +3214,30 @@ class TTSManager {
     
     // App.js의 fadeInOut 애니메이션 적용
     element.style.animation = 'tts-buffering 3s infinite';
-    console.log(`✅ 애니메이션 적용 완료: ${element.style.animation}`);
+    this.log(`✅ 애니메이션 적용 완료: ${element.style.animation}`);
     
     // 실제 적용 확인 (약간 지연 후)
     setTimeout(() => {
       const computedStyle = window.getComputedStyle(element);
       const appliedAnimation = computedStyle.animation;
-      console.log(`🔍 애니메이션 적용 확인: ${appliedAnimation !== 'none' ? '✅ 성공' : '❌ 실패'}`);
-      console.log(`📊 현재 opacity: ${computedStyle.opacity}`);
+      this.log(`🔍 애니메이션 적용 확인: ${appliedAnimation !== 'none' ? '✅ 성공' : '❌ 실패'}`);
+      this.log(`📊 현재 opacity: ${computedStyle.opacity}`);
     }, 100);
   }
   
   // 🎯 버퍼링 애니메이션 제거
   removeBufferingAnimation(element) {
     if (!element) {
-      console.warn('⚠️ 애니메이션 제거 실패: 요소가 없음');
+      this.warn('⚠️ 애니메이션 제거 실패: 요소가 없음');
       return;
     }
     
-    console.log(`🎭 버퍼링 애니메이션 제거: <${element.tagName.toLowerCase()}> ${element.className || 'no-class'}`);
+    this.log(`🎭 버퍼링 애니메이션 제거: <${element.tagName.toLowerCase()}> ${element.className || 'no-class'}`);
     
     element.style.animation = '';
     element.style.opacity = '';
     
-    console.log(`✅ 애니메이션 제거 완료`);
+    this.log(`✅ 애니메이션 제거 완료`);
   }
   
   // 🎯 오디오 재생 + App.js 스타일 단어 트래킹
@@ -2706,13 +3250,13 @@ class TTSManager {
       // 하단 플로팅 UI 상태 업데이트
       this.updateBottomFloatingUIState();
       
-      console.log(`🎵 오디오 재생 시작: ${take.id}`);
+      this.log(`🎵 오디오 재생 시작: ${take.id}`);
       
       // 🎯 App.js 스타일 단어 트래킹 준비
       this.prepareWordTracking(take);
       
       this.currentAudio.onloadedmetadata = () => {
-        console.log(`📊 오디오 메타데이터 로드 완료 - 길이: ${this.currentAudio.duration}초`);
+        this.log(`📊 오디오 메타데이터 로드 완료 - 길이: ${this.currentAudio.duration}초`);
         this.startAppJsStyleWordTracking(take);
       };
       
@@ -2727,7 +3271,7 @@ class TTSManager {
       };
       
       this.currentAudio.onended = () => {
-        console.log(`✅ 테이크 재생 완료: ${take.id}`);
+        this.log(`✅ 테이크 재생 완료: ${take.id}`);
         
         // 단어 트래킹 정리
         this.cleanupWordTracking();
@@ -2742,7 +3286,7 @@ class TTSManager {
             this.maintainContinuousBuffering(nextIndex);
           } else {
             // 모든 테이크 재생 완료 시에만 상태 변경
-            console.log('🎉 모든 테이크 재생 완료');
+            this.log('🎉 모든 테이크 재생 완료');
             this.isPlaying = false;
             this.isPaused = false;
             this.updateBottomFloatingUIState();
@@ -2753,7 +3297,7 @@ class TTSManager {
       };
       
       this.currentAudio.onerror = (error) => {
-        console.error(`❌ 오디오 재생 오류: ${take.id}`, error);
+        this.error(`❌ 오디오 재생 오류: ${take.id}`, error);
         this.isPlaying = false;
         this.isPaused = false;
         this.updateStatus('재생 오류', '#F44336');
@@ -2771,7 +3315,7 @@ class TTSManager {
   
   // 🎯 오버레이 단어 트래킹 준비 (모든 사이트 공통)
   prepareWordTracking(take) {
-    console.log(`🎨 오버레이 단어 트래킹 준비 시작: ${take.id}`);
+    this.log(`🎨 오버레이 단어 트래킹 준비 시작: ${take.id}`);
     
     // 기존 트래킹 정리
     this.cleanupWordTracking();
@@ -2783,7 +3327,7 @@ class TTSManager {
     // 오버레이 트래킹 설정
     this.setupOverlayWordTracking(take);
     
-    console.log(`🎨 오버레이 트래킹 준비 완료: ${this.currentTakeWords.length}개 단어`);
+    this.log(`🎨 오버레이 트래킹 준비 완료: ${this.currentTakeWords.length}개 단어`);
   }
   
   // 🛡️ DOM 조작이 안전한지 체크하는 메서드 (BBC 예외 처리 포함)
@@ -2793,19 +3337,19 @@ class TTSManager {
     // 🎯 BBC 사이트는 특별 처리 - 제한적 DOM 조작 허용
     const isBBC = hostname.includes('bbc.com') || hostname.includes('bbc.co.uk');
     if (isBBC) {
-      console.log(`🔵 BBC 사이트 감지: 제한적 DOM 조작 모드 사용`);
+      this.log(`🔵 BBC 사이트 감지: 제한적 DOM 조작 모드 사용`);
       return this.isSafeForBBCManipulation();
     }
     
     // 🎯 매우 복잡한 레이아웃만 제한 (기준 완화됨)
     const hasVeryComplexLayout = this.detectComplexLayout();
     if (hasVeryComplexLayout) {
-      console.log(`🚫 매우 복잡한 CSS 레이아웃 감지: DOM 조작 비활성화`);
+      this.log(`🚫 매우 복잡한 CSS 레이아웃 감지: DOM 조작 비활성화`);
       return false;
     }
     
     // 🎯 기본적으로 DOM 조작 허용 (안전한 방향으로 변경)
-    console.log(`✅ DOM 조작 허용: ${hostname}`);
+    this.log(`✅ DOM 조작 허용: ${hostname}`);
     return true;
   }
   
@@ -2816,16 +3360,16 @@ class TTSManager {
       const articleContent = document.querySelector('article, [data-component="text-block"], .story-body, .gel-body-copy');
       
       if (!articleContent) {
-        console.log('🔵 BBC: 안전한 텍스트 영역을 찾을 수 없음 - 오버레이 모드 사용');
+        this.log('🔵 BBC: 안전한 텍스트 영역을 찾을 수 없음 - 오버레이 모드 사용');
         return false; // DOM 조작 차단, 오버레이 모드로 전환
       }
       
       // 🚫 BBC에서는 DOM 조작 완전 차단, 대신 오버레이 사용
-      console.log('🔵 BBC: DOM 조작 차단 - 오버레이 모드로 전환');
+      this.log('🔵 BBC: DOM 조작 차단 - 오버레이 모드로 전환');
       return false;
       
     } catch (error) {
-      console.warn('🔵 BBC: 안전성 체크 실패:', error);
+      this.warn('🔵 BBC: 안전성 체크 실패:', error);
       return false;
     }
   }
@@ -2838,14 +3382,14 @@ class TTSManager {
       // 1. 매우 복잡한 Grid 레이아웃 체크 (기준 완화)
       const complexGridElements = document.querySelectorAll('[style*="grid-template"], [class*="grid-container"], [class*="grid-system"]');
       if (complexGridElements.length > 15) { // 5 → 15로 완화
-        console.log('매우 복잡한 Grid 레이아웃 감지');
+        this.log('매우 복잡한 Grid 레이아웃 감지');
         return true;
       }
       
       // 2. CSS Flexbox는 일반적이므로 더 관대하게
       const complexFlexElements = document.querySelectorAll('[style*="flex-direction"], [style*="flex-wrap"], [class*="flex-container"]');
       if (complexFlexElements.length > 25) { // 10 → 25로 완화
-        console.log('매우 복잡한 Flexbox 레이아웃 감지');
+        this.log('매우 복잡한 Flexbox 레이아웃 감지');
         return true;
       }
       
@@ -2855,13 +3399,13 @@ class TTSManager {
       // 4. 특정 문제가 되는 CSS 프레임워크 감지
       const hasProblematicFramework = this.detectProblematicFrameworks();
       if (hasProblematicFramework) {
-        console.log('문제가 되는 CSS 프레임워크 감지');
+        this.log('문제가 되는 CSS 프레임워크 감지');
         return true;
       }
       
       return false;
     } catch (error) {
-      console.warn('레이아웃 감지 실패:', error);
+      this.warn('레이아웃 감지 실패:', error);
       // 에러 시 안전하게 false 반환 (DOM 조작 허용)
       return false;
     }
@@ -2925,11 +3469,11 @@ class TTSManager {
   
   // 🎯 App.js 스타일 단어 트래킹 시작
   startAppJsStyleWordTracking(take) {
-    console.log(`🎯 App.js 스타일 단어 트래킹 시작: ${take.id}`);
+    this.log(`🎯 App.js 스타일 단어 트래킹 시작: ${take.id}`);
     
     // 🎯 테이크 시작 시 한 번만 스크롤
     if (take.element) {
-      console.log(`📜 테이크 시작 - 요소로 스크롤: <${take.element.tagName.toLowerCase()}>`);
+      this.log(`📜 테이크 시작 - 요소로 스크롤: <${take.element.tagName.toLowerCase()}>`);
       take.element.scrollIntoView({ 
         behavior: 'smooth', 
         block: 'center',
@@ -3004,7 +3548,7 @@ class TTSManager {
   wrapWordsInElement(element, targetText) {
     if (!element || !targetText) return;
     
-    console.log(`🔤 단어 래핑 시작: ${targetText.substring(0, 50)}...`);
+    this.log(`🔤 단어 래핑 시작: ${targetText.substring(0, 50)}...`);
     
     // TreeWalker로 텍스트 노드들 찾기
     const walker = document.createTreeWalker(
@@ -3027,7 +3571,7 @@ class TTSManager {
       this.wrapWordsInTextNode(textNode);
     }
     
-    console.log(`✅ 단어 래핑 완료: ${this.currentTakeWordElements.length}개 span 생성`);
+    this.log(`✅ 단어 래핑 완료: ${this.currentTakeWordElements.length}개 span 생성`);
   }
   
   // 🎯 단일 텍스트 노드에서 단어 래핑
@@ -3061,22 +3605,22 @@ class TTSManager {
   wrapWordsInElementSafely(element, targetText) {
     if (!element || !targetText) return;
     
-    console.log(`🔵 BBC 안전 래핑 시작: ${targetText.substring(0, 50)}...`);
+    this.log(`🔵 BBC 안전 래핑 시작: ${targetText.substring(0, 50)}...`);
     
     try {
       // BBC 페이지에서 안전한 텍스트 노드만 선택
       const safeTextNodes = this.findSafeBBCTextNodes(element, targetText);
-      console.log(`🔵 BBC: ${safeTextNodes.length}개 안전한 텍스트 노드 발견`);
+      this.log(`🔵 BBC: ${safeTextNodes.length}개 안전한 텍스트 노드 발견`);
       
       // 각 텍스트 노드를 안전하게 래핑
       for (const textNode of safeTextNodes) {
         this.wrapSingleTextNodeSafely(textNode);
       }
       
-      console.log(`🔵 BBC 안전 래핑 완료: ${this.currentTakeWordElements.length}개 span 생성`);
+      this.log(`🔵 BBC 안전 래핑 완료: ${this.currentTakeWordElements.length}개 span 생성`);
       
     } catch (error) {
-      console.error('🔵 BBC 안전 래핑 실패:', error);
+      this.error('🔵 BBC 안전 래핑 실패:', error);
       this.currentTakeWordElements = [];
     }
   }
@@ -3132,7 +3676,7 @@ class TTSManager {
           }
         }
       } catch (error) {
-        console.warn(`🔵 BBC 선택자 "${selector}" 처리 실패:`, error);
+        this.warn(`🔵 BBC 선택자 "${selector}" 처리 실패:`, error);
       }
     }
     
@@ -3168,13 +3712,13 @@ class TTSManager {
       }
       
     } catch (error) {
-      console.warn('🔵 BBC 텍스트 노드 래핑 실패:', error);
+      this.warn('🔵 BBC 텍스트 노드 래핑 실패:', error);
     }
   }
   
   // 🎯 오버레이 단어 트래킹 정리 (모든 사이트 공통)
   cleanupWordTracking() {
-    console.log('🧹 오버레이 트래킹 정리 시작');
+    this.log('🧹 오버레이 트래킹 정리 시작');
     
     // 🛡️ 매우 엄격한 DOM 정리 - 우리가 생성한 요소만 정리
     this.safeCleanupTTSElements();
@@ -3186,7 +3730,7 @@ class TTSManager {
     this.currentTakeWords = [];
     this.currentTakeWordElements = [];
     
-    console.log('✅ 오버레이 트래킹 정리 완료');
+    this.log('✅ 오버레이 트래킹 정리 완료');
   }
   
   // 🛡️ 매우 안전한 TTS 요소 정리 (엄격한 검증)
@@ -3194,7 +3738,7 @@ class TTSManager {
     try {
       // 🔍 우리가 생성한 TTS 요소들만 엄격하게 선별
       const ttsElements = document.querySelectorAll('[class*="tts-"]');
-      console.log(`🔍 발견된 TTS 관련 요소: ${ttsElements.length}개`);
+      this.log(`🔍 발견된 TTS 관련 요소: ${ttsElements.length}개`);
       
       let cleanedCount = 0;
       
@@ -3211,21 +3755,21 @@ class TTSManager {
               parent.replaceChild(textNode, element);
               cleanedCount++;
               
-              console.log(`🧹 안전하게 정리됨 ${cleanedCount}: "${textContent.substring(0, 20)}..."`);
+              this.log(`🧹 안전하게 정리됨 ${cleanedCount}: "${textContent.substring(0, 20)}..."`);
             }
           } else {
-            console.warn(`⚠️ 안전하지 않은 요소 발견, 건너뛰기: ${element.className}`);
+            this.warn(`⚠️ 안전하지 않은 요소 발견, 건너뛰기: ${element.className}`);
           }
           
         } catch (elementError) {
-          console.warn(`⚠️ 요소 ${index + 1} 정리 중 오류 (안전하게 건너뛰기):`, elementError);
+          this.warn(`⚠️ 요소 ${index + 1} 정리 중 오류 (안전하게 건너뛰기):`, elementError);
         }
       });
       
-      console.log(`✅ 총 ${cleanedCount}개 TTS 요소 안전하게 정리됨`);
+      this.log(`✅ 총 ${cleanedCount}개 TTS 요소 안전하게 정리됨`);
       
     } catch (error) {
-      console.error('🚨 DOM 정리 중 치명적 오류 (안전하게 무시):', error);
+      this.error('🚨 DOM 정리 중 치명적 오류 (안전하게 무시):', error);
     }
   }
   
@@ -3253,21 +3797,21 @@ class TTSManager {
     // 🔍 추가 안전성 검사
     const tagName = element.tagName.toLowerCase();
     if (tagName !== 'span') {
-      console.warn(`⚠️ 예상치 못한 태그: ${tagName}, TTS span이어야 함`);
+      this.warn(`⚠️ 예상치 못한 태그: ${tagName}, TTS span이어야 함`);
       return false;
     }
     
     // 🔍 부모 요소 검증
     const parent = element.parentNode;
     if (!parent || parent === document) {
-      console.warn(`⚠️ 잘못된 부모 요소 구조`);
+      this.warn(`⚠️ 잘못된 부모 요소 구조`);
       return false;
     }
     
     // 🔍 텍스트 콘텐츠 검증
     const textContent = element.textContent;
     if (!textContent || textContent.length === 0) {
-      console.warn(`⚠️ 빈 텍스트 콘텐츠`);
+      this.warn(`⚠️ 빈 텍스트 콘텐츠`);
       return false;
     }
     
@@ -3276,7 +3820,7 @@ class TTSManager {
   
   // 🎯 오버레이 모드 단어 트래킹 설정 (DOM 조작 없음)
   setupOverlayWordTracking(take) {
-    console.log(`🎨 오버레이 모드 단어 트래킹 설정: ${take.id}`);
+    this.log(`🎨 오버레이 모드 단어 트래킹 설정: ${take.id}`);
     
     this.currentOverlayTake = take;
     this.overlayWordIndex = 0;
@@ -3284,7 +3828,7 @@ class TTSManager {
     // 오버레이 하이라이트 엘리먼트 생성
     this.createOverlayHighlight();
     
-    console.log(`🎨 오버레이 모드 준비 완료: ${this.currentTakeWords.length}개 단어`);
+    this.log(`🎨 오버레이 모드 준비 완료: ${this.currentTakeWords.length}개 단어`);
   }
   
   // 🎨 오버레이 하이라이트 엘리먼트 생성
@@ -3306,7 +3850,7 @@ class TTSManager {
     `;
     
     document.body.appendChild(this.overlayHighlight);
-    console.log('🎨 오버레이 하이라이트 엘리먼트 생성');
+    this.log('🎨 오버레이 하이라이트 엘리먼트 생성');
   }
   
   // 🎨 오버레이 하이라이트 제거
@@ -3314,7 +3858,7 @@ class TTSManager {
     if (this.overlayHighlight) {
       this.overlayHighlight.remove();
       this.overlayHighlight = null;
-      console.log('🎨 오버레이 하이라이트 제거');
+      this.log('🎨 오버레이 하이라이트 제거');
     }
   }
   
@@ -3345,13 +3889,13 @@ class TTSManager {
         this.overlayHighlight.style.height = (wordPosition.height + topExpansion + bottomExpansion) + 'px'; // 위 15% + 아래 10%
         this.overlayHighlight.style.display = 'block';
         
-        console.log(`🎨 오버레이 하이라이트 업데이트: 단어 ${wordIndex + 1} "${this.currentTakeWords[wordIndex]?.text}" (폰트: ${wordPosition.fontSize}px, 좌우: ${fontSizeExpansion.toFixed(1)}px, 위: ${topExpansion.toFixed(1)}px, 아래: ${bottomExpansion.toFixed(1)}px)`);
+        this.log(`🎨 오버레이 하이라이트 업데이트: 단어 ${wordIndex + 1} "${this.currentTakeWords[wordIndex]?.text}" (폰트: ${wordPosition.fontSize}px, 좌우: ${fontSizeExpansion.toFixed(1)}px, 위: ${topExpansion.toFixed(1)}px, 아래: ${bottomExpansion.toFixed(1)}px)`);
       } else {
         this.overlayHighlight.style.display = 'none';
       }
       
     } catch (error) {
-      console.warn('🎨 오버레이 하이라이트 업데이트 실패:', error);
+      this.warn('🎨 오버레이 하이라이트 업데이트 실패:', error);
       this.overlayHighlight.style.display = 'none';
     }
   }
@@ -3395,7 +3939,7 @@ class TTSManager {
       }
       
     } catch (error) {
-      console.warn('🔍 단어 위치 찾기 실패:', error);
+      this.warn('🔍 단어 위치 찾기 실패:', error);
     }
     
     return null;
@@ -3440,7 +3984,7 @@ class TTSManager {
       }
       
     } catch (error) {
-      console.warn('🔍 텍스트 범위 찾기 실패:', error);
+      this.warn('🔍 텍스트 범위 찾기 실패:', error);
     }
     
     return null;
@@ -3475,7 +4019,7 @@ class TTSManager {
   
   // 🎯 전체 정지 (새로운 로직에 맞게 수정)
   stopAll() {
-    console.log('🛑 모든 재생 중지');
+    this.log('🛑 모든 재생 중지');
     
     // 오디오 정지
     if (this.currentAudio) {
@@ -3509,7 +4053,7 @@ class TTSManager {
     this.updateStatus('재생 중지됨', '#FF9800');
     this.updateProgress(0);
     
-    console.log('✅ 정지 완료');
+    this.log('✅ 정지 완료');
   }
 
   // 음성 선택
@@ -3517,10 +4061,10 @@ class TTSManager {
     if (index >= 0 && index < this.VOICES.length) {
       this.selectedVoice = this.VOICES[index];
       this.updateUI();
-      console.log(`음성 선택: ${this.selectedVoice.name}`);
+      this.log(`음성 선택: ${this.selectedVoice.name}`);
       
       // 새로운 시스템에서는 마우스 위치 기반으로 재생하므로 호환성만 유지
-      console.log(`음성 선택됨: ${this.selectedVoice.name} - 마우스를 올리고 다시 키를 누르세요`);
+      this.log(`음성 선택됨: ${this.selectedVoice.name} - 마우스를 올리고 다시 키를 누르세요`);
       this.updateStatus(`음성 선택: ${this.selectedVoice.name}`, '#4CAF50');
     }
   }
@@ -3586,7 +4130,7 @@ class TTSManager {
       const htmlCode = this.generateHighlightedHtml(element, currentTakeText);
       this.htmlViewer.innerHTML = htmlCode;
     } catch (error) {
-      console.error('HTML 뷰어 업데이트 실패:', error);
+      this.error('HTML 뷰어 업데이트 실패:', error);
       this.htmlViewer.innerHTML = '<div style="color: #ff6b6b;">HTML 표시 오류</div>';
     }
   }
@@ -3652,19 +4196,20 @@ class TTSManager {
   showUI() {
     // 🤖 Zeta AI / ChatGPT에서는 기존 플로팅 UI 숨김
     if (this.isZetaOrChatGPTMode()) {
-      console.log('🤖 Zeta AI / ChatGPT: 기존 플로팅 UI 숨김');
+      this.log('🤖 Zeta AI / ChatGPT: 기존 플로팅 UI 숨김');
       return;
     }
     
+    // 테이크 리스트 표시 설정에 따라 표시/숨김
     if (this.floatingUI) {
-      this.floatingUI.style.display = 'block';
+      this.floatingUI.style.display = this.takeListVisible ? 'block' : 'none';
     }
     
-    // 하단 플로팅 UI도 표시
+    // 하단 플로팅 UI도 표시 설정에 따라 표시/숨김
     if (!this.bottomFloatingUI) {
       this.createBottomFloatingUI();
     }
-    this.bottomFloatingUI.style.display = 'block';
+    this.bottomFloatingUI.style.display = this.floatingBarVisible ? 'block' : 'none';
   }
 
   hideUI() {
@@ -3676,7 +4221,7 @@ class TTSManager {
     const scrollSpacer = document.getElementById('tts-bottom-scroll-spacer');
     if (scrollSpacer) {
       scrollSpacer.remove();
-      console.log('📏 하단 스크롤 영역 제거');
+      this.log('📏 하단 스크롤 영역 제거');
     }
     
     // 플러그인이 비활성화된 경우가 아니라면 하단 플로팅 UI는 계속 표시
@@ -3688,22 +4233,22 @@ class TTSManager {
     try {
       // 1단계: OS 다크모드 설정 확인
       const isOSDarkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      console.log(`🎨 OS 다크모드 설정: ${isOSDarkMode ? '다크' : '라이트'}`);
+      this.log(`🎨 OS 다크모드 설정: ${isOSDarkMode ? '다크' : '라이트'}`);
       
       // 2단계: 사이트가 OS 설정을 따르는지 확인
       const siteFollowsOS = this.checkIfSiteFollowsOS();
-      console.log(`🎨 사이트 OS 설정 따름: ${siteFollowsOS}`);
+      this.log(`🎨 사이트 OS 설정 따름: ${siteFollowsOS}`);
       
       // 3단계: 사이트가 OS를 따르면 OS 설정 사용, 아니면 기존 로직 사용
       if (siteFollowsOS) {
         this.currentTheme = isOSDarkMode ? 'dark' : 'light';
-        console.log(`🎨 OS 설정 사용: ${this.currentTheme}`);
+        this.log(`🎨 OS 설정 사용: ${this.currentTheme}`);
       } else {
         const backgroundColor = await this.analyzePageBackgroundColor();
         const isDark = this.isColorDark(backgroundColor);
         
         this.currentTheme = isDark ? 'dark' : 'light';
-        console.log(`🎨 배경색 기반 테마 감지: ${this.currentTheme} (배경색: ${backgroundColor})`);
+        this.log(`🎨 배경색 기반 테마 감지: ${this.currentTheme} (배경색: ${backgroundColor})`);
       }
       
       // 테마 변경 시 하단 플로팅 UI 업데이트
@@ -3720,7 +4265,7 @@ class TTSManager {
       this.setupOSThemeChangeListener();
       
     } catch (error) {
-      console.warn('🎨 테마 감지 실패, 기본 라이트 테마 사용:', error);
+      this.warn('🎨 테마 감지 실패, 기본 라이트 테마 사용:', error);
       this.currentTheme = 'light';
     }
   }
@@ -3738,12 +4283,12 @@ class TTSManager {
       
       const handleThemeChange = (e) => {
         const isOSDarkMode = e.matches;
-        console.log(`🎨 OS 다크모드 설정 변경 감지: ${isOSDarkMode ? '다크' : '라이트'}`);
+        this.log(`🎨 OS 다크모드 설정 변경 감지: ${isOSDarkMode ? '다크' : '라이트'}`);
         
         // 사이트가 OS 설정을 따르는 경우에만 테마 업데이트
         if (this.checkIfSiteFollowsOS()) {
           this.currentTheme = isOSDarkMode ? 'dark' : 'light';
-          console.log(`🎨 OS 설정 변경으로 테마 업데이트: ${this.currentTheme}`);
+          this.log(`🎨 OS 설정 변경으로 테마 업데이트: ${this.currentTheme}`);
           
           // UI 업데이트
           if (this.bottomFloatingUI) {
@@ -3759,9 +4304,9 @@ class TTSManager {
       // 리스너 등록
       this.osThemeChangeListener.addEventListener('change', handleThemeChange);
       
-      console.log('🎨 OS 다크모드 설정 변경 감지 리스너 등록 완료');
+      this.log('🎨 OS 다크모드 설정 변경 감지 리스너 등록 완료');
     } catch (error) {
-      console.warn('🎨 OS 테마 변경 감지 설정 실패:', error);
+      this.warn('🎨 OS 테마 변경 감지 설정 실패:', error);
     }
   }
 
@@ -3794,14 +4339,14 @@ class TTSManager {
       const followsOS = osFollowingSites.some(site => hostname.includes(site));
       
       if (followsOS) {
-        console.log(`🎨 ${hostname}은 OS 다크모드 설정을 따릅니다.`);
+        this.log(`🎨 ${hostname}은 OS 다크모드 설정을 따릅니다.`);
       } else {
-        console.log(`🎨 ${hostname}은 자체 테마 설정을 사용합니다.`);
+        this.log(`🎨 ${hostname}은 자체 테마 설정을 사용합니다.`);
       }
       
       return followsOS;
     } catch (error) {
-      console.warn('🎨 OS 설정 확인 실패:', error);
+      this.warn('🎨 OS 설정 확인 실패:', error);
       return false;
     }
   }
@@ -3828,7 +4373,7 @@ class TTSManager {
       finalColor = dominantBgColor;
     }
     
-    console.log(`🎨 배경색 분석: body(${bodyBgColor}), html(${htmlBgColor}), dominant(${dominantBgColor}) → ${finalColor}`);
+    this.log(`🎨 배경색 분석: body(${bodyBgColor}), html(${htmlBgColor}), dominant(${dominantBgColor}) → ${finalColor}`);
     return finalColor;
   }
 
@@ -3863,7 +4408,7 @@ class TTSManager {
       return sortedColors.length > 0 ? sortedColors[0][0] : null;
 
     } catch (error) {
-      console.warn('🔍 주요 배경색 찾기 실패:', error);
+      this.warn('🔍 주요 배경색 찾기 실패:', error);
       return null;
     }
   }
@@ -3907,11 +4452,11 @@ class TTSManager {
       
       // 0.5 미만이면 어두운 색상으로 판단
       const isDark = luminance < 0.5;
-      console.log(`🔍 색상 분석: ${colorString} → RGB(${rgb.r}, ${rgb.g}, ${rgb.b}) → 밝기: ${luminance.toFixed(3)} → ${isDark ? '다크' : '라이트'}`);
+      this.log(`🔍 색상 분석: ${colorString} → RGB(${rgb.r}, ${rgb.g}, ${rgb.b}) → 밝기: ${luminance.toFixed(3)} → ${isDark ? '다크' : '라이트'}`);
       
       return isDark;
     } catch (error) {
-      console.warn('🔍 색상 분석 실패:', error);
+      this.warn('🔍 색상 분석 실패:', error);
       return false; // 기본적으로 라이트 테마
     }
   }
@@ -3999,7 +4544,7 @@ class TTSManager {
     // body의 마지막 자식으로 추가 (플로팅 UI보다 앞에)
     document.body.appendChild(scrollSpacer);
     
-    console.log('📏 하단 스크롤 영역 추가: 45px');
+    this.log('📏 하단 스크롤 영역 추가: 45px');
   }
 
     // 🎨 하단 플로팅 UI 테마 업데이트
@@ -4031,6 +4576,11 @@ class TTSManager {
       this.refreshButton.style.background = 'transparent';
       this.refreshButton.style.color = textColor;
     }
+    
+    // 테이크 수 라벨 스타일 업데이트
+    if (this.bottomTakeCountLabel) {
+      this.bottomTakeCountLabel.style.color = textColor;
+    }
 
     // SVG 아이콘 색상 업데이트
     const svgStyle = this.bottomFloatingUI.querySelector('svg style');
@@ -4041,7 +4591,7 @@ class TTSManager {
     // 보더 색상 업데이트 - 상위 컨테이너에 직접 적용
     if (this.bottomFloatingUI) {
       this.bottomFloatingUI.style.borderTop = `1px solid ${borderColor} !important`;
-      console.log(`🎨 구분선 색상 업데이트: ${borderColor}`);
+      this.log(`🎨 구분선 색상 업데이트: ${borderColor}`);
     }
 
     // 상단 플로팅 UI 단축키 정보 구분선 색상 업데이트
@@ -4052,13 +4602,13 @@ class TTSManager {
       
       shortcutInfo.style.borderTop = `1px solid ${shortcutBorderColor}`;
       shortcutInfo.style.color = shortcutTextColor;
-      console.log(`🎨 상단 플로팅 UI 단축키 구분선 색상 업데이트: ${shortcutBorderColor}`);
+      this.log(`🎨 상단 플로팅 UI 단축키 구분선 색상 업데이트: ${shortcutBorderColor}`);
     }
 
     // 상태 텍스트 재생성 (새 색상 적용)
     this.updateBottomFloatingUIState();
 
-    console.log(`🎨 하단 플로팅 UI 테마 적용: ${this.currentTheme}`);
+    this.log(`🎨 하단 플로팅 UI 테마 적용: ${this.currentTheme}`);
   }
 
   // 🎯 하단 플로팅 UI 생성 (audiobook-ui 스타일)
@@ -4158,7 +4708,19 @@ class TTSManager {
       text-align: center !important;
     `;
 
-    // 우측: 새로고침 버튼 (↺만 표시)
+    // 우측: 테이크 수 표시 + 새로고침 버튼
+    this.bottomTakeCountLabel = document.createElement('div');
+    this.bottomTakeCountLabel.id = 'tts-bottom-take-count';
+    this.bottomTakeCountLabel.style.cssText = `
+      color: ${textColor} !important;
+      font-size: calc(${this.UI_FONT_SIZE} * 0.6) !important;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+      margin-right: 8px !important;
+      white-space: nowrap !important;
+      flex-shrink: 0 !important;
+    `;
+    this.bottomTakeCountLabel.textContent = '0개 문단';
+    
     this.refreshButton = document.createElement('button');
     this.refreshButton.innerHTML = '<span class="refresh-icon">↺</span>';
     this.refreshButton.style.cssText = `
@@ -4176,7 +4738,7 @@ class TTSManager {
       display: flex !important;
       align-items: center !important;
       justify-content: center !important;
-      margin-top: -3px !important;
+      margin-top: -1px !important;
       padding: 0 !important;
       outline: none !important;
       box-sizing: border-box !important;
@@ -4189,9 +4751,10 @@ class TTSManager {
       this.handleRefreshButtonClick();
     });
 
-    // 컨테이너에 아이콘, 버튼, 새로고침 버튼 추가
+    // 컨테이너에 아이콘, 버튼, 테이크 수, 새로고침 버튼 추가
     buttonContainer.appendChild(svgIcon);
     buttonContainer.appendChild(this.bottomFloatingButton);
+    buttonContainer.appendChild(this.bottomTakeCountLabel);
     buttonContainer.appendChild(this.refreshButton);
 
     // 버튼 컨테이너를 직접 추가
@@ -4204,6 +4767,9 @@ class TTSManager {
 
     document.body.appendChild(this.bottomFloatingUI);
     
+    // 초기에는 숨김 상태로 시작 (showUI에서 설정에 따라 표시)
+    this.bottomFloatingUI.style.display = 'none';
+    
     // 하단 스크롤 영역 추가
     this.addBottomScrollSpacer();
     
@@ -4211,7 +4777,7 @@ class TTSManager {
     this.updateBottomFloatingUITheme();
     this.updateBottomFloatingUIState();
     
-    console.log('🎯 하단 플로팅 UI 생성 완료');
+    this.log('🎯 하단 플로팅 UI 생성 완료');
   }
 
   // 🎵 재생 속도를 텍스트로 변환
@@ -4404,7 +4970,7 @@ class TTSManager {
     // 속도 설정 저장
     await this.saveSpeedSetting(speedOption.speed);
     
-    console.log(`🎵 속도 선택: ${speedOption.speed}x (${speedOption.text})`);
+    this.log(`🎵 속도 선택: ${speedOption.speed}x (${speedOption.text})`);
     
     // 메뉴 숨기기
     this.hideSpeedMenu();
@@ -4572,24 +5138,29 @@ class TTSManager {
         this.pausePlayback();
       }
     } else {
-      // 정지 상태에서 버튼 클릭 시도 '읽어 보세요' 클릭과 동일하게 처리
-      await this.startReadingFromFirst();
+      // 정지 상태에서 버튼 클릭 시 리프레시 요청
+      await this.requestRefresh();
     }
   }
 
   // 🤖 Zeta AI / ChatGPT 새로운 글 업데이트 모니터링
   startZetaAIMonitoring() {
+    // 플러그인이 비활성화된 경우 모니터링 중지
+    if (!this.isPluginEnabled) {
+      return;
+    }
+    
     if (!this.isZetaOrChatGPTMode()) {
       return; // Zeta AI / ChatGPT 사이트가 아니면 모니터링 중지
     }
     
     // 이미 모니터링 중이면 중복 시작 방지
     if (this.zetaAIMonitorInterval) {
-      console.log('🤖 Zeta AI: 이미 모니터링 중입니다.');
+      this.log('🤖 Zeta AI: 이미 모니터링 중입니다.');
       return;
     }
     
-    console.log('🤖 Zeta AI / ChatGPT 모니터링 시작 (1번 테이크 모니터링)');
+    this.log('🤖 Zeta AI / ChatGPT 모니터링 시작 (1번 테이크 모니터링)');
     
     // 초기 1번 테이크 저장
     this.previousFirstTake = this.preTakes && this.preTakes.length > 0 ? this.preTakes[0].text : '';
@@ -4605,14 +5176,14 @@ class TTSManager {
         const currentFirstTake = this.preTakes && this.preTakes.length > 0 ? this.preTakes[0].text : '';
         
         // 디버깅 로그 추가
-        console.log(`🤖 Zeta AI 모니터링: 현재 테이크 "${currentFirstTake?.substring(0, 30)}...", 이전 테이크 "${this.previousFirstTake?.substring(0, 30)}..."`);
+        this.log(`🤖 Zeta AI 모니터링: 현재 테이크 "${currentFirstTake?.substring(0, 30)}...", 이전 테이크 "${this.previousFirstTake?.substring(0, 30)}..."`);
         
         // 1번 테이크가 바뀐 경우 (빈 문자열이 아니고, 이전과 다른 경우)
         if (currentFirstTake && 
             currentFirstTake.trim() !== '' && 
             currentFirstTake !== this.previousFirstTake) {
           
-          console.log('🤖 Zeta AI: 1번 테이크 변경 감지!');
+          this.log('🤖 Zeta AI: 1번 테이크 변경 감지!');
           
           // 🤖 Zeta AI: 화자 구분 로직 적용
           this.determineZetaAISpeaker();
@@ -4627,12 +5198,12 @@ class TTSManager {
           // 현재 1번 테이크를 이전 값으로 저장
           this.previousFirstTake = currentFirstTake;
           
-          console.log('🤖 Zeta AI: 테이크 변경 처리 완료');
+          this.log('🤖 Zeta AI: 테이크 변경 처리 완료');
         }
               } catch (error) {
-          console.error('🤖 Zeta AI / ChatGPT 모니터링 오류:', error);
+          this.error('🤖 Zeta AI / ChatGPT 모니터링 오류:', error);
           // 에러가 발생해도 모니터링은 계속 유지
-          console.log('🤖 Zeta AI: 모니터링 계속 유지 중...');
+          this.log('🤖 Zeta AI: 모니터링 계속 유지 중...');
         }
     }, 1000); // 1초마다로 변경
   }
@@ -4660,7 +5231,7 @@ class TTSManager {
       // OS 테마 리스너 정리
       this.cleanupOSThemeListener();
       
-      console.log('🤖 Zeta AI / ChatGPT 모니터링 중지 (화자 상태 초기화)');
+      this.log('🤖 Zeta AI / ChatGPT 모니터링 중지 (화자 상태 초기화)');
     }
   }
 
@@ -4678,7 +5249,7 @@ class TTSManager {
       this.zetaAIInputScanInterval = null;
     }
     
-    console.log('🤖 Zeta AI / ChatGPT: 엔터키 감지 시스템 정리 완료');
+    this.log('🤖 Zeta AI / ChatGPT: 엔터키 감지 시스템 정리 완료');
   }
 
   // 🤖 Zeta AI: 캐릭터 UI 정리
@@ -4695,7 +5266,7 @@ class TTSManager {
       this.zetaAIRightCharacterUI = null;
     }
     
-    console.log('🤖 Zeta AI: 캐릭터 UI 정리 완료');
+    this.log('🤖 Zeta AI: 캐릭터 UI 정리 완료');
   }
 
   // 🤖 Zeta AI / ChatGPT: 발화 큐 정리
@@ -4710,7 +5281,7 @@ class TTSManager {
     this.zetaAISpeechQueue = [];
     this.zetaAIIsPlaying = false;
     
-    console.log('🤖 Zeta AI / ChatGPT: 발화 큐 정리 완료');
+    this.log('🤖 Zeta AI / ChatGPT: 발화 큐 정리 완료');
   }
 
   // 🎨 OS 테마 리스너 정리
@@ -4718,13 +5289,13 @@ class TTSManager {
     if (this.osThemeChangeListener) {
       this.osThemeChangeListener.removeEventListener('change', this.handleThemeChange);
       this.osThemeChangeListener = null;
-      console.log('🎨 OS 테마 리스너 정리 완료');
+      this.log('🎨 OS 테마 리스너 정리 완료');
     }
   }
 
   // 🤖 Zeta AI / ChatGPT: 모든 발화 강제 중단 (화자1 우선 발화용)
   forceStopAllZetaAISpeech() {
-    console.log('🤖 Zeta AI / ChatGPT: 모든 발화 강제 중단 시작');
+    this.log('🤖 Zeta AI / ChatGPT: 모든 발화 강제 중단 시작');
     
     // 현재 재생 중인 오디오 즉시 중지
     if (this.zetaAICurrentAudio) {
@@ -4746,7 +5317,7 @@ class TTSManager {
     // 발화 큐는 유지 (화자1만 남기기 위해)
     this.zetaAIIsPlaying = false;
     
-    console.log('🤖 Zeta AI / ChatGPT: 모든 발화 강제 중단 완료');
+    this.log('🤖 Zeta AI / ChatGPT: 모든 발화 강제 중단 완료');
   }
 
   // 🤖 Zeta AI / ChatGPT: 3초 지연 후 테이크 감지 시작
@@ -4755,10 +5326,10 @@ class TTSManager {
       return;
     }
     
-    console.log('🤖 Zeta AI: 3초 후 테이크 감지 시작 예정');
+    this.log('🤖 Zeta AI: 3초 후 테이크 감지 시작 예정');
     
     setTimeout(() => {
-      console.log('🤖 Zeta AI: 테이크 감지 시작');
+      this.log('🤖 Zeta AI: 테이크 감지 시작');
       this.startZetaAIMonitoring();
     }, 3000); // 3초 지연
   }
@@ -4780,7 +5351,7 @@ class TTSManager {
       scrollSpacer.remove();
     }
     
-    console.log('🤖 Zeta AI: 기존 하단 플로팅 UI 숨김 완료');
+    this.log('🤖 Zeta AI: 기존 하단 플로팅 UI 숨김 완료');
   }
 
   // 🤖 Zeta AI: 모든 기존 플로팅 UI 숨김
@@ -4800,11 +5371,16 @@ class TTSManager {
     // 모든 TTS 관련 오버레이 제거
     this.removeAllHighlights();
     
-    console.log('🤖 Zeta AI: 모든 기존 플로팅 UI 숨김 완료');
+    this.log('🤖 Zeta AI: 모든 기존 플로팅 UI 숨김 완료');
   }
 
   // 🤖 Zeta AI / ChatGPT: 발화 큐에 추가
   addToZetaAISpeechQueue(text, language) {
+    // 플러그인이 비활성화된 경우 발화 큐 추가 중지
+    if (!this.isPluginEnabled) {
+      return;
+    }
+    
     if (!this.isZetaOrChatGPTMode()) {
       return;
     }
@@ -4821,14 +5397,14 @@ class TTSManager {
       speaker: this.zetaAICurrentSpeaker
     });
     
-    console.log(`🤖 Zeta AI / ChatGPT: 발화 큐에 추가 (${this.zetaAISpeechQueue.length}개 대기)`);
-    console.log(`🤖 Zeta AI: 추가된 텍스트: "${text.substring(0, 30)}..." (${currentVoice.name})`);
+    this.log(`🤖 Zeta AI / ChatGPT: 발화 큐에 추가 (${this.zetaAISpeechQueue.length}개 대기)`);
+    this.log(`🤖 Zeta AI: 추가된 텍스트: "${text.substring(0, 30)}..." (${currentVoice.name})`);
     
     // 큐 처리 시작 (이미 재생 중이 아니면)
     if (!this.zetaAIIsPlaying) {
       this.processZetaAISpeechQueue();
     } else {
-      console.log(`🤖 Zeta AI: 이미 재생 중이므로 큐에만 추가 (${this.zetaAISpeechQueue.length}개 대기)`);
+      this.log(`🤖 Zeta AI: 이미 재생 중이므로 큐에만 추가 (${this.zetaAISpeechQueue.length}개 대기)`);
     }
   }
 
@@ -4840,27 +5416,27 @@ class TTSManager {
     
     if (this.zetaAISpeechQueue.length === 0) {
       this.zetaAIIsPlaying = false;
-      console.log('🤖 Zeta AI: 발화 큐 비움');
+      this.log('🤖 Zeta AI: 발화 큐 비움');
       return;
     }
     
     this.zetaAIIsPlaying = true;
     const speechItem = this.zetaAISpeechQueue.shift();
     
-          console.log(`🤖 Zeta AI / ChatGPT: 발화 시작 (${this.zetaAISpeechQueue.length}개 남음)`);
-    console.log(`🤖 Zeta AI: 발화 텍스트: "${speechItem.text.substring(0, 30)}..." (${speechItem.voice.name})`);
+          this.log(`🤖 Zeta AI / ChatGPT: 발화 시작 (${this.zetaAISpeechQueue.length}개 남음)`);
+    this.log(`🤖 Zeta AI: 발화 텍스트: "${speechItem.text.substring(0, 30)}..." (${speechItem.voice.name})`);
     
     try {
       await this.playZetaAISpeechItem(speechItem);
     } catch (error) {
-      console.error('🤖 Zeta AI: 발화 실패:', error);
+      this.error('🤖 Zeta AI: 발화 실패:', error);
     } finally {
       // 다음 큐 아이템 처리
       setTimeout(() => {
         // 큐가 비어있으면 재생 상태를 false로 설정
         if (this.zetaAISpeechQueue.length === 0) {
           this.zetaAIIsPlaying = false;
-          console.log('🤖 Zeta AI: 발화 큐 완료, 재생 상태 false로 설정');
+          this.log('🤖 Zeta AI: 발화 큐 완료, 재생 상태 false로 설정');
         } else {
           this.processZetaAISpeechQueue();
         }
@@ -4908,24 +5484,24 @@ class TTSManager {
         
         // 재생 완료 시 정리
         this.zetaAICurrentAudio.addEventListener('ended', () => {
-          console.log('🤖 Zeta AI / ChatGPT: 발화 완료');
+          this.log('🤖 Zeta AI / ChatGPT: 발화 완료');
           this.zetaAICurrentAudio = null;
           resolve();
         });
         
         // 오류 처리
         this.zetaAICurrentAudio.addEventListener('error', (error) => {
-          console.error('🤖 Zeta AI / ChatGPT: 발화 오류:', error);
+          this.error('🤖 Zeta AI / ChatGPT: 발화 오류:', error);
           this.zetaAICurrentAudio = null;
           reject(error);
         });
         
         // 재생 시작
         await this.zetaAICurrentAudio.play();
-        console.log('🤖 Zeta AI / ChatGPT: 발화 재생 중...');
+        this.log('🤖 Zeta AI / ChatGPT: 발화 재생 중...');
         
       } catch (error) {
-        console.error('🤖 Zeta AI / ChatGPT: 발화 아이템 재생 실패:', error);
+        this.error('🤖 Zeta AI / ChatGPT: 발화 아이템 재생 실패:', error);
         reject(error);
       }
     });
@@ -4937,7 +5513,7 @@ class TTSManager {
       return; // Zeta AI / ChatGPT 사이트가 아니면 생성하지 않음
     }
     
-    console.log('🤖 Zeta AI / ChatGPT: 캐릭터 선택 UI 생성 시작');
+    this.log('🤖 Zeta AI / ChatGPT: 캐릭터 선택 UI 생성 시작');
     
     // 테마별 배경색 설정 (다른 플로팅 UI와 동일)
     const isDark = this.currentTheme === 'dark';
@@ -4951,7 +5527,7 @@ class TTSManager {
     // 우하단 캐릭터 선택 UI (화자1용)
     this.createZetaAICharacterUI('right', bgColor, textColor, borderColor);
     
-    console.log('🤖 Zeta AI / ChatGPT: 캐릭터 선택 UI 생성 완료');
+    this.log('🤖 Zeta AI / ChatGPT: 캐릭터 선택 UI 생성 완료');
   }
 
   // 🤖 Zeta AI: 개별 캐릭터 선택 UI 생성
@@ -5049,16 +5625,16 @@ class TTSManager {
       return;
     }
     
-    console.log(`🤖 Zeta AI / ChatGPT 캐릭터 선택: ${position} - ${selectedVoice.name}`);
+    this.log(`🤖 Zeta AI / ChatGPT 캐릭터 선택: ${position} - ${selectedVoice.name}`);
     
     if (position === 'left') {
       // 좌하단: 화자2 (AI 응답) 변경
       this.zetaAISpeaker2Voice = selectedVoice;
-      console.log(`🤖 Zeta AI / ChatGPT 화자2 변경: ${selectedVoice.name}`);
+      this.log(`🤖 Zeta AI / ChatGPT 화자2 변경: ${selectedVoice.name}`);
     } else {
       // 우하단: 화자1 (사용자 질문) 변경
       this.zetaAISpeaker1Voice = selectedVoice;
-      console.log(`🤖 Zeta AI / ChatGPT 화자1 변경: ${selectedVoice.name}`);
+      this.log(`🤖 Zeta AI / ChatGPT 화자1 변경: ${selectedVoice.name}`);
     }
     
     // UI 업데이트
@@ -5120,7 +5696,7 @@ class TTSManager {
       return;
     }
     
-    console.log('🤖 Zeta AI / ChatGPT: 캐릭터 UI 테마 업데이트 시작');
+    this.log('🤖 Zeta AI / ChatGPT: 캐릭터 UI 테마 업데이트 시작');
     
     // 기존 캐릭터 UI 제거
     this.cleanupZetaAICharacterUI();
@@ -5128,7 +5704,7 @@ class TTSManager {
     // 새로운 테마로 캐릭터 UI 재생성
     this.createZetaAICharacterSelectionUI();
     
-    console.log('🤖 Zeta AI / ChatGPT: 캐릭터 UI 테마 업데이트 완료');
+    this.log('🤖 Zeta AI / ChatGPT: 캐릭터 UI 테마 업데이트 완료');
   }
   
   // 🤖 Zeta AI 새로운 콘텐츠 오버레이 표시
@@ -5173,7 +5749,7 @@ class TTSManager {
       }
     }, 1000);
     
-    console.log('🤖 Zeta AI 새로운 콘텐츠 오버레이 표시:', text.substring(0, 50) + '...');
+    this.log('🤖 Zeta AI 새로운 콘텐츠 오버레이 표시:', text.substring(0, 50) + '...');
   }
 
   // 🤖 Zeta AI 바뀐 테이크 자동 생성 및 발화
@@ -5182,8 +5758,8 @@ class TTSManager {
       return; // Zeta AI 사이트가 아니면 실행하지 않음
     }
     
-    console.log('🤖 Zeta AI 자동 발화 시작:', text.substring(0, 30) + '...');
-    console.log('🤖 Zeta AI 언어:', language);
+    this.log('🤖 Zeta AI 자동 발화 시작:', text.substring(0, 30) + '...');
+    this.log('🤖 Zeta AI 언어:', language);
     
     try {
       // 기존 오디오 중지 (Zeta AI 자동 발화용)
@@ -5197,7 +5773,7 @@ class TTSManager {
       const currentVoice = this.zetaAICurrentSpeaker === 'speaker1' ? 
         this.zetaAISpeaker1Voice : this.zetaAISpeaker2Voice;
       
-      console.log(`🤖 Zeta AI 화자별 음성 적용: ${this.zetaAICurrentSpeaker} (${currentVoice.name})`);
+      this.log(`🤖 Zeta AI 화자별 음성 적용: ${this.zetaAICurrentSpeaker} (${currentVoice.name})`);
       
       // 현재 화자와 속도로 음성 생성 (제타 AI 전용 테이크 객체 생성)
       const zetaTake = {
@@ -5223,32 +5799,32 @@ class TTSManager {
         
         // 재생 완료 시 정리
         this.zetaAIAudio.addEventListener('ended', () => {
-          console.log('🤖 Zeta AI 자동 발화 완료');
+          this.log('🤖 Zeta AI 자동 발화 완료');
           this.zetaAIAudio = null;
         });
         
         // 오류 처리
         this.zetaAIAudio.addEventListener('error', (error) => {
-          console.error('🤖 Zeta AI 자동 발화 오류:', error);
+          this.error('🤖 Zeta AI 자동 발화 오류:', error);
           this.zetaAIAudio = null;
         });
         
         // 자동 발화 시작
         await this.zetaAIAudio.play();
-        console.log('🤖 Zeta AI 자동 발화 재생 중...');
+        this.log('🤖 Zeta AI 자동 발화 재생 중...');
         
       } else {
-        console.error('🤖 Zeta AI 음성 생성 실패');
+        this.error('🤖 Zeta AI 음성 생성 실패');
       }
       
     } catch (error) {
-      console.error('🤖 Zeta AI 자동 발화 실패:', error);
+      this.error('🤖 Zeta AI 자동 발화 실패:', error);
     }
   }
 
-  // 🔄 새로고침 버튼 클릭 처리
-  async handleRefreshButtonClick() {
-    console.log('🔄 새로고침 버튼 클릭: 글감 재수집 시작');
+  // 🔄 공용 리프레시 요청 함수
+  async requestRefresh() {
+    this.log('🔄 리프레시 요청: 글감 재수집 시작');
     
     // 새로고침 아이콘만 회전 애니메이션 시작 (반시계방향)
     if (this.refreshButton) {
@@ -5274,7 +5850,7 @@ class TTSManager {
       
       // 재수집 결과 확인
       if (this.preTakes && this.preTakes.length > 0) {
-        console.log(`✅ 글감 재수집 완료: ${this.preTakes.length}개 테이크`);
+        this.log(`✅ 글감 재수집 완료: ${this.preTakes.length}개 테이크`);
         this.updateStatus(`재수집 완료 (${this.preTakes.length}개)`, '#4CAF50');
         this.updateTakeCount();
         
@@ -5284,12 +5860,12 @@ class TTSManager {
         // 🤖 Zeta AI 모니터링 시작
         this.startZetaAIMonitoring();
       } else {
-        console.log('⚠️ 재수집된 테이크가 없습니다');
+        this.log('⚠️ 재수집된 테이크가 없습니다');
         this.updateStatus('재수집된 내용이 없습니다', '#F44336');
       }
       
     } catch (error) {
-      console.error('글감 재수집 실패:', error);
+      this.error('글감 재수집 실패:', error);
       this.updateStatus('재수집 실패', '#F44336');
     } finally {
       // 애니메이션 완료 후 아이콘만 원래 상태로 복원
@@ -5311,14 +5887,19 @@ class TTSManager {
     }
   }
 
+  // 🔄 새로고침 버튼 클릭 처리
+  async handleRefreshButtonClick() {
+    await this.requestRefresh();
+  }
+
   // 🎯 첫 번째 테이크부터 읽기 시작
   async startReadingFromFirst() {
     // 수집된 첫 번째 테이크 자동 재생
     if (this.preTakes && this.preTakes.length > 0) {
-      console.log('🎯 "읽어 보세요" 클릭: 수집된 테이크로 자동 재생 시작');
+      this.log('🎯 "읽어 보세요" 클릭: 수집된 테이크로 자동 재생 시작');
       await this.startPlaybackFromTake(this.preTakes[0]);
     } else {
-      console.log('🔍 "읽어 보세요" 클릭: 테이크가 없어서 페이지 분석 시작');
+      this.log('🔍 "읽어 보세요" 클릭: 테이크가 없어서 페이지 분석 시작');
       this.updateStatus('페이지 분석 중...', '#FF9800');
       // 페이지 분석 후 첫 번째 테이크 재생
       try {
@@ -5329,7 +5910,7 @@ class TTSManager {
           this.updateStatus('읽을 내용을 찾을 수 없습니다', '#F44336');
         }
       } catch (error) {
-        console.error('페이지 분석 실패:', error);
+        this.error('페이지 분석 실패:', error);
         this.updateStatus('페이지 분석 실패', '#F44336');
       }
     }
@@ -5537,7 +6118,7 @@ class TTSManager {
     // 화자 설정 저장
     await this.saveVoiceSetting(voice);
     
-    console.log(`🎤 화자 변경: ${voice.name} (${voice.id})`);
+    this.log(`🎤 화자 변경: ${voice.name} (${voice.id})`);
     
     // 화자가 실제로 변경된 경우에만 처리
     if (previousVoiceId !== voice.id) {
@@ -5558,7 +6139,7 @@ class TTSManager {
 
   // 🎤 화자/속도 변경 처리 (기존 테이크 재생 로직 활용)
   handleVoiceOrSpeedChange() {
-    console.log('🎤 화자/속도 변경으로 인한 재시작 처리 시작');
+    this.log('🎤 화자/속도 변경으로 인한 재시작 처리 시작');
     
     // 현재 재생 중인 테이크가 있는 경우에만 처리
     if (this.isPlaying && this.currentPlayList && this.currentTakeIndex >= 0) {
@@ -5577,7 +6158,7 @@ class TTSManager {
         this.stopWordTracking();
         
         // 기존 테이크 재생 로직을 사용하여 현재 테이크부터 다시 시작
-        console.log(`🎯 현재 테이크부터 새로운 설정으로 재시작: ${currentTake.id} (${this.currentTakeIndex + 1}/${this.currentPlayList.length})`);
+        this.log(`🎯 현재 테이크부터 새로운 설정으로 재시작: ${currentTake.id} (${this.currentTakeIndex + 1}/${this.currentPlayList.length})`);
         
         // 상태를 재생 중으로 유지하고 현재 테이크부터 재생
         this.isPlaying = true;
@@ -5592,7 +6173,7 @@ class TTSManager {
 
   // 🎤 화자 변경 처리 (레거시 - 호환성 유지)
   handleVoiceChange() {
-    console.log('🎤 화자 변경으로 인한 재시작 처리 시작');
+    this.log('🎤 화자 변경으로 인한 재시작 처리 시작');
     
     // 1. 현재 재생 상태 저장
     const wasPlaying = this.isPlaying;
@@ -5614,7 +6195,7 @@ class TTSManager {
     
     // 5. 재생 중이었다면 현재 테이크부터 새 목소리로 재시작
     if (wasPlaying && currentPlayList && currentPlayList.length > 0 && currentTakeIndex >= 0) {
-      console.log(`🎤 마지막 테이크 ${currentTakeIndex + 1}번부터 새 목소리로 재시작`);
+      this.log(`🎤 마지막 테이크 ${currentTakeIndex + 1}번부터 새 목소리로 재시작`);
       this.updateStatus(`새 목소리로 재시작 중...`, '#FF9800');
       
       // 잠시 후 재시작 (UI 업데이트 후)
@@ -5629,13 +6210,13 @@ class TTSManager {
 
   // 🗑️ 모든 버퍼링 제거
   clearAllBuffering() {
-    console.log('🗑️ 모든 버퍼링 제거 시작');
+    this.log('🗑️ 모든 버퍼링 제거 시작');
     
     // 1. audioBuffer의 모든 URL 해제
     Object.values(this.audioBuffer).forEach(url => {
       if (url && typeof url === 'string' && url.startsWith('blob:')) {
         URL.revokeObjectURL(url);
-        console.log(`🗑️ 버퍼 URL 해제: ${url.substring(0, 30)}...`);
+        this.log(`🗑️ 버퍼 URL 해제: ${url.substring(0, 30)}...`);
       }
     });
     
@@ -5648,7 +6229,7 @@ class TTSManager {
     // 4. AbortController로 진행 중인 요청 중단
     if (this.abortController) {
       this.abortController.abort();
-      console.log('🗑️ 진행 중인 TTS 요청 중단');
+      this.log('🗑️ 진행 중인 TTS 요청 중단');
     }
     this.abortController = new AbortController();
     
@@ -5660,7 +6241,7 @@ class TTSManager {
       });
     }
     
-    console.log('✅ 모든 버퍼링 제거 완료');
+    this.log('✅ 모든 버퍼링 제거 완료');
   }
 
   // 🎯 화자 메뉴에서 선택 상태 업데이트
@@ -5696,7 +6277,7 @@ class TTSManager {
       this.isPlaying = true; // 일시정지 상태에서도 isPlaying은 true
       this.updateBottomFloatingUIState();
       this.updateStatus('일시정지됨', '#FF9800');
-      console.log('⏸️ 재생 일시정지');
+      this.log('⏸️ 재생 일시정지');
     }
   }
 
@@ -5707,15 +6288,20 @@ class TTSManager {
       this.isPlaying = true;
       this.updateBottomFloatingUIState();
       this.updateStatus(`재생 중... (${this.currentPlayListIndex + 1}/${this.currentPlayList.length})`, '#4CAF50');
-      console.log('▶️ 재생 재개');
+      this.log('▶️ 재생 재개');
     }
   }
 
   // TTS 시작
   // 🎯 호환성을 위한 startTTS 래퍼 (레거시 시스템용)
   async startTTS(text, elementMetadata = null) {
-    console.log('⚠️ 레거시 startTTS 호출됨 - 새로운 시스템은 마우스 위치 기반입니다');
-    console.log('텍스트:', text?.substring(0, 50) + '...');
+    // 플러그인이 비활성화된 경우 TTS 중지
+    if (!this.isPluginEnabled) {
+      return;
+    }
+    
+    this.log('⚠️ 레거시 startTTS 호출됨 - 새로운 시스템은 마우스 위치 기반입니다');
+    this.log('텍스트:', text?.substring(0, 50) + '...');
     
     // 새로운 시스템에서는 사용자에게 안내만 제공
     this.updateStatus('마우스를 콘텐츠에 올리고 1-0번 키를 누르세요', '#FF9800');
@@ -5738,26 +6324,26 @@ class TTSManager {
       if (fullText && fullText.length > text.length * 0.8) {
         // 추출된 텍스트가 원본의 80% 이상이면 사용
         targetText = fullText;
-        console.log('선택된 요소에서 전체 텍스트 추출 완료');
+        this.log('선택된 요소에서 전체 텍스트 추출 완료');
       } else {
-        console.log('원본 텍스트 사용 (추출 실패 또는 부족)');
+        this.log('원본 텍스트 사용 (추출 실패 또는 부족)');
       }
     }
     
-    console.log('원본 텍스트 길이:', text.length);
-    console.log('처리할 텍스트 길이:', targetText.length);
-    console.log('텍스트 샘플:', targetText.substring(0, 100) + '...');
+    this.log('원본 텍스트 길이:', text.length);
+    this.log('처리할 텍스트 길이:', targetText.length);
+    this.log('텍스트 샘플:', targetText.substring(0, 100) + '...');
     
     // 🎯 기본 최대 길이 설정 (테이크별로 동적 조정)
     const defaultMaxLength = 250;
-    console.log(`텍스트 분할 시작 - 기본 최대 길이: ${defaultMaxLength}자`);
+    this.log(`텍스트 분할 시작 - 기본 최대 길이: ${defaultMaxLength}자`);
     
     const takes = [];
     let takeNumber = 1;
 
     // 1차 분할: 공백/탭만 있는 줄이 2번 이상 연속될 때마다 분할 (문단 구분)
     const blocks = targetText.split(/(?:[ \t]*\r?\n){2,}/);
-    console.log(`문단 분할: ${blocks.length}개 블록`);
+    this.log(`문단 분할: ${blocks.length}개 블록`);
 
     for (let block of blocks) {
       let remainingText = block.trim();
@@ -5785,7 +6371,7 @@ class TTSManager {
             language: currentLanguage,
             elementInfo: takeElementInfo
           });
-          console.log(`✅ 테이크 ${takeNumber}: ${currentLanguage} (${remainingText.length}자)`);
+          this.log(`✅ 테이크 ${takeNumber}: ${currentLanguage} (${remainingText.length}자)`);
           takeNumber++;
           break;
         }
@@ -5806,7 +6392,7 @@ class TTSManager {
             // 📍 테이크별 DOM 정보
             elementInfo: takeElementInfo
           });
-          console.log(`✅ 테이크 ${takeNumber}: ${currentLanguage} (${takeText.length}자)`);
+          this.log(`✅ 테이크 ${takeNumber}: ${currentLanguage} (${takeText.length}자)`);
           takeNumber++;
         }
         
@@ -5814,9 +6400,9 @@ class TTSManager {
       }
     }
     
-    console.log(`최종 테이크 개수: ${takes.length}`);
+    this.log(`최종 테이크 개수: ${takes.length}`);
     takes.forEach((take, index) => {
-      console.log(`🎯 테이크 ${index + 1} [${take.language}]: ${take.text.substring(0, 50)}... (${take.text.length}자)`);
+      this.log(`🎯 테이크 ${index + 1} [${take.language}]: ${take.text.substring(0, 50)}... (${take.text.length}자)`);
     });
     
     return takes;
@@ -5825,7 +6411,7 @@ class TTSManager {
   // 📍 테이크별 DOM 요소 정보 찾기
   findTakeElementInfo(takeText, sourceMetadata, sourceElement) {
     if (!sourceElement) {
-      console.log('소스 요소 없음, 기본 메타데이터 사용');
+      this.log('소스 요소 없음, 기본 메타데이터 사용');
       return {
         element: null,
         selector: sourceMetadata?.selector || '',
@@ -5840,7 +6426,7 @@ class TTSManager {
     if (targetElement && targetElement !== sourceElement) {
       const elementType = targetElement.tagName.toLowerCase();
       const elementDesc = elementType === 'p' ? '📝 문단' : '📦 영역';
-      console.log(`테이크 "${takeText.substring(0, 30)}..." → ${elementDesc}: <${elementType}>.${targetElement.className}`);
+      this.log(`테이크 "${takeText.substring(0, 30)}..." → ${elementDesc}: <${elementType}>.${targetElement.className}`);
       
       // 하위 요소 메타데이터 생성
       const takeMetadata = {
@@ -5859,7 +6445,7 @@ class TTSManager {
         confidence: elementType === 'p' ? 0.9 : 0.8  // p 태그는 더 높은 신뢰도
       };
     } else {
-      console.log(`테이크 "${takeText.substring(0, 30)}..." → 📦 원본 요소 사용`);
+      this.log(`테이크 "${takeText.substring(0, 30)}..." → 📦 원본 요소 사용`);
       
       // 원본 요소 정보 사용
       return {
@@ -5883,7 +6469,7 @@ class TTSManager {
     
     const keywordSample = takeWords.slice(0, Math.min(5, takeWords.length)).join(' ');
     
-    console.log(`테이크 컨테이너 탐색 - 키워드: "${keywordSample}"`);
+    this.log(`테이크 컨테이너 탐색 - 키워드: "${keywordSample}"`);
     
     // 하위 요소들을 BFS로 탐색
     const candidates = [];
@@ -5945,7 +6531,7 @@ class TTSManager {
       });
       
       const bestCandidate = candidates[0];
-      console.log(`🎯 최적 컨테이너 발견: <${bestCandidate.element.tagName.toLowerCase()}>, 점수: ${bestCandidate.score.toFixed(2)}, 텍스트 길이: ${bestCandidate.textLength}`);
+      this.log(`🎯 최적 컨테이너 발견: <${bestCandidate.element.tagName.toLowerCase()}>, 점수: ${bestCandidate.score.toFixed(2)}, 텍스트 길이: ${bestCandidate.textLength}`);
       return bestCandidate.element;
     }
     
@@ -6314,13 +6900,13 @@ class TTSManager {
     const japaneseCount = hiraganaCount + katakanaCount + (kanjiCount * 0.7); // 한자는 70% 가중치
     const totalLetters = koreanCount + englishCount + japaneseCount;
     
-    console.log(`언어 감지 분석: "${text.substring(0, 30)}..."`);
-    console.log(`한글: ${koreanCount}자, 영문: ${englishCount}자, 일본어: ${japaneseCount.toFixed(1)}자`);
-    console.log(`  ㄴ 히라가나: ${hiraganaCount}, 가타카나: ${katakanaCount}, 한자: ${kanjiCount}, 문법: ${japaneseGrammarCount}`);
+    this.log(`언어 감지 분석: "${text.substring(0, 30)}..."`);
+    this.log(`한글: ${koreanCount}자, 영문: ${englishCount}자, 일본어: ${japaneseCount.toFixed(1)}자`);
+    this.log(`  ㄴ 히라가나: ${hiraganaCount}, 가타카나: ${katakanaCount}, 한자: ${kanjiCount}, 문법: ${japaneseGrammarCount}`);
     
     // 텍스트가 너무 짧으면 기본값 한국어
     if (totalLetters < 5) {
-      console.log('텍스트가 너무 짧음 → 기본값 한국어');
+      this.log('텍스트가 너무 짧음 → 기본값 한국어');
       return 'ko';
     }
     
@@ -6329,46 +6915,51 @@ class TTSManager {
     const englishRatio = englishCount / totalLetters;
     const japaneseRatio = japaneseCount / totalLetters;
     
-    console.log(`비율 - 한글: ${(koreanRatio * 100).toFixed(1)}%, 영문: ${(englishRatio * 100).toFixed(1)}%, 일본어: ${(japaneseRatio * 100).toFixed(1)}%`);
+    this.log(`비율 - 한글: ${(koreanRatio * 100).toFixed(1)}%, 영문: ${(englishRatio * 100).toFixed(1)}%, 일본어: ${(japaneseRatio * 100).toFixed(1)}%`);
     
     // 🎯 일본어 우선 감지 (일본어 글자가 5% 이상이면 일본어)
     if (hiraganaCount > 0 || katakanaCount > 0 || japaneseGrammarCount > 0) {
       if (japaneseRatio >= 0.05 || japaneseGrammarCount >= 1) {  // 일본어 비율 5% 이상 또는 문법 요소 1개 이상
-        console.log('→ 일본어로 감지 (일본어 글자 5% 이상 또는 문법 요소 발견)');
+        this.log('→ 일본어로 감지 (일본어 글자 5% 이상 또는 문법 요소 발견)');
         return 'ja';
       }
     }
     
     // 🎯 한국어 감지
     if (koreanRatio >= 0.3) {  // 한글이 30% 이상이면 한국어
-      console.log('→ 한국어로 감지');
+      this.log('→ 한국어로 감지');
       return 'ko';
     }
     
     // 🎯 영어 감지
     if (englishRatio >= 0.7) {  // 영문이 70% 이상이면 영어
-      console.log('→ 영어로 감지');
+      this.log('→ 영어로 감지');
       return 'en';
     }
     
     // 🎯 상대적 비교로 최종 결정
     if (japaneseCount > koreanCount && japaneseCount > englishCount) {
-      console.log('→ 일본어 문자수 우세로 일본어');
+      this.log('→ 일본어 문자수 우세로 일본어');
       return 'ja';
     } else if (koreanCount > englishCount) {
-      console.log('→ 한글 문자수 우세로 한국어');
+      this.log('→ 한글 문자수 우세로 한국어');
       return 'ko';
     } else if (englishCount > 0) {
-      console.log('→ 영문 문자수 우세로 영어');
+      this.log('→ 영문 문자수 우세로 영어');
       return 'en';
     } else {
-      console.log('→ 기본값 한국어');
+      this.log('→ 기본값 한국어');
       return 'ko';
     }
   }
 
   // 테이크 생성 및 재생 (버퍼링 최적화)
   async generateAndPlayTake(takeIndex) {
+    // 플러그인이 비활성화된 경우 재생 중지
+    if (!this.isPluginEnabled) {
+      return;
+    }
+    
     if (takeIndex >= this.takes.length) return;
     
     const take = this.takes[takeIndex];
@@ -6396,7 +6987,7 @@ class TTSManager {
       await this.playAudio(audioUrl, takeIndex);
       
     } catch (error) {
-      console.error(`테이크 ${takeIndex + 1} 처리 실패:`, error);
+      this.error(`테이크 ${takeIndex + 1} 처리 실패:`, error);
       this.updateStatus('재생 실패', '#F44336');
     }
   }
@@ -6423,7 +7014,7 @@ class TTSManager {
       chunks.push(remainingText);
     }
     
-    console.log(`📝 텍스트 분할 완료: ${chunks.length}개 청크`, chunks.map((chunk, i) => `${i+1}: "${chunk.substring(0, 30)}..."`));
+    this.log(`📝 텍스트 분할 완료: ${chunks.length}개 청크`, chunks.map((chunk, i) => `${i+1}: "${chunk.substring(0, 30)}..."`));
     return chunks;
   }
 
@@ -6443,7 +7034,7 @@ class TTSManager {
       }
     };
 
-    console.log(`🎵 청크 ${chunkIndex + 1} TTS 생성 중...`);
+    this.log(`🎵 청크 ${chunkIndex + 1} TTS 생성 중...`);
     
     const response = await fetch(`${this.apiUrl}/api/tts`, {
       method: 'POST',
@@ -6464,13 +7055,13 @@ class TTSManager {
 
   // 🔗 오디오 파일들을 하나로 병합
   async mergeAudioUrls(audioUrls) {
-    console.log(`🔗 ${audioUrls.length}개 오디오 파일 병합 시작...`);
+    this.log(`🔗 ${audioUrls.length}개 오디오 파일 병합 시작...`);
     
     try {
       // 모든 오디오 파일을 AudioBuffer로 변환
       const audioBuffers = await Promise.all(
         audioUrls.map(async (url, index) => {
-          console.log(`📥 오디오 ${index + 1} 로딩 중...`);
+          this.log(`📥 오디오 ${index + 1} 로딩 중...`);
           const response = await fetch(url);
           const arrayBuffer = await response.arrayBuffer();
           const audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -6478,7 +7069,7 @@ class TTSManager {
         })
       );
 
-      console.log('📊 오디오 버퍼 정보:', audioBuffers.map((buffer, i) => 
+      this.log('📊 오디오 버퍼 정보:', audioBuffers.map((buffer, i) => 
         `${i+1}: ${buffer.duration.toFixed(2)}초, ${buffer.sampleRate}Hz`
       ));
 
@@ -6499,7 +7090,7 @@ class TTSManager {
         offset += buffer.length;
       }
 
-      console.log(`🎵 병합 완료: 총 ${mergedBuffer.duration.toFixed(2)}초`);
+      this.log(`🎵 병합 완료: 총 ${mergedBuffer.duration.toFixed(2)}초`);
 
       // AudioBuffer를 Blob으로 변환
       const length = mergedBuffer.length;
@@ -6522,7 +7113,7 @@ class TTSManager {
       return mergedUrl;
 
     } catch (error) {
-      console.error('🔗 오디오 병합 실패:', error);
+      this.error('🔗 오디오 병합 실패:', error);
       throw error;
     }
   }
@@ -6568,7 +7159,7 @@ class TTSManager {
   // 🔄 멀티 청크 TTS 생성
   async generateMultiChunkAudio(take) {
     const chunks = this.smartChunkSplit(take.text, take.language);
-    console.log(`🔄 멀티청크 TTS 시작: ${take.id} (${chunks.length}개 청크)`);
+    this.log(`🔄 멀티청크 TTS 시작: ${take.id} (${chunks.length}개 청크)`);
     
     // 진행률 표시 초기화
     this.updateStatus(`음성 생성 중... 0/${chunks.length}`, '#FF9800');
@@ -6587,9 +7178,9 @@ class TTSManager {
           const audioUrl = await audioPromises[i];
           audioUrls.push(audioUrl);
           this.updateStatus(`음성 생성 중... ${i + 1}/${chunks.length}`, '#FF9800');
-          console.log(`✅ 청크 ${i + 1}/${chunks.length} 완료`);
+          this.log(`✅ 청크 ${i + 1}/${chunks.length} 완료`);
         } catch (error) {
-          console.error(`❌ 청크 ${i + 1} 생성 실패:`, error);
+          this.error(`❌ 청크 ${i + 1} 생성 실패:`, error);
           throw error;
         }
       }
@@ -6598,31 +7189,36 @@ class TTSManager {
       this.updateStatus('음성 병합 중...', '#FF9800');
       const mergedAudioUrl = await this.mergeAudioUrls(audioUrls);
       
-      console.log(`🎉 멀티청크 TTS 완료: ${take.id}`);
+      this.log(`🎉 멀티청크 TTS 완료: ${take.id}`);
       return mergedAudioUrl;
       
     } catch (error) {
-      console.error(`❌ 멀티청크 TTS 실패: ${take.id}`, error);
+      this.error(`❌ 멀티청크 TTS 실패: ${take.id}`, error);
       throw error;
     }
   }
 
   // 음성 변환 (메인 진입점)
   async convertToSpeech(take) {
-    console.log(`🎵 TTS 음성 생성 시작: ${take.id}`);
-    console.log(`📝 텍스트 미리보기: "${take.text.substring(0, 50)}..."`);
-    console.log(`🗣️ 선택된 음성: ${this.selectedVoice.name} (${this.selectedVoice.id})`);
-    console.log(`🌍 언어: ${take.language}`);
-    console.log(`📏 텍스트 길이: ${take.text.length}자`);
+    // 플러그인이 비활성화된 경우 변환 중지
+    if (!this.isPluginEnabled) {
+      return null;
+    }
+    
+    this.log(`🎵 TTS 음성 생성 시작: ${take.id}`);
+    this.log(`📝 텍스트 미리보기: "${take.text.substring(0, 50)}..."`);
+    this.log(`🗣️ 선택된 음성: ${this.selectedVoice.name} (${this.selectedVoice.id})`);
+    this.log(`🌍 언어: ${take.language}`);
+    this.log(`📏 텍스트 길이: ${take.text.length}자`);
     
     // 멀티 청크 필요 여부 확인
     const isMultiChunk = this.needsMultiChunk(take.text, take.language);
     
     if (isMultiChunk) {
-      console.log(`🔄 멀티청크 TTS 모드: ${take.text.length}자 → 분할 처리`);
+      this.log(`🔄 멀티청크 TTS 모드: ${take.text.length}자 → 분할 처리`);
       return await this.generateMultiChunkAudio(take);
     } else {
-      console.log(`🎵 단일청크 TTS 모드: ${take.text.length}자 → 단일 처리`);
+      this.log(`🎵 단일청크 TTS 모드: ${take.text.length}자 → 단일 처리`);
       return await this.generateSingleChunkAudio(take.text, this.selectedVoice, take.language);
     }
   }
@@ -6643,8 +7239,8 @@ class TTSManager {
       }
     };
 
-    console.log('TTS API 요청:', requestData);
-    console.log('API URL:', `${this.apiUrl}/api/tts`);
+    this.log('TTS API 요청:', requestData);
+    this.log('API URL:', `${this.apiUrl}/api/tts`);
 
     try {
       const response = await fetch(`${this.apiUrl}/api/tts`, {
@@ -6656,17 +7252,17 @@ class TTSManager {
         signal: this.abortController?.signal
       });
 
-      console.log('API 응답 상태:', response.status);
-      console.log('API 응답 헤더:', Object.fromEntries(response.headers.entries()));
+      this.log('API 응답 상태:', response.status);
+      this.log('API 응답 헤더:', Object.fromEntries(response.headers.entries()));
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('API 오류 응답:', errorText);
+        this.error('API 오류 응답:', errorText);
         throw new Error(`TTS API 오류: ${response.status} - ${errorText}`);
       }
 
       const audioData = await response.arrayBuffer();
-      console.log('받은 오디오 데이터 크기:', audioData.byteLength, 'bytes');
+      this.log('받은 오디오 데이터 크기:', audioData.byteLength, 'bytes');
       
       if (audioData.byteLength === 0) {
         throw new Error('빈 오디오 데이터를 받았습니다.');
@@ -6674,11 +7270,11 @@ class TTSManager {
 
       const blob = new Blob([audioData], { type: 'audio/wav' });
       const url = URL.createObjectURL(blob);
-      console.log('생성된 오디오 URL:', url);
+      this.log('생성된 오디오 URL:', url);
       
       return url;
     } catch (error) {
-      console.error('TTS 변환 상세 오류:', error);
+      this.error('TTS 변환 상세 오류:', error);
       
       // 네트워크 오류인 경우
       if (error.name === 'TypeError' && error.message.includes('fetch')) {
@@ -6705,13 +7301,13 @@ class TTSManager {
       
       // 오디오 메타데이터 로드 완료 시 단어 트래킹 시작
       this.currentAudio.onloadedmetadata = () => {
-        console.log(`오디오 메타데이터 로드 완료 - 길이: ${this.currentAudio.duration}초`);
+        this.log(`오디오 메타데이터 로드 완료 - 길이: ${this.currentAudio.duration}초`);
         this.startWordTracking(takeIndex);
       };
       
       this.currentAudio.onended = () => {
         this.isPlaying = false;
-        console.log(`테이크 ${takeIndex} 재생 완료`);
+        this.log(`테이크 ${takeIndex} 재생 완료`);
         
         // 단어 트래킹 중지
         this.stopWordTracking();
@@ -6727,7 +7323,7 @@ class TTSManager {
             const nextTakeBuffered = this.getFromAudioCache(nextCacheKey);
             const delay = nextTakeBuffered ? 50 : 200; // 캐시된 경우 50ms, 아니면 200ms
             
-            console.log(`다음 테이크 ${this.currentTakeIndex + 1} ${nextTakeBuffered ? '버퍼링됨 (즉시)' : '생성 필요 (200ms 대기)'}`);
+            this.log(`다음 테이크 ${this.currentTakeIndex + 1} ${nextTakeBuffered ? '버퍼링됨 (즉시)' : '생성 필요 (200ms 대기)'}`);
             
             setTimeout(() => {
               this.generateAndPlayTake(this.currentTakeIndex);
@@ -6750,7 +7346,7 @@ class TTSManager {
       };
       
       this.currentAudio.onerror = (error) => {
-        console.error('오디오 재생 오류:', error);
+        this.error('오디오 재생 오류:', error);
         this.updateStatus('재생 오류', '#F44336');
         this.stopWordTracking();
         reject(error);
@@ -6781,9 +7377,9 @@ class TTSManager {
     const take = this.takes[takeIndex];
     if (!take) return;
 
-    console.log(`=== 📍 새로운 단어 트래킹 시작 ===`);
-    console.log(`테이크 ${takeIndex + 1}: "${take.text.substring(0, 50)}..."`);
-    console.log(`테이크 요소 정보:`, take.elementInfo);
+    this.log(`=== 📍 새로운 단어 트래킹 시작 ===`);
+    this.log(`테이크 ${takeIndex + 1}: "${take.text.substring(0, 50)}..."`);
+    this.log(`테이크 요소 정보:`, take.elementInfo);
 
     // currentTakeIndex 동기화
     this.currentTakeIndex = takeIndex;
@@ -6791,11 +7387,11 @@ class TTSManager {
     // 🎯 테이크별 정확한 DOM 요소 사용
     const targetElement = take.elementInfo?.element;
     if (!targetElement) {
-      console.error('테이크에 연결된 DOM 요소가 없음');
+      this.error('테이크에 연결된 DOM 요소가 없음');
       return;
     }
 
-    console.log(`트래킹 대상 요소: ${targetElement.tagName}.${targetElement.className} (${take.elementInfo.selector})`);
+    this.log(`트래킹 대상 요소: ${targetElement.tagName}.${targetElement.className} (${take.elementInfo.selector})`);
 
     // 🎯 해당 요소에서만 텍스트 추출 및 래핑
     this.wrapTakeWordsInSpecificElement(targetElement, take.text, takeIndex);
@@ -6804,7 +7400,7 @@ class TTSManager {
     this.currentTakeWords = take.text.split(/\s+/).filter(word => word.length > 0);
     this.currentTakeWordElements = [];
     
-    console.log(`테이크 ${takeIndex + 1} 단어 트래킹 시작: ${this.currentTakeWords.length}개 단어`);
+    this.log(`테이크 ${takeIndex + 1} 단어 트래킹 시작: ${this.currentTakeWords.length}개 단어`);
     
     // 🎯 UI 업데이트
     this.updateTakeInfo(takeIndex, this.takes.length);
@@ -6819,14 +7415,14 @@ class TTSManager {
   findBestContainerElement() {
     // 이미 컨테이너가 설정되어 있으면 재사용
     if (this.cachedContainer && document.contains(this.cachedContainer)) {
-      console.log(`캐시된 컨테이너 재사용:`, this.cachedContainer.tagName, this.cachedContainer.className);
+      this.log(`캐시된 컨테이너 재사용:`, this.cachedContainer.tagName, this.cachedContainer.className);
       return this.cachedContainer;
     }
 
     const originalElement = window.ttsSelector?.currentElement;
     if (!originalElement) return null;
 
-    console.log(`새 컨테이너 탐색 시작. 원본 요소:`, originalElement.tagName, originalElement.className);
+    this.log(`새 컨테이너 탐색 시작. 원본 요소:`, originalElement.tagName, originalElement.className);
 
     // 1단계: 전체 텍스트가 포함된 가장 가까운 상위 요소 찾기
     let candidate = originalElement;
@@ -6845,7 +7441,7 @@ class TTSManager {
       allTextWords.slice(-15).join(' ')     // 마지막 15단어
     ];
     
-    console.log(`키워드 샘플들:`, keywordSamples.map(k => `"${k.substring(0, 30)}..."`));
+    this.log(`키워드 샘플들:`, keywordSamples.map(k => `"${k.substring(0, 30)}..."`));
 
     // 상위 요소들을 순회하면서 최적 컨테이너 찾기
     while (candidate && candidate !== document.body) {
@@ -6857,7 +7453,7 @@ class TTSManager {
       if (hasKeywords && candidateText.length > maxTextLength) {
         bestContainer = candidate;
         maxTextLength = candidateText.length;
-        console.log(`더 나은 컨테이너 발견:`, candidate.tagName, candidate.className, `길이: ${candidateText.length}`);
+        this.log(`더 나은 컨테이너 발견:`, candidate.tagName, candidate.className, `길이: ${candidateText.length}`);
       }
 
       candidate = candidate.parentElement;
@@ -6867,7 +7463,7 @@ class TTSManager {
     const containerText = this.normalizeForMatching(bestContainer.textContent || '');
     
     if (containerText.length > normalizedAllText.length * 3) {
-      console.log(`컨테이너가 너무 큼 (${containerText.length} vs ${normalizedAllText.length}). 하위 요소 탐색`);
+      this.log(`컨테이너가 너무 큼 (${containerText.length} vs ${normalizedAllText.length}). 하위 요소 탐색`);
       
       // 하위 요소 중에서 키워드를 포함하는 가장 작은 요소 찾기
       const children = Array.from(bestContainer.children);
@@ -6876,7 +7472,7 @@ class TTSManager {
         const childHasKeywords = keywordSamples.some(sample => childText.includes(sample));
         
         if (childHasKeywords && childText.length < containerText.length) {
-          console.log(`더 적절한 하위 컨테이너:`, child.tagName, child.className);
+          this.log(`더 적절한 하위 컨테이너:`, child.tagName, child.className);
           bestContainer = child;
           break;
         }
@@ -6885,7 +7481,7 @@ class TTSManager {
 
     // 컨테이너 캐시
     this.cachedContainer = bestContainer;
-    console.log(`최종 선택 및 캐시된 컨테이너:`, bestContainer.tagName, bestContainer.className);
+    this.log(`최종 선택 및 캐시된 컨테이너:`, bestContainer.tagName, bestContainer.className);
     return bestContainer;
   }
 
@@ -6900,9 +7496,9 @@ class TTSManager {
 
   // 🎯 특정 요소 내에서만 테이크 단어 래핑 (새로운 트래킹 로직)
   wrapTakeWordsInSpecificElement(targetElement, takeText, takeIndex) {
-    console.log(`=== 특정 요소 내 단어 래핑 시작 ===`);
-    console.log(`대상 요소: ${targetElement.tagName}.${targetElement.className}`);
-    console.log(`테이크 텍스트: "${takeText.substring(0, 50)}..."`);
+    this.log(`=== 특정 요소 내 단어 래핑 시작 ===`);
+    this.log(`대상 요소: ${targetElement.tagName}.${targetElement.className}`);
+    this.log(`테이크 텍스트: "${takeText.substring(0, 50)}..."`);
     
     // 이전 래핑 해제 (현재 테이크만)
     this.unwrapWords();
@@ -6912,18 +7508,18 @@ class TTSManager {
     const normalizedElementText = this.normalizeForMatching(elementText);
     const normalizedTakeText = this.normalizeForMatching(takeText);
     
-    console.log(`요소 텍스트 길이: ${elementText.length}자`);
-    console.log(`테이크 텍스트 길이: ${takeText.length}자`);
+    this.log(`요소 텍스트 길이: ${elementText.length}자`);
+    this.log(`테이크 텍스트 길이: ${takeText.length}자`);
     
     // 테이크 텍스트가 요소 내에 있는지 확인
     const takeStartIndex = normalizedElementText.indexOf(normalizedTakeText.substring(0, Math.min(100, normalizedTakeText.length)));
     
     if (takeStartIndex === -1) {
-      console.warn('요소 내에서 테이크 텍스트를 찾을 수 없음');
+      this.warn('요소 내에서 테이크 텍스트를 찾을 수 없음');
       return;
     }
     
-    console.log(`테이크 시작 위치: ${takeStartIndex}`);
+    this.log(`테이크 시작 위치: ${takeStartIndex}`);
     
     // 🎯 요소 내 텍스트 노드들 수집
     const textNodes = [];
@@ -6946,7 +7542,7 @@ class TTSManager {
       textNodes.push(textNode);
     }
     
-    console.log(`텍스트 노드 ${textNodes.length}개 발견`);
+    this.log(`텍스트 노드 ${textNodes.length}개 발견`);
     
     // 🎯 테이크 범위에 해당하는 텍스트 노드만 래핑
     let currentIndex = 0;
@@ -6964,30 +7560,30 @@ class TTSManager {
       
       if (overlapStart < overlapEnd) {
         // 겹치는 부분이 있으면 이 노드를 래핑
-        console.log(`노드 래핑: "${nodeText.substring(0, 30)}..."`);
+        this.log(`노드 래핑: "${nodeText.substring(0, 30)}..."`);
         this.wrapSingleTextNode(textNode);
       }
       
       currentIndex = nodeEndIndex + 1; // 공백 고려
     }
     
-    console.log(`테이크 ${takeIndex + 1} 래핑 완료: ${this.currentTakeWordElements.length}개 단어`);
+    this.log(`테이크 ${takeIndex + 1} 래핑 완료: ${this.currentTakeWordElements.length}개 단어`);
   }
 
   // 현재 테이크 텍스트와 일치하는 부분만 래핑 (정확한 범위로 제한) - 기존 로직
   wrapCurrentTakeWords(element, takeText) {
-    console.log(`=== 테이크 ${this.currentTakeIndex + 1} 텍스트 래핑 시작 ===`);
-    console.log(`테이크 텍스트: ${takeText.substring(0, 50)}...`);
-    console.log(`테이크 길이: ${takeText.length}자`);
+    this.log(`=== 테이크 ${this.currentTakeIndex + 1} 텍스트 래핑 시작 ===`);
+    this.log(`테이크 텍스트: ${takeText.substring(0, 50)}...`);
+    this.log(`테이크 길이: ${takeText.length}자`);
     
     // 이전 래핑 해제
     const beforeUnwrap = document.querySelectorAll('.tts-word, .tts-current-take').length;
-    console.log(`래핑 해제 전 span 개수: ${beforeUnwrap}`);
+    this.log(`래핑 해제 전 span 개수: ${beforeUnwrap}`);
     
     this.unwrapWords();
     
     const afterUnwrap = document.querySelectorAll('.tts-word, .tts-current-take').length;
-    console.log(`래핑 해제 후 span 개수: ${afterUnwrap}`);
+    this.log(`래핑 해제 후 span 개수: ${afterUnwrap}`);
     
     // 원본 전체 텍스트 재구축 (이전 테이크들의 텍스트 포함)
     let originalFullText = '';
@@ -7005,9 +7601,9 @@ class TTSManager {
     
     const takeEndOffset = takeStartOffset + takeText.length;
     
-    console.log(`원본 전체 텍스트 길이: ${originalFullText.length}`);
-    console.log(`현재 테이크 오프셋: ${takeStartOffset} - ${takeEndOffset}`);
-    console.log(`현재 테이크 원본 텍스트: "${originalFullText.substring(takeStartOffset, takeEndOffset)}"`);
+    this.log(`원본 전체 텍스트 길이: ${originalFullText.length}`);
+    this.log(`현재 테이크 오프셋: ${takeStartOffset} - ${takeEndOffset}`);
+    this.log(`현재 테이크 원본 텍스트: "${originalFullText.substring(takeStartOffset, takeEndOffset)}"`);
     
     // DOM에서 텍스트 노드 수집
     const walker = document.createTreeWalker(
@@ -7045,20 +7641,20 @@ class TTSManager {
     const normalizedOriginalText = this.normalizeForMatching(originalFullText);
     const normalizedTakeText = this.normalizeForMatching(takeText);
     
-    console.log(`정규화된 DOM 텍스트 길이: ${normalizedDomText.length}`);
-    console.log(`정규화된 원본 텍스트 길이: ${normalizedOriginalText.length}`);
-    console.log(`DOM 텍스트 샘플: "${normalizedDomText.substring(0, 80)}..."`);
-    console.log(`원본 텍스트 샘플: "${normalizedOriginalText.substring(0, 80)}..."`);
+    this.log(`정규화된 DOM 텍스트 길이: ${normalizedDomText.length}`);
+    this.log(`정규화된 원본 텍스트 길이: ${normalizedOriginalText.length}`);
+    this.log(`DOM 텍스트 샘플: "${normalizedDomText.substring(0, 80)}..."`);
+    this.log(`원본 텍스트 샘플: "${normalizedOriginalText.substring(0, 80)}..."`);
     
     // 🎯 직접 현재 테이크 매칭 (이전 테이크 건너뛰기)
-    console.log(`현재 테이크 ${this.currentTakeIndex + 1} 직접 매칭 시작`);
+    this.log(`현재 테이크 ${this.currentTakeIndex + 1} 직접 매칭 시작`);
     
     // 현재 테이크의 처음 5개 단어 추출 (정규화된 텍스트에서)
     const currentTakeWords = normalizedTakeText.split(/\s+/).filter(w => w.length > 0);
     const keyWords = currentTakeWords.slice(0, Math.min(5, currentTakeWords.length)).join(' ');
     
-    console.log(`정규화된 테이크 텍스트: "${normalizedTakeText.substring(0, 100)}..."`);
-    console.log(`키워드 (처음 5단어): "${keyWords}"`);
+    this.log(`정규화된 테이크 텍스트: "${normalizedTakeText.substring(0, 100)}..."`);
+    this.log(`키워드 (처음 5단어): "${keyWords}"`);
     
     // 🚀 개선: 이전에 찾은 위치부터 시작 (캐시 활용)
     let searchStartPos = 0;
@@ -7066,16 +7662,16 @@ class TTSManager {
     if (this.currentTakeIndex > 0 && this.lastTakeEndPosition !== undefined) {
       // 이전 테이크가 끝난 위치부터 검색 시작
       searchStartPos = this.lastTakeEndPosition;
-      console.log(`이전 테이크 끝 위치부터 검색 시작: ${searchStartPos}`);
+      this.log(`이전 테이크 끝 위치부터 검색 시작: ${searchStartPos}`);
     } else {
-      console.log(`첫 번째 테이크, 처음부터 검색`);
+      this.log(`첫 번째 테이크, 처음부터 검색`);
     }
     
     // 현재 테이크 키워드를 바로 찾기
     let takeStartIndex = normalizedDomText.indexOf(keyWords, searchStartPos);
     
     if (takeStartIndex === -1) {
-      console.warn('키워드 매칭 실패. 전체 범위에서 재검색');
+      this.warn('키워드 매칭 실패. 전체 범위에서 재검색');
       
       // 3단계: 전체 텍스트에서 키워드의 모든 위치 찾기
       const allKeywordMatches = [];
@@ -7085,33 +7681,33 @@ class TTSManager {
         pos += keyWords.length;
       }
       
-      console.log(`키워드 "${keyWords}" 모든 매칭:`, allKeywordMatches);
+      this.log(`키워드 "${keyWords}" 모든 매칭:`, allKeywordMatches);
       
       if (allKeywordMatches.length > this.currentTakeIndex) {
         takeStartIndex = allKeywordMatches[this.currentTakeIndex];
-        console.log(`${this.currentTakeIndex}번째 키워드 매칭 사용: ${takeStartIndex}`);
+        this.log(`${this.currentTakeIndex}번째 키워드 매칭 사용: ${takeStartIndex}`);
       } else if (allKeywordMatches.length > 0) {
         // 키워드 매칭이 적으면 마지막 매칭 이후 위치 추정
         const lastMatch = allKeywordMatches[allKeywordMatches.length - 1];
         takeStartIndex = lastMatch + (this.currentTakeIndex - allKeywordMatches.length + 1) * 200; // 대략적 추정
-        console.log(`추정 위치 사용: ${takeStartIndex}`);
+        this.log(`추정 위치 사용: ${takeStartIndex}`);
       }
     }
     
     if (takeStartIndex === -1 || takeStartIndex >= normalizedDomText.length) {
-      console.warn('키워드 매칭 완전 실패. 단어별 매칭 시도');
+      this.warn('키워드 매칭 완전 실패. 단어별 매칭 시도');
       
       // 4단계: 첫 번째 단어만으로 매칭
       const firstWord = currentTakeWords[0];
       if (firstWord && firstWord.length > 2) {
         takeStartIndex = normalizedDomText.indexOf(firstWord, Math.max(0, estimatedStartPos - 100));
-        console.log(`첫 단어 "${firstWord}" 매칭 시도: ${takeStartIndex}`);
+        this.log(`첫 단어 "${firstWord}" 매칭 시도: ${takeStartIndex}`);
       }
       
       if (takeStartIndex === -1) {
-        console.error('모든 매칭 방법 실패. 테이크 건너뛰기');
-        console.log(`찾으려던 텍스트: "${normalizedTakeText.substring(0, 100)}..."`);
-        console.log(`DOM 텍스트 샘플: "${normalizedDomText.substring(Math.max(0, estimatedStartPos - 50), estimatedStartPos + 150)}..."`);
+        this.error('모든 매칭 방법 실패. 테이크 건너뛰기');
+        this.log(`찾으려던 텍스트: "${normalizedTakeText.substring(0, 100)}..."`);
+        this.log(`DOM 텍스트 샘플: "${normalizedDomText.substring(Math.max(0, estimatedStartPos - 50), estimatedStartPos + 150)}..."`);
         return;
       }
     }
@@ -7129,7 +7725,7 @@ class TTSManager {
     const safeTakeLength = Math.min(maxTakeLength, remainingDomLength);
     takeEndIndex = takeStartIndex + safeTakeLength;
     
-    console.log(`테이크 시작: ${takeStartIndex}, 끝: ${takeEndIndex}, 길이: ${safeTakeLength}`);
+    this.log(`테이크 시작: ${takeStartIndex}, 끝: ${takeEndIndex}, 길이: ${safeTakeLength}`);
     
     // 4. 다음 테이크 키워드 검사로 더 정확한 끝 위치 찾기
     if (this.currentTakeIndex + 1 < this.takes.length) {
@@ -7144,28 +7740,28 @@ class TTSManager {
       if (nextTakeStart !== -1 && nextTakeStart < searchEndPos) {
         // 다음 테이크가 너무 가까이 있으면 현재 테이크 끝을 조정
         takeEndIndex = Math.min(takeEndIndex, nextTakeStart);
-        console.log(`다음 테이크로 인한 조정: ${takeEndIndex}`);
+        this.log(`다음 테이크로 인한 조정: ${takeEndIndex}`);
       }
     }
     
     // 매칭된 영역 확인
     const actualMatchedText = normalizedDomText.substring(takeStartIndex, takeEndIndex);
-    console.log(`✅ 키워드 매칭 성공! 위치: ${takeStartIndex} - ${takeEndIndex}`);
-    console.log(`키워드: "${keyWords}"`);
-    console.log(`매칭 영역 (앞 50자): "${actualMatchedText.substring(0, 50)}..."`);
+    this.log(`✅ 키워드 매칭 성공! 위치: ${takeStartIndex} - ${takeEndIndex}`);
+    this.log(`키워드: "${keyWords}"`);
+    this.log(`매칭 영역 (앞 50자): "${actualMatchedText.substring(0, 50)}..."`);
     
     // 키워드 기반 매칭이므로 엄격한 유사도 검사 생략
     const keywordMatch = actualMatchedText.includes(keyWords);
     if (!keywordMatch) {
-      console.warn('키워드가 매칭 영역에 포함되지 않음');
+      this.warn('키워드가 매칭 영역에 포함되지 않음');
       // 그래도 계속 진행 (위치 추정이 정확하지 않을 수 있음)
     }
     
-    console.log(`실제 테이크 길이: ${normalizedTakeText.length}, 매칭 영역 길이: ${actualMatchedText.length}`);
+    this.log(`실제 테이크 길이: ${normalizedTakeText.length}, 매칭 영역 길이: ${actualMatchedText.length}`);
     
     // 길이 차이가 너무 크면 조정
     if (Math.abs(actualMatchedText.length - normalizedTakeText.length) > normalizedTakeText.length * 0.5) {
-      console.log('길이 차이가 큼. 원래 테이크 길이로 조정');
+      this.log('길이 차이가 큼. 원래 테이크 길이로 조정');
       takeEndIndex = takeStartIndex + normalizedTakeText.length;
       if (takeEndIndex > normalizedDomText.length) {
         takeEndIndex = normalizedDomText.length;
@@ -7174,7 +7770,7 @@ class TTSManager {
 
     // 🎯 테이크 끝 위치 캐시 (다음 테이크에서 사용)
     this.lastTakeEndPosition = takeEndIndex;
-    console.log(`테이크 ${this.currentTakeIndex + 1} 끝 위치 캐시: ${takeEndIndex}`);
+    this.log(`테이크 ${this.currentTakeIndex + 1} 끝 위치 캐시: ${takeEndIndex}`);
 
     // 테이크 범위에 해당하는 텍스트 노드들만 래핑
     this.wrapTextInRange(nodeInfos, takeStartIndex, takeEndIndex, normalizedDomText);
@@ -7256,7 +7852,7 @@ class TTSManager {
       });
       
       textNode.parentNode.replaceChild(fragment, textNode);
-      console.log(`텍스트 노드 래핑 완료: ${words.filter(w => w.trim().length > 0).length}개 단어`);
+      this.log(`텍스트 노드 래핑 완료: ${words.filter(w => w.trim().length > 0).length}개 단어`);
     }
   }
 
@@ -7302,7 +7898,7 @@ class TTSManager {
           });
         } catch (e) {
           // 스크롤 실패 시 무시
-          console.log('스크롤 실패:', e);
+          this.log('스크롤 실패:', e);
         }
         
         // 🎯 UI 업데이트 - 현재 단어 정보
@@ -7313,7 +7909,7 @@ class TTSManager {
     
     // 디버깅 정보 (현재 테이크 기준)
     if (wordIndex % 5 === 0) { // 5번째 단어마다 로그
-      console.log(`현재 테이크 단어 트래킹: ${wordIndex}/${this.currentTakeWordElements.length} (${Math.round(progress * 100)}%)`);
+      this.log(`현재 테이크 단어 트래킹: ${wordIndex}/${this.currentTakeWordElements.length} (${Math.round(progress * 100)}%)`);
     }
   }
 
@@ -7332,17 +7928,17 @@ class TTSManager {
 
   // 단어 래핑 해제 (현재 테이크만)
   unwrapWords() {
-    console.log(`unwrapWords 호출됨 - 테이크 ${this.currentTakeIndex}`);
+    this.log(`unwrapWords 호출됨 - 테이크 ${this.currentTakeIndex}`);
     
     // 🎯 현재 테이크 전용 클래스로 정확한 해제
     const currentTakeSelector = `.tts-take-${this.currentTakeIndex}, .tts-current-take`;
     const wrappedWords = document.querySelectorAll(currentTakeSelector);
-    console.log(`현재 테이크 래핑된 span 개수: ${wrappedWords.length}`);
+    this.log(`현재 테이크 래핑된 span 개수: ${wrappedWords.length}`);
     
     wrappedWords.forEach((span, index) => {
       const parent = span.parentNode;
       if (parent) {
-        console.log(`테이크 ${this.currentTakeIndex} span ${index + 1} 해제: "${span.textContent}"`);
+        this.log(`테이크 ${this.currentTakeIndex} span ${index + 1} 해제: "${span.textContent}"`);
         parent.replaceChild(document.createTextNode(span.textContent), span);
         parent.normalize(); // 인접한 텍스트 노드들을 합치기
       }
@@ -7354,10 +7950,10 @@ class TTSManager {
     
     // 해제 후 다시 확인 (현재 테이크만)
     const remainingCurrentSpans = document.querySelectorAll(currentTakeSelector);
-    console.log(`현재 테이크 해제 후 남은 span 개수: ${remainingCurrentSpans.length}`);
+    this.log(`현재 테이크 해제 후 남은 span 개수: ${remainingCurrentSpans.length}`);
     
     if (remainingCurrentSpans.length > 0) {
-      console.warn(`경고: 현재 테이크의 span이 ${remainingCurrentSpans.length}개 남아있습니다.`);
+      this.warn(`경고: 현재 테이크의 span이 ${remainingCurrentSpans.length}개 남아있습니다.`);
       // 강제로 남은 현재 테이크 span들만 해제
       remainingCurrentSpans.forEach(span => {
         const parent = span.parentNode;
@@ -7370,7 +7966,7 @@ class TTSManager {
     
     // 전체 span 상태 확인 (디버깅용)
     const allTTSSpans = document.querySelectorAll('.tts-word');
-    console.log(`전체 TTS span 개수: ${allTTSSpans.length}`);
+    this.log(`전체 TTS span 개수: ${allTTSSpans.length}`);
   }
 
   // 🎯 메모리 최적화: 다음 테이크 미리 생성 (새로운 캐시 시스템)
@@ -7396,7 +7992,7 @@ class TTSManager {
 
   // 모든 재생 중지 및 초기화
   stopAll() {
-    console.log('TTS 모든 재생 중지');
+    this.log('TTS 모든 재생 중지');
     
     // AbortController로 진행 중인 요청 중지
     if (this.abortController) {

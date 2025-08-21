@@ -1,4 +1,4 @@
-/**
+ /**
  * HTML 분석 사이트별 특화 로직
  * 특정 사이트(cnn, billboard, music business worldwide, naver, daum 등)에 대한 분석 및 제외 로직
  */
@@ -100,6 +100,40 @@ class HTMLAnalyzerSites {
       }
     }
     
+    // 노션(Notion) 특화 로직
+    if (hostname.includes('notion.so') || hostname.includes('notion.site')) {
+      console.log('📝 노션 사이트 감지');
+      
+      // 노션 자동 리프레시 설정
+      this.setupNotionAutoRefresh();
+      
+      // 노션 페이지 콘텐츠 영역 검색 (.notion-page-content)
+      const notionPageContent = body.querySelector('.notion-page-content');
+      if (notionPageContent) {
+        console.log('✅ 노션 페이지 콘텐츠 영역 발견: .notion-page-content');
+        return notionPageContent;
+      }
+      
+      // 대체 선택자들도 시도
+      const notionSelectors = [
+        '.notion-page-content',    // 기본 페이지 콘텐츠
+        '.notion-page-body',       // 페이지 본문
+        '.notion-page',            // 페이지 전체
+        '.notion-content',         // 콘텐츠 영역
+        '[data-block-id]',         // 블록 ID가 있는 요소들
+        '.notion-text-block',      // 텍스트 블록들
+        '.notion-page-content-inner' // 내부 콘텐츠
+      ];
+      
+      for (const selector of notionSelectors) {
+        const element = body.querySelector(selector);
+        if (element && element.textContent?.trim().length > 20) {
+          console.log(`✅ 노션 콘텐츠 영역 발견: ${selector}`);
+          return element;
+        }
+      }
+    }
+    
     // CNN 특화 로직
     if (hostname.includes('cnn.com')) {
       console.log('📺 CNN 사이트 감지');
@@ -169,9 +203,73 @@ class HTMLAnalyzerSites {
     return null;
   }
 
+  // 📝 노션 자동 리프레시 설정
+  setupNotionAutoRefresh() {
+    // 이미 설정되어 있으면 중복 방지
+    if (this.notionAutoRefreshSetup) {
+      return;
+    }
+    
+    this.notionAutoRefreshSetup = true;
+    console.log('📝 노션 자동 리프레시 설정 시작');
+    
+    // 2초 후 첫 번째 리프레시
+    setTimeout(() => {
+      this.triggerNotionRefresh();
+    }, 2000);
+    
+    console.log('📝 노션 자동 리프레시 설정 완료: 2초 후 1회 실행');
+  }
+
+  // 📝 노션 리프레시 트리거
+  triggerNotionRefresh() {
+    // TTS 매니저가 존재하고 requestRefresh 함수가 있으면 호출
+    if (window.ttsManager && typeof window.ttsManager.requestRefresh === 'function') {
+      console.log('📝 노션 자동 리프레시 실행');
+      window.ttsManager.requestRefresh();
+    } else {
+      console.log('📝 TTS 매니저 또는 requestRefresh 함수를 찾을 수 없음');
+    }
+  }
+
   // 🎯 사이트별 특화 제외 요소 판단
   isSiteSpecificExcludedElement(hostname, element, className, elementId) {
     const textContent = element.textContent?.trim() || '';
+    const textLength = textContent.length;
+    
+    // 노션(Notion) 특화 제외 로직
+    if (hostname.includes('notion.so') || hostname.includes('notion.site')) {
+      // 노션 UI 요소들 제외
+      const notionExcludedClasses = [
+        'notion-sidebar', 'notion-header', 'notion-footer', 'notion-navigation',
+        'notion-menu', 'notion-search', 'notion-breadcrumb', 'notion-toolbar',
+        'notion-status-bar', 'notion-comments', 'notion-share', 'notion-export',
+        'notion-settings', 'notion-help', 'notion-feedback', 'notion-upgrade',
+        'notion-template', 'notion-gallery', 'notion-calendar', 'notion-database',
+        'notion-table', 'notion-kanban', 'notion-timeline', 'notion-board'
+      ];
+      
+      if (notionExcludedClasses.some(cls => className.includes(cls) || elementId.includes(cls))) {
+        console.log(`📝 노션 제외: "${className}" 또는 "${elementId}"`);
+        return true;
+      }
+      
+      // 노션 버튼/인터페이스 텍스트 패턴
+      const notionButtonPatterns = [
+        /^(add|create|new|edit|delete|share|export|import|duplicate|move|copy)$/i,
+        /^(undo|redo|save|cancel|close|back|forward|refresh|reload)$/i,
+        /^(search|filter|sort|view|hide|show|expand|collapse)$/i,
+        /^(comment|reply|like|bookmark|favorite|star|pin)$/i,
+        /^(template|gallery|list|board|calendar|timeline|kanban)$/i,
+        /^(upgrade|premium|pro|enterprise|team|workspace)$/i,
+        /^(help|support|feedback|bug|feature|request)$/i
+      ];
+      
+      if (notionButtonPatterns.some(pattern => pattern.test(textContent))) {
+        console.log(`📝 노션 버튼 텍스트 제외: "${textContent}"`);
+        return true;
+      }
+    }
     
     // 네이버 뉴스 특화 제외 로직
     if (hostname.includes('news.naver.com')) {
@@ -345,6 +443,36 @@ class HTMLAnalyzerSites {
     if (['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tagName)) {
       if (textLength >= 2) { // 매우 짧은 제목도 포함
         console.log(`🏷️ 제목 태그 우선 포함 (${hostname}): <${tagName}> "${text}"`);
+        return true;
+      }
+    }
+    
+    // 노션(Notion) 특화 본문 판단
+    if (hostname.includes('notion.so') || hostname.includes('notion.site')) {
+      // 노션 페이지 제목 (짧아도 의미 있음)
+      if (textLength >= 2 && (
+        className.includes('notion-page-title') || 
+        className.includes('notion-text-block') ||
+        className.includes('notion-bulleted-list-block') ||
+        className.includes('notion-numbered-list-block') ||
+        className.includes('notion-toggle-block') ||
+        className.includes('notion-code-block') ||
+        className.includes('notion-quote-block') ||
+        elementId.includes('notion')
+      )) {
+        console.log(`📝 노션 콘텐츠 포함: "${text}" (${textLength}자)`);
+        return true;
+      }
+      
+      // 노션 특화 본문 영역 클래스
+      const notionContentClasses = [
+        'notion-page-content', 'notion-page-body', 'notion-content',
+        'notion-text-block', 'notion-bulleted-list-block', 'notion-numbered-list-block',
+        'notion-toggle-block', 'notion-code-block', 'notion-quote-block'
+      ];
+      
+      if (notionContentClasses.some(cls => className.includes(cls))) {
+        console.log(`📝 노션 본문 클래스 감지: "${className}"`);
         return true;
       }
     }
