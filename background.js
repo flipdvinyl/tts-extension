@@ -29,14 +29,20 @@ function updateExtensionIcon(isEnabled) {
 chrome.action.onClicked.addListener((tab) => {
   console.log('TTS Text Reader 아이콘이 클릭되었습니다.');
   
-  // 현재 탭에서 content script와 통신
-  chrome.tabs.sendMessage(tab.id, { action: 'toggle' }, (response) => {
-    if (chrome.runtime.lastError) {
-      console.log('Content script가 아직 로드되지 않았습니다.');
-    } else if (response && response.success) {
-      // 플러그인 상태에 따라 아이콘 변경
-      updateExtensionIcon(response.enabled);
-    }
+  // 익스텐션 아이콘의 위치 정보를 가져오기 위해 액션 영역 정보 요청
+  chrome.action.getUserSettings().then((settings) => {
+    // 현재 탭에서 content script와 통신 (아이콘 위치 정보 포함)
+    chrome.tabs.sendMessage(tab.id, { 
+      action: 'toggle',
+      iconPosition: 'top-right' // 익스텐션 아이콘은 항상 브라우저 우상단에 위치
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.log('Content script가 아직 로드되지 않았습니다.');
+      } else if (response && response.success) {
+        // 플러그인 상태에 따라 아이콘 변경
+        updateExtensionIcon(response.enabled);
+      }
+    });
   });
 });
 

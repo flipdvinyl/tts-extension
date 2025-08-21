@@ -233,7 +233,7 @@ class TTSManager {
   setupMessageListener() {
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       if (request.action === 'toggle') {
-        this.togglePlugin();
+        this.togglePlugin(request.iconPosition);
         sendResponse({ success: true, enabled: this.isPluginEnabled });
       }
       return true; // 비동기 응답을 위해 true 반환
@@ -271,13 +271,227 @@ class TTSManager {
   }
 
   // 🔄 플러그인 on/off 토글
-  togglePlugin() {
-    this.isPluginEnabled = !this.isPluginEnabled;
+  togglePlugin(iconPosition = 'top-right') {
+    // 플로팅 옵션 메뉴 표시 (아이콘 위치 정보 전달)
+    this.showFloatingOptionsMenu(iconPosition);
+  }
+
+  // 🎛️ 플로팅 옵션 메뉴 표시
+  showFloatingOptionsMenu(iconPosition = 'top-right') {
+    // 기존 메뉴 제거
+    this.removeFloatingOptionsMenu();
     
-    if (this.isPluginEnabled) {
+    // 테마별 색상 설정
+    const isDark = this.currentTheme === 'dark';
+    const bgColor = isDark ? 'rgba(0, 0, 0, 0.9)' : 'rgba(255, 255, 255, 0.95)';
+    const textColor = isDark ? 'rgba(255, 255, 255, 0.9)' : '#1d1d1d';
+    const borderColor = isDark ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.1)';
+    
+    // 익스텐션 아이콘 바로 아래 위치 계산 (위로 25px 이동)
+    const iconOffset = 25; // 아이콘에서 아래로 25px 떨어진 위치 (기존 50px에서 25px 위로)
+    const menuPosition = iconPosition === 'top-right' ? {
+      top: `${iconOffset}px`,
+      right: '20px',
+      left: 'auto'
+    } : {
+      top: `${iconOffset}px`,
+      left: '20px',
+      right: 'auto'
+    };
+    
+    // 메뉴 컨테이너 생성
+    this.floatingOptionsMenu = document.createElement('div');
+    this.floatingOptionsMenu.id = 'tts-floating-options-menu';
+    this.floatingOptionsMenu.style.cssText = `
+      position: fixed !important;
+      top: ${menuPosition.top} !important;
+      left: ${menuPosition.left} !important;
+      right: ${menuPosition.right} !important;
+      background: ${bgColor} !important;
+      color: ${textColor} !important;
+      border: 1px solid ${borderColor} !important;
+      border-radius: 12px !important;
+      padding: 20px !important;
+      min-width: 280px !important;
+      z-index: 100001 !important;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+      font-size: 14px !important;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3) !important;
+      backdrop-filter: blur(10px) !important;
+    `;
+    
+    // 제목
+    const title = document.createElement('div');
+    title.textContent = 'TLDRL Options';
+    title.style.cssText = `
+      font-weight: 600 !important;
+      font-size: 16px !important;
+      margin-bottom: 16px !important;
+      text-align: left !important;
+      color: ${textColor} !important;
+    `;
+    
+    // 옵션 1: Enable the extension
+    const enableOption = this.createToggleOption(
+      'Enable the extension',
+      this.isPluginEnabled,
+      (enabled) => this.toggleExtensionEnabled(enabled),
+      'enable-extension'
+    );
+    
+    // 옵션 2: Show the take list (Enable the extension이 On일 때만 작동)
+    const showTakeListOption = this.createToggleOption(
+      'Show the take list',
+      this.isPluginEnabled && this.floatingUI && this.floatingUI.style.display !== 'none',
+      (enabled) => {
+        if (this.isPluginEnabled) {
+          this.toggleTakeListVisibility(enabled);
+        }
+      },
+      'show-take-list'
+    );
+    
+    // Enable the extension이 Off일 때 Show the take list 옵션 비활성화
+    if (!this.isPluginEnabled) {
+      showTakeListOption.style.opacity = '0.5';
+      showTakeListOption.style.pointerEvents = 'none';
+    }
+    
+    // 옵션 3: Show the floating toolbar
+    const showFloatingToolbarOption = this.createToggleOption(
+      'Show the floating toolbar',
+      this.isPluginEnabled && this.bottomFloatingUI && this.bottomFloatingUI.style.display !== 'none',
+      (enabled) => {
+        if (this.isPluginEnabled) {
+          this.toggleBottomFloatingToolbar(enabled);
+        }
+      },
+      'show-floating-toolbar'
+    );
+    
+    // Enable the extension이 Off일 때 Show the floating toolbar 옵션 비활성화
+    if (!this.isPluginEnabled) {
+      showFloatingToolbarOption.style.opacity = '0.5';
+      showFloatingToolbarOption.style.pointerEvents = 'none';
+    }
+    
+    // 메뉴 조립
+    this.floatingOptionsMenu.appendChild(title);
+    this.floatingOptionsMenu.appendChild(enableOption);
+    this.floatingOptionsMenu.appendChild(showTakeListOption);
+    this.floatingOptionsMenu.appendChild(showFloatingToolbarOption);
+    
+    // 배경 클릭 시 메뉴 닫기 기능 제거 (외부 영역 클릭으로만 닫기)
+    // this.floatingOptionsMenu.addEventListener('click', (e) => {
+    //   if (e.target === this.floatingOptionsMenu) {
+    //     this.removeFloatingOptionsMenu();
+    //   }
+    // });
+    
+    // 외부 영역 클릭 시 메뉴 닫기
+    this.handleOutsideClick = (e) => {
+      if (this.floatingOptionsMenu && !this.floatingOptionsMenu.contains(e.target)) {
+        this.removeFloatingOptionsMenu();
+      }
+    };
+    
+    // 약간의 지연을 두어 현재 클릭 이벤트가 처리된 후 외부 클릭 감지 시작
+    setTimeout(() => {
+      document.addEventListener('click', this.handleOutsideClick);
+    }, 100);
+    
+    // ESC 키로 메뉴 닫기
+    const handleEsc = (e) => {
+      if (e.key === 'Escape') {
+        this.removeFloatingOptionsMenu();
+        document.removeEventListener('keydown', handleEsc);
+      }
+    };
+    document.addEventListener('keydown', handleEsc);
+    
+    document.body.appendChild(this.floatingOptionsMenu);
+    console.log('🎛️ 플로팅 옵션 메뉴 표시');
+  }
+
+  // 🎛️ 토글 옵션 생성
+  createToggleOption(label, isEnabled, onChange, optionType = '') {
+    const container = document.createElement('div');
+    container.style.cssText = `
+      display: flex !important;
+      justify-content: space-between !important;
+      align-items: center !important;
+      padding: 12px 0 !important;
+      border-bottom: 1px solid rgba(125, 125, 125, 0.2) !important;
+    `;
+    
+    // 옵션 타입을 data 속성으로 추가
+    if (optionType) {
+      container.setAttribute('data-option', optionType);
+    }
+    
+    // 라벨
+    const labelElement = document.createElement('span');
+    labelElement.textContent = label;
+    labelElement.style.cssText = `
+      color: ${this.currentTheme === 'dark' ? 'rgba(255, 255, 255, 0.9)' : '#1d1d1d'} !important;
+      font-size: 14px !important;
+    `;
+    
+    // 토글 스위치
+    const toggle = document.createElement('div');
+    toggle.style.cssText = `
+      width: 44px !important;
+      height: 24px !important;
+      background: ${isEnabled ? '#227cff' : 'rgba(125, 125, 125, 0.3)'} !important;
+      border-radius: 12px !important;
+      position: relative !important;
+      cursor: pointer !important;
+      transition: background 0.2s ease !important;
+    `;
+    
+    // 토글 핸들
+    const handle = document.createElement('div');
+    handle.style.cssText = `
+      width: 20px !important;
+      height: 20px !important;
+      background: white !important;
+      border-radius: 50% !important;
+      position: absolute !important;
+      top: 2px !important;
+      left: ${isEnabled ? '22px' : '2px'} !important;
+      transition: left 0.2s ease !important;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2) !important;
+    `;
+    
+    toggle.appendChild(handle);
+    
+    // 토글 상태를 내부적으로 추적
+    let currentState = isEnabled;
+    
+    // 클릭 이벤트
+    toggle.addEventListener('click', () => {
+      const newState = !currentState;
+      currentState = newState;
+      onChange(newState);
+      
+      // 토글 상태 업데이트
+      toggle.style.background = newState ? '#227cff' : 'rgba(125, 125, 125, 0.3)';
+      handle.style.left = newState ? '22px' : '2px';
+    });
+    
+    container.appendChild(labelElement);
+    container.appendChild(toggle);
+    
+    return container;
+  }
+
+  // 🎛️ 익스텐션 활성화/비활성화 토글
+  toggleExtensionEnabled(enabled) {
+    this.isPluginEnabled = enabled;
+    
+    if (enabled) {
       this.log('🟢 TTS 플러그인 활성화');
       this.showUI();
-      // 기존 상태 복원
       if (this.bottomFloatingUI) {
         this.bottomFloatingUI.style.display = 'block';
       }
@@ -285,25 +499,84 @@ class TTSManager {
       console.log('🔴 TTS 플러그인 비활성화');
       this.stopAll();
       this.hideUI();
-      // 하단 플로팅 UI도 완전히 숨기기
       if (this.bottomFloatingUI) {
         this.bottomFloatingUI.style.display = 'none';
       }
-      // 플로팅 아이콘도 숨기기
       this.hideTakeHoverIcon();
-      // 🎥 YouTube 아이콘도 제거
       this.removeYouTubeIcon();
-      // 모든 오버레이 제거
       this.removeAllHighlights();
+      
+      // Enable the extension이 Off일 때 Show the take list와 floating toolbar도 자동으로 Off
+      if (this.floatingUI) {
+        this.floatingUI.style.display = 'none';
+      }
+      if (this.bottomFloatingUI) {
+        this.bottomFloatingUI.style.display = 'none';
+      }
     }
-    
-    console.log(`🔄 플러그인 상태: ${this.isPluginEnabled ? '활성화' : '비활성화'}`);
     
     // 백그라운드 스크립트에 아이콘 업데이트 요청
     chrome.runtime.sendMessage({ 
       action: 'updateIcon', 
       enabled: this.isPluginEnabled 
     });
+    
+    // 플로팅 옵션 메뉴가 열려있다면 옵션 상태 업데이트
+    if (this.floatingOptionsMenu) {
+      // Show the take list 옵션 업데이트
+      const showTakeListOption = this.floatingOptionsMenu.querySelector('[data-option="show-take-list"]');
+      if (showTakeListOption) {
+        if (!enabled) {
+          showTakeListOption.style.opacity = '0.5';
+          showTakeListOption.style.pointerEvents = 'none';
+        } else {
+          showTakeListOption.style.opacity = '1';
+          showTakeListOption.style.pointerEvents = 'auto';
+        }
+      }
+      
+      // Show the floating toolbar 옵션 업데이트
+      const showFloatingToolbarOption = this.floatingOptionsMenu.querySelector('[data-option="show-floating-toolbar"]');
+      if (showFloatingToolbarOption) {
+        if (!enabled) {
+          showFloatingToolbarOption.style.opacity = '0.5';
+          showFloatingToolbarOption.style.pointerEvents = 'none';
+        } else {
+          showFloatingToolbarOption.style.opacity = '1';
+          showFloatingToolbarOption.style.pointerEvents = 'auto';
+        }
+      }
+    }
+    
+    console.log(`🔄 플러그인 상태: ${this.isPluginEnabled ? '활성화' : '비활성화'}`);
+  }
+
+  // 🎛️ 테이크 리스트 표시/숨김 토글
+  toggleTakeListVisibility(enabled) {
+    if (this.floatingUI) {
+      this.floatingUI.style.display = enabled ? 'block' : 'none';
+      console.log(`🎛️ 테이크 리스트 ${enabled ? '표시' : '숨김'}`);
+    }
+  }
+
+  // 🎛️ 하단 플로팅바 표시/숨김 토글
+  toggleBottomFloatingToolbar(enabled) {
+    if (this.bottomFloatingUI) {
+      this.bottomFloatingUI.style.display = enabled ? 'block' : 'none';
+      console.log(`🎛️ 하단 플로팅바 ${enabled ? '표시' : '숨김'}`);
+    }
+  }
+
+  // 🎛️ 플로팅 옵션 메뉴 제거
+  removeFloatingOptionsMenu() {
+    if (this.floatingOptionsMenu) {
+      this.floatingOptionsMenu.remove();
+      this.floatingOptionsMenu = null;
+      console.log('🎛️ 플로팅 옵션 메뉴 제거');
+    }
+    
+    // 외부 클릭 이벤트 리스너 정리
+    document.removeEventListener('click', this.handleOutsideClick);
   }
 
   // 🧹 모든 하이라이트 제거
@@ -325,6 +598,9 @@ class TTSManager {
     
     // 🎥 YouTube 아이콘 제거
     this.removeYouTubeIcon();
+    
+    // 플로팅 옵션 메뉴는 제거하지 않음 (Enable the extension이 Off일 때도 메뉴는 남겨둠)
+    // this.removeFloatingOptionsMenu();
   }
   
   // 🎥 YouTube 아이콘 제거
@@ -1717,7 +1993,7 @@ class TTSManager {
     const isDark = this.currentTheme === 'dark';
     const bgColor = isDark ? 'rgba(0, 0, 0, 0.2)' : 'rgba(255, 255, 255, 0.2)';
     const textColor = isDark ? 'rgba(255, 255, 255, 0.8)' : '#1d1d1d';
-    const borderColor = 'rgba(125, 125, 125, 0.5)';
+    const borderColor = isDark ? 'rgba(125, 125, 125, 0.25)' : 'rgba(125, 125, 125, 0.5)';
 
     // 플로팅 컨테이너 생성 (테이크 리스트 포함)
     this.floatingUI = document.createElement('div');
@@ -3410,11 +3686,25 @@ class TTSManager {
   // 🎨 화면 주 배경색 기반 테마 자동 감지 및 적용
   async detectAndApplyTheme() {
     try {
-      const backgroundColor = await this.analyzePageBackgroundColor();
-      const isDark = this.isColorDark(backgroundColor);
+      // 1단계: OS 다크모드 설정 확인
+      const isOSDarkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      console.log(`🎨 OS 다크모드 설정: ${isOSDarkMode ? '다크' : '라이트'}`);
       
-      this.currentTheme = isDark ? 'dark' : 'light';
-      console.log(`🎨 테마 감지: ${this.currentTheme} (배경색: ${backgroundColor})`);
+      // 2단계: 사이트가 OS 설정을 따르는지 확인
+      const siteFollowsOS = this.checkIfSiteFollowsOS();
+      console.log(`🎨 사이트 OS 설정 따름: ${siteFollowsOS}`);
+      
+      // 3단계: 사이트가 OS를 따르면 OS 설정 사용, 아니면 기존 로직 사용
+      if (siteFollowsOS) {
+        this.currentTheme = isOSDarkMode ? 'dark' : 'light';
+        console.log(`🎨 OS 설정 사용: ${this.currentTheme}`);
+      } else {
+        const backgroundColor = await this.analyzePageBackgroundColor();
+        const isDark = this.isColorDark(backgroundColor);
+        
+        this.currentTheme = isDark ? 'dark' : 'light';
+        console.log(`🎨 배경색 기반 테마 감지: ${this.currentTheme} (배경색: ${backgroundColor})`);
+      }
       
       // 테마 변경 시 하단 플로팅 UI 업데이트
       if (this.bottomFloatingUI) {
@@ -3426,9 +3716,93 @@ class TTSManager {
         this.updateZetaAICharacterUITheme();
       }
       
+      // OS 다크모드 설정 변경 감지 (실시간 업데이트)
+      this.setupOSThemeChangeListener();
+      
     } catch (error) {
       console.warn('🎨 테마 감지 실패, 기본 라이트 테마 사용:', error);
       this.currentTheme = 'light';
+    }
+  }
+
+  // 🎨 OS 다크모드 설정 변경 감지 (실시간 업데이트)
+  setupOSThemeChangeListener() {
+    try {
+      // 이미 리스너가 설정되어 있으면 중복 방지
+      if (this.osThemeChangeListener) {
+        return;
+      }
+      
+      // OS 다크모드 설정 변경 감지
+      this.osThemeChangeListener = window.matchMedia('(prefers-color-scheme: dark)');
+      
+      const handleThemeChange = (e) => {
+        const isOSDarkMode = e.matches;
+        console.log(`🎨 OS 다크모드 설정 변경 감지: ${isOSDarkMode ? '다크' : '라이트'}`);
+        
+        // 사이트가 OS 설정을 따르는 경우에만 테마 업데이트
+        if (this.checkIfSiteFollowsOS()) {
+          this.currentTheme = isOSDarkMode ? 'dark' : 'light';
+          console.log(`🎨 OS 설정 변경으로 테마 업데이트: ${this.currentTheme}`);
+          
+          // UI 업데이트
+          if (this.bottomFloatingUI) {
+            this.updateBottomFloatingUITheme();
+          }
+          
+          if (window.location.hostname.includes('zeta-ai')) {
+            this.updateZetaAICharacterUITheme();
+          }
+        }
+      };
+      
+      // 리스너 등록
+      this.osThemeChangeListener.addEventListener('change', handleThemeChange);
+      
+      console.log('🎨 OS 다크모드 설정 변경 감지 리스너 등록 완료');
+    } catch (error) {
+      console.warn('🎨 OS 테마 변경 감지 설정 실패:', error);
+    }
+  }
+
+  // 🔍 사이트가 OS 다크모드 설정을 따르는지 확인
+  checkIfSiteFollowsOS() {
+    try {
+      const hostname = window.location.hostname;
+      
+      // OS 설정을 따르는 것으로 알려진 사이트들
+      const osFollowingSites = [
+        'perplexity.ai',
+        'chat.openai.com',
+        'bard.google.com',
+        'claude.ai',
+        'github.com',
+        'stackoverflow.com',
+        'reddit.com',
+        'twitter.com',
+        'x.com',
+        'discord.com',
+        'slack.com',
+        'notion.so',
+        'figma.com',
+        'linear.app',
+        'vercel.com',
+        'netlify.com'
+      ];
+      
+      // 사이트가 OS 설정을 따르는지 확인
+      const followsOS = osFollowingSites.some(site => hostname.includes(site));
+      
+      if (followsOS) {
+        console.log(`🎨 ${hostname}은 OS 다크모드 설정을 따릅니다.`);
+      } else {
+        console.log(`🎨 ${hostname}은 자체 테마 설정을 사용합니다.`);
+      }
+      
+      return followsOS;
+    } catch (error) {
+      console.warn('🎨 OS 설정 확인 실패:', error);
+      return false;
     }
   }
 
@@ -3637,7 +4011,7 @@ class TTSManager {
     // 라이트 테마는 흰색, 다크 테마는 검정 + 블러 효과
     const bgColor = isDark ? 'rgba(0, 0, 0, 0.2)' : 'rgba(255, 255, 255, 0.2)';
     const textColor = isDark ? 'rgba(255, 255, 255, 0.8)' : '#1d1d1d';
-    const borderColor = 'rgba(125, 125, 125, 0.5)';
+    const borderColor = isDark ? 'rgba(125, 125, 125, 0.25)' : 'rgba(100, 100, 100, 0.4)';
 
     // 컨테이너 배경 업데이트 (블러 효과 포함)
     this.bottomFloatingUI.style.background = bgColor;
@@ -3704,7 +4078,7 @@ class TTSManager {
     const isDark = this.currentTheme === 'dark';
     const bgColor = isDark ? 'rgba(0, 0, 0, 0.2)' : 'rgba(255, 255, 255, 0.2)';
     const textColor = isDark ? 'rgba(255, 255, 255, 0.8)' : '#1d1d1d';
-    const borderColor = 'rgba(125, 125, 125, 0.5)';
+    const borderColor = isDark ? 'rgba(125, 125, 125, 0.25)' : 'rgba(100, 100, 100, 0.4)';
 
     this.bottomFloatingUI = document.createElement('div');
     this.bottomFloatingUI.id = 'tts-bottom-floating-ui';
@@ -3784,9 +4158,9 @@ class TTSManager {
       text-align: center !important;
     `;
 
-    // 우측: 새로고침 버튼 (↺)
+    // 우측: 새로고침 버튼 (↺만 표시)
     this.refreshButton = document.createElement('button');
-    this.refreshButton.innerHTML = '↺';
+    this.refreshButton.innerHTML = '<span class="refresh-icon">↺</span>';
     this.refreshButton.style.cssText = `
       width: 24px !important;
       height: 44px !important;
@@ -4283,6 +4657,9 @@ class TTSManager {
       // 🤖 Zeta AI: 발화 큐 정리
       this.cleanupZetaAISpeechQueue();
       
+      // OS 테마 리스너 정리
+      this.cleanupOSThemeListener();
+      
       console.log('🤖 Zeta AI / ChatGPT 모니터링 중지 (화자 상태 초기화)');
     }
   }
@@ -4334,6 +4711,15 @@ class TTSManager {
     this.zetaAIIsPlaying = false;
     
     console.log('🤖 Zeta AI / ChatGPT: 발화 큐 정리 완료');
+  }
+
+  // 🎨 OS 테마 리스너 정리
+  cleanupOSThemeListener() {
+    if (this.osThemeChangeListener) {
+      this.osThemeChangeListener.removeEventListener('change', this.handleThemeChange);
+      this.osThemeChangeListener = null;
+      console.log('🎨 OS 테마 리스너 정리 완료');
+    }
   }
 
   // 🤖 Zeta AI / ChatGPT: 모든 발화 강제 중단 (화자1 우선 발화용)
@@ -4557,7 +4943,7 @@ class TTSManager {
     const isDark = this.currentTheme === 'dark';
     const bgColor = isDark ? 'rgba(0, 0, 0, 0.2)' : 'rgba(255, 255, 255, 0.2)';
     const textColor = isDark ? 'rgba(255, 255, 255, 0.8)' : '#1d1d1d';
-    const borderColor = 'rgba(125, 125, 125, 0.5)';
+    const borderColor = isDark ? 'rgba(125, 125, 125, 0.25)' : 'rgba(125, 125, 125, 0.5)';
     
     // 좌하단 캐릭터 선택 UI (화자2용)
     this.createZetaAICharacterUI('left', bgColor, textColor, borderColor);
@@ -4773,23 +5159,9 @@ class TTSManager {
       text-align: center !important;
       overflow-y: auto !important;
       word-wrap: break-word !important;
-      animation: fadeInOut 1s ease-in-out !important;
     `;
     
-    // 애니메이션 키프레임 추가
-    if (!document.getElementById('tts-zeta-ai-keyframes')) {
-      const style = document.createElement('style');
-      style.id = 'tts-zeta-ai-keyframes';
-      style.textContent = `
-        @keyframes fadeInOut {
-          0% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
-          20% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-          80% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-          100% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
-        }
-      `;
-      document.head.appendChild(style);
-    }
+
     
     overlay.textContent = text;
     document.body.appendChild(overlay);
@@ -4878,10 +5250,13 @@ class TTSManager {
   async handleRefreshButtonClick() {
     console.log('🔄 새로고침 버튼 클릭: 글감 재수집 시작');
     
-    // 새로고침 버튼 회전 애니메이션 시작 (반시계방향)
+    // 새로고침 아이콘만 회전 애니메이션 시작 (반시계방향)
     if (this.refreshButton) {
-      this.refreshButton.style.transform = 'rotate(-360deg)';
-      this.refreshButton.style.transition = 'transform 0.5s ease-in-out';
+      const refreshIcon = this.refreshButton.querySelector('.refresh-icon');
+      if (refreshIcon) {
+        refreshIcon.style.transform = 'rotate(-360deg)';
+        refreshIcon.style.transition = 'transform 0.5s ease-in-out';
+      }
     }
     
     // 상태 업데이트
@@ -4917,18 +5292,20 @@ class TTSManager {
       console.error('글감 재수집 실패:', error);
       this.updateStatus('재수집 실패', '#F44336');
     } finally {
-      // 애니메이션 완료 후 360도 상태 유지 (원래 상태로 복원하지 않음)
-      // 다음 클릭을 위해 transform 초기화
+      // 애니메이션 완료 후 아이콘만 원래 상태로 복원
       setTimeout(() => {
         if (this.refreshButton) {
-          this.refreshButton.style.transition = 'none';
-          this.refreshButton.style.transform = 'rotate(0deg)';
-          // 다음 애니메이션을 위해 transition 복원
-          setTimeout(() => {
-            if (this.refreshButton) {
-              this.refreshButton.style.transition = 'transform 0.5s ease-in-out';
-            }
-          }, 10);
+          const refreshIcon = this.refreshButton.querySelector('.refresh-icon');
+          if (refreshIcon) {
+            refreshIcon.style.transition = 'none';
+            refreshIcon.style.transform = 'rotate(0deg)';
+            // 다음 애니메이션을 위해 transition 복원
+            setTimeout(() => {
+              if (refreshIcon) {
+                refreshIcon.style.transition = 'transform 0.5s ease-in-out';
+              }
+            }, 10);
+          }
         }
       }, 500);
     }
