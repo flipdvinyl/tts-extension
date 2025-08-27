@@ -11,7 +11,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["html-analyzer-common.js", "html-analyzer-sites.js", "perplexity-api.js", "gemini-api.js", "tts.js", "content.js"],
+      "js": ["html-analyzer-common.js", "html-analyzer-sites.js", "perplexity-api.js", "gemini-api.js", "tts-unified.js", "tts.js", "content.js"],
       "css": ["content.css"]
     }
   ],

@@ -273,13 +273,14 @@ class TTSManager {
           if (newVoiceData) {
             const voice = this.VOICES.find(v => v.id === newVoiceData.id);
             if (voice && voice.id !== this.selectedVoice.id) {
-              // 🛑 화자 변경 시 모든 음성 초기화
-              this.stopAll();
-              this.clearAllBuffering();
-              
               this.selectedVoice = voice;
               this.updateVoiceUI();
-              this.log(`🔄 다른 탭에서 화자 변경 감지: ${voice.name} - 모든 음성 초기화 완료`);
+              this.log(`🔄 다른 탭에서 화자 변경 감지: ${voice.name}`);
+              
+              // 🎯 통합 재생 시작 함수 호출
+              if (this.preTakes && this.preTakes.length > 0) {
+                this.unifiedPlaybackStart();
+              }
             }
           }
         }
@@ -288,13 +289,14 @@ class TTSManager {
         if (changes['tts-speed']) {
           const newSpeed = changes['tts-speed'].newValue;
           if (newSpeed && newSpeed !== this.playbackSpeed) {
-            // 🛑 속도 변경 시 모든 음성 초기화
-            this.stopAll();
-            this.clearAllBuffering();
-            
             this.playbackSpeed = newSpeed;
             this.updateSpeedUI();
-            this.log(`🔄 다른 탭에서 속도 변경 감지: ${newSpeed}x - 모든 음성 초기화 완료`);
+            this.log(`🔄 다른 탭에서 속도 변경 감지: ${newSpeed}x`);
+            
+            // 🎯 통합 재생 시작 함수 호출
+            if (this.preTakes && this.preTakes.length > 0) {
+              this.unifiedPlaybackStart();
+            }
           }
         }
         
@@ -2969,32 +2971,14 @@ class TTSManager {
   
   // 🎯 테이크부터 순차적 재생 시작
   async startPlaybackFromTake(startTake) {
-    this.log(`🎬 재생 시작: ${startTake.id} (${startTake.text.substring(0, 30)}...)`);
+    this.log(`🎬 테이크 선택: ${startTake.id} (${startTake.text.substring(0, 30)}...)`);
     
-    // 이전 재생 중지 및 모든 버퍼링 완전 초기화
-    this.stopAll();
-    this.clearAllBuffering();
-    
-    // 🛑 새로운 재생을 위해 모든 테이크 버퍼링 상태 초기화
-    this.preTakes.forEach(take => {
-      take.isBuffered = false;
-      take.audioUrl = null;
-    });
-    
-    // 재생할 테이크 목록 설정 (시작 테이크부터 끝까지)
-    const startIndex = this.preTakes.findIndex(take => take.id === startTake.id);
-    this.currentPlayList = this.preTakes.slice(startIndex);
-    this.currentTakeIndex = 0;
-    this.currentPlayingTakeId = startTake.id;
-    
-    this.log(`📋 재생 목록: ${this.currentPlayList.length}개 테이크 (${startIndex + 1}번째부터)`);
-    
-    // UI 업데이트
-    this.updateStatus(`재생 준비 중... (${startIndex + 1}/${this.preTakes.length})`, '#FF9800');
-    this.updatePlaybackUI(startTake);
-    
-    // 🎯 첫 번째 테이크 재생 시작 (버퍼링은 생성 완료 후)
-    await this.playTakeAtIndex(0);
+    // 🎯 통합 재생 시작 함수 호출
+    if (window.unifiedTTSManager) {
+      await window.unifiedTTSManager.unifiedPlaybackStart(startTake, this);
+    } else {
+      this.error('통합 TTS 매니저를 찾을 수 없습니다');
+    }
   }
   
   // 🎯 인덱스에 해당하는 테이크 재생
@@ -8415,7 +8399,7 @@ class TTSManager {
             
             // 그 다음 테이크 미리 생성 (더 앞서서)
             for (let i = takeIndex + 2; i < Math.min(takeIndex + 5, this.takes.length); i++) {
-              // 🛑 레거시 audioBuffer 체크 제거 - 새로운 시스템만 사용
+              if (!this.audioBuffer[i]) {
                 this.prepareNextTake(i);
               }
             }
