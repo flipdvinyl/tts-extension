@@ -273,9 +273,13 @@ class TTSManager {
           if (newVoiceData) {
             const voice = this.VOICES.find(v => v.id === newVoiceData.id);
             if (voice && voice.id !== this.selectedVoice.id) {
+              // 🛑 화자 변경 시 모든 음성 초기화
+              this.stopAll();
+              this.clearAllBuffering();
+              
               this.selectedVoice = voice;
               this.updateVoiceUI();
-              this.log(`🔄 다른 탭에서 화자 변경 감지: ${voice.name}`);
+              this.log(`🔄 다른 탭에서 화자 변경 감지: ${voice.name} - 모든 음성 초기화 완료`);
             }
           }
         }
@@ -284,9 +288,13 @@ class TTSManager {
         if (changes['tts-speed']) {
           const newSpeed = changes['tts-speed'].newValue;
           if (newSpeed && newSpeed !== this.playbackSpeed) {
+            // 🛑 속도 변경 시 모든 음성 초기화
+            this.stopAll();
+            this.clearAllBuffering();
+            
             this.playbackSpeed = newSpeed;
             this.updateSpeedUI();
-            this.log(`🔄 다른 탭에서 속도 변경 감지: ${newSpeed}x`);
+            this.log(`🔄 다른 탭에서 속도 변경 감지: ${newSpeed}x - 모든 음성 초기화 완료`);
           }
         }
         
@@ -711,9 +719,6 @@ class TTSManager {
     
     // 테이크 호버 아이콘 제거
     this.hideTakeHoverIcon();
-    
-    // 🎯 플러그인 완전 비활성화 시에만 스크롤 리스너 제거
-    this.removeIconScrollListener();
     
     // 🎥 YouTube 아이콘 제거
     this.removeYouTubeIcon();
@@ -1639,8 +1644,8 @@ class TTSManager {
       this.takeHoverIcon = null;
     }
     
-    // 🎯 스크롤 이벤트 리스너는 유지 (재생 중지 시에도 스크롤 대응 필요)
-    // this.removeIconScrollListener();
+    // 스크롤 이벤트 리스너 제거
+    this.removeIconScrollListener();
     
     // 자동 숨김 타이머 제거
     this.clearIconAutoHideTimer();
@@ -1648,11 +1653,9 @@ class TTSManager {
     // 호버 추적 정리
     this.cleanupCurrentTakeHoverTracking();
     
-    // 🎯 currentIconElement는 유지 (스크롤 대응을 위해)
-    // this.currentIconElement = null;
-    
     // 저장된 요소 정보 초기화
     this.currentIconTake = null;
+    this.currentIconElement = null;
   }
 
   // 🎥 YouTube 전용 아이콘 생성 (제목 행 오른쪽)
@@ -2196,18 +2199,7 @@ class TTSManager {
 
   // 🎯 아이콘 위치 업데이트 (뷰포트 기준)
   updateIconPosition() {
-    if (!this.takeHoverIcon) return;
-    
-    // 🎯 currentIconElement가 없으면 현재 테이크에서 찾기
-    if (!this.currentIconElement && this.currentTakeIndex >= 0 && this.takes[this.currentTakeIndex]) {
-      const currentTake = this.takes[this.currentTakeIndex];
-      if (currentTake.elementInfo && currentTake.elementInfo.element) {
-        this.currentIconElement = currentTake.elementInfo.element;
-        this.log(`🎯 스크롤 대응: 현재 테이크 요소 재설정`);
-      }
-    }
-    
-    if (!this.currentIconElement) return;
+    if (!this.takeHoverIcon || !this.currentIconElement) return;
     
     const rect = this.currentIconElement.getBoundingClientRect();
     
@@ -2979,8 +2971,15 @@ class TTSManager {
   async startPlaybackFromTake(startTake) {
     this.log(`🎬 재생 시작: ${startTake.id} (${startTake.text.substring(0, 30)}...)`);
     
-    // 이전 재생 중지
+    // 이전 재생 중지 및 모든 버퍼링 완전 초기화
     this.stopAll();
+    this.clearAllBuffering();
+    
+    // 🛑 새로운 재생을 위해 모든 테이크 버퍼링 상태 초기화
+    this.preTakes.forEach(take => {
+      take.isBuffered = false;
+      take.audioUrl = null;
+    });
     
     // 재생할 테이크 목록 설정 (시작 테이크부터 끝까지)
     const startIndex = this.preTakes.findIndex(take => take.id === startTake.id);
@@ -3075,11 +3074,11 @@ class TTSManager {
     }
   }
   
-  // 🎯 연속적 버퍼링 유지 (현재 테이크 기준 뒤 3개 항상 유지)
-  maintainContinuousBuffering(currentIndex) {
-    this.log(`🔄 연속적 버퍼링 확인: ${currentIndex + 1}번째 테이크 기준`);
-    
-    const bufferAhead = 3; // 현재 테이크 뒤로 3개 유지
+      // 🎯 연속적 버퍼링 유지 (현재 테이크 기준 뒤 5개 항상 유지)
+    maintainContinuousBuffering(currentIndex) {
+      this.log(`🔄 연속적 버퍼링 확인: ${currentIndex + 1}번째 테이크 기준`);
+      
+      const bufferAhead = 5; // 현재 테이크 뒤로 5개 유지
     const maxBufferIndex = Math.min(currentIndex + bufferAhead, this.currentPlayList.length - 1);
     
     this.log(`📊 버퍼링 확인 범위: ${currentIndex + 1} ~ ${maxBufferIndex + 1}번째 테이크`);
@@ -3852,6 +3851,12 @@ class TTSManager {
   // 🎯 오버레이 모드에서 현재 단어 하이라이트
   updateOverlayWordHighlight(wordIndex) {
     if (!this.overlayHighlight || !this.currentOverlayTake || !this.currentTakeWords) {
+      return;
+    }
+    
+    // 🎯 재생 중이 아니면 하이라이트 숨김
+    if (!this.isPlaying || this.isPaused) {
+      this.overlayHighlight.style.display = 'none';
       return;
     }
     
@@ -5827,7 +5832,7 @@ class TTSManager {
     
     // 테마 색상 가져오기 (하단 플로팅과 동일한 스타일)
     const isDark = this.currentTheme === 'dark';
-    const bgColor = isDark ? 'rgba(0, 0, 0, 0.8)' : 'rgba(255, 255, 255, 0.8)';
+    const bgColor = isDark ? 'rgba(0, 0, 0, 0.6)' : 'rgba(255, 255, 255, 0.6)';
     const textColor = isDark ? 'rgba(255, 255, 255, 0.6)' : '#1d1d1d';
     const borderColor = isDark ? 'rgba(255, 255, 255, 1.0)' : 'rgba(29, 29, 29, 0.3)';
     
@@ -5845,16 +5850,16 @@ class TTSManager {
       background: ${bgColor} !important;
       backdrop-filter: blur(10px) !important;
       -webkit-backdrop-filter: blur(10px) !important;
-      border: 1px solid rgba(125, 125, 125, 0.2) !important;
-      border-radius: 3px !important;
-      box-shadow: 0px 0px 60px ${textColor}50 !important;
+      border: none !important;
+      border-radius: 0 !important;
+      box-shadow: none !important;
       z-index: 100002 !important;
       line-height: 1.5rem !important;
       padding: 0 !important;
       overflow-y: auto !important;
       -ms-overflow-style: none !important;
       scrollbar-width: none !important;
-      font-family: system-ui, -apple-system, sans-serif !important;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
       animation: slideIn 0.7s ease forwards !important;
     `;
     
@@ -6998,7 +7003,7 @@ class TTSManager {
 
     // 테마 색상 가져오기 (하단 플로팅과 동일한 스타일)
     const isDark = this.currentTheme === 'dark';
-    const bgColor = isDark ? 'rgba(0, 0, 0, 0.8)' : 'rgba(255, 255, 255, 0.8)';
+    const bgColor = isDark ? 'rgba(0, 0, 0, 0.6)' : 'rgba(255, 255, 255, 0.6)';
     const textColor = isDark ? 'rgba(255, 255, 255, 0.6)' : '#1d1d1d';
     const borderColor = isDark ? 'rgba(255, 255, 255, 1.0)' : 'rgba(29, 29, 29, 0.3)';
     
@@ -7016,16 +7021,16 @@ class TTSManager {
       background: ${bgColor} !important;
       backdrop-filter: blur(10px) !important;
       -webkit-backdrop-filter: blur(10px) !important;
-      border: 1px solid rgba(125, 125, 125, 0.2) !important;
-      border-radius: 3px !important;
-      box-shadow: 0px 0px 60px ${textColor}50 !important;
+      border: none !important;
+      border-radius: 0 !important;
+      box-shadow: none !important;
       z-index: 100002 !important;
       line-height: 1.5rem !important;
       padding: 0 !important;
       overflow-y: auto !important;
       -ms-overflow-style: none !important;
       scrollbar-width: none !important;
-      font-family: system-ui, -apple-system, sans-serif !important;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
       animation: slideIn 0.7s ease forwards !important;
     `;
     
@@ -7080,7 +7085,7 @@ class TTSManager {
       // Typography 컨테이너 (app.js 스타일)
       const typography = document.createElement('div');
       typography.style.cssText = `
-        text-align: center !important;
+        text-align: left !important;
         text-transform: none !important;
       `;
       
@@ -7104,6 +7109,7 @@ class TTSManager {
         white-space: pre-line !important;
         cursor: default !important;
         font-size: ${this.UI_FONT_SIZE} !important;
+        font-weight: 300 !important;
       `;
       voiceDescription.textContent = voice.description;
       
@@ -7280,20 +7286,43 @@ class TTSManager {
     }
   }
 
-  // 🗑️ 모든 버퍼링 제거
+  // 🗑️ 모든 버퍼링 제거 (새로운 시스템 전용)
   clearAllBuffering() {
     this.log('🗑️ 모든 버퍼링 제거 시작');
     
-    // 1. audioBuffer의 모든 URL 해제
-    Object.values(this.audioBuffer).forEach(url => {
-      if (url && typeof url === 'string' && url.startsWith('blob:')) {
-        URL.revokeObjectURL(url);
-        this.log(`🗑️ 버퍼 URL 해제: ${url.substring(0, 30)}...`);
-      }
-    });
+    // 1. 레거시 audioBuffer 시스템 완전 제거 (더 이상 사용하지 않음)
+    if (this.audioBuffer && typeof this.audioBuffer.forEach === 'function') {
+      this.audioBuffer.forEach((url, key) => {
+        if (url && typeof url === 'string' && url.startsWith('blob:')) {
+          URL.revokeObjectURL(url);
+          this.log(`🗑️ 레거시 버퍼 URL 해제: ${url.substring(0, 30)}...`);
+        }
+      });
+      this.audioBuffer.clear();
+    }
     
-    // 2. audioBuffer 초기화
-    this.audioBuffer = {};
+    // 2. 새로운 시스템의 모든 테이크 버퍼링 상태 초기화
+    if (this.preTakes) {
+      this.preTakes.forEach(take => {
+        if (take.audioUrl && take.audioUrl.startsWith('blob:')) {
+          URL.revokeObjectURL(take.audioUrl);
+          this.log(`🗑️ 테이크 버퍼 URL 해제: ${take.id}`);
+        }
+        take.isBuffered = false;
+        take.audioUrl = null;
+      });
+    }
+    
+    if (this.currentPlayList) {
+      this.currentPlayList.forEach(take => {
+        if (take.audioUrl && take.audioUrl.startsWith('blob:')) {
+          URL.revokeObjectURL(take.audioUrl);
+          this.log(`🗑️ 플레이리스트 버퍼 URL 해제: ${take.id}`);
+        }
+        take.isBuffered = false;
+        take.audioUrl = null;
+      });
+    }
     
     // 3. 버퍼링 진행 중인 테이크들 중단
     this.bufferingTakes.clear();
@@ -7305,15 +7334,12 @@ class TTSManager {
     }
     this.abortController = new AbortController();
     
-    // 5. 플레이리스트의 버퍼링 상태 초기화
-    if (this.currentPlayList) {
-      this.currentPlayList.forEach(take => {
-        take.isBuffered = false;
-        take.audioUrl = null;
-      });
-    }
+    // 5. 버퍼링 애니메이션 모두 제거
+    document.querySelectorAll('[style*="tts-buffering"]').forEach(element => {
+      this.removeBufferingAnimation(element);
+    });
     
-    this.log('✅ 모든 버퍼링 제거 완료');
+    this.log('✅ 모든 버퍼링 제거 완료 (새로운 시스템)');
   }
 
   // 🎯 화자 메뉴에서 선택 상태 업데이트
@@ -8050,11 +8076,14 @@ class TTSManager {
         audioUrl = cachedAudio;
         this.updateStatus(`재생 중... (${takeIndex + 1}/${this.takes.length})`, '#4CAF50');
       } else {
-        // 캐시되지 않은 경우에만 생성
+        // 새로운 시스템: 직접 생성 후 테이크에 저장
         this.log(`테이크 ${takeIndex + 1} 실시간 생성 중...`);
         this.updateStatus(`음성 생성 중... (${takeIndex + 1}/${this.takes.length})`, '#FF9800');
         audioUrl = await this.convertToSpeech(take);
-        this.addToAudioCache(cacheKey, audioUrl);
+        if (audioUrl) {
+          take.audioUrl = audioUrl;
+          take.isBuffered = true;
+        }
       }
       
       // 오디오 재생
@@ -8980,9 +9009,6 @@ class TTSManager {
         }
       });
     }
-    
-    // 🎯 스크롤 리스너는 유지 (재생 중지 시에도 스크롤 대응 필요)
-    // this.removeIconScrollListener(); // 이 줄 제거
   }
 
   // 단어 래핑 해제 (현재 테이크만)
@@ -9028,11 +9054,9 @@ class TTSManager {
     this.log(`전체 TTS span 개수: ${allTTSSpans.length}`);
   }
 
-  // 🎯 메모리 최적화: 다음 테이크 미리 생성 (새로운 캐시 시스템)
+  // 🎯 메모리 최적화: 다음 테이크 미리 생성 (새로운 시스템)
   async prepareNextTake(takeIndex) {
-    const cacheKey = `take_${takeIndex}_${this.selectedVoice.id}`;
-    
-    if (takeIndex >= this.takes.length || this.getFromAudioCache(cacheKey)) {
+    if (takeIndex >= this.takes.length || this.takes[takeIndex]?.isBuffered) {
       return; // 이미 생성됨 또는 범위 초과
     }
     
@@ -9041,7 +9065,10 @@ class TTSManager {
       this.log(`테이크 ${takeIndex} 미리 생성 중...`);
       
       const audioUrl = await this.convertToSpeech(take);
-      this.addToAudioCache(cacheKey, audioUrl);
+      if (audioUrl) {
+        take.audioUrl = audioUrl;
+        take.isBuffered = true;
+      }
       
       this.log(`테이크 ${takeIndex} 미리 생성 완료`);
     } catch (error) {
