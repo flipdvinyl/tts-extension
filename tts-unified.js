@@ -76,6 +76,15 @@ class UnifiedTTSManager {
     }
     
     // 🎯 첫 번째 테이크 재생 시작
+    ttsManager.log(`🎯 첫 번째 테이크 재생 시작: 재생 목록 ${this.currentPlayList.length}개`);
+    if (this.currentPlayList.length > 0) {
+      ttsManager.log(`🎯 첫 번째 테이크 정보:`, {
+        id: this.currentPlayList[0].id,
+        index: this.currentPlayList[0].index,
+        text: this.currentPlayList[0].text?.substring(0, 30) + '...',
+        isBuffered: this.currentPlayList[0].isBuffered
+      });
+    }
     await this.playTakeAtIndex(0, ttsManager);
   }
 
@@ -89,7 +98,7 @@ class UnifiedTTSManager {
       // API 요청용 텍스트 변환
       const apiText = this.convertTextForAPI(take.text);
       
-      const apiUrl = "http://localhost:4000"; // API URL 설정
+      const apiUrl = ttsManager.apiUrl || "http://localhost:4000"; // ttsManager의 API URL 사용
       const voiceId = ttsManager.selectedVoice.id;
       
       // 🛑 세션 ID 체크 - 중단된 경우 즉시 종료
@@ -182,8 +191,10 @@ class UnifiedTTSManager {
           });
         }
         
-        // 버퍼링 애니메이션 적용
-        ttsManager.applyBufferingAnimation(take.element);
+        // 버퍼링 애니메이션 적용 (함수가 있는 경우만)
+        if (ttsManager.applyBufferingAnimation) {
+          ttsManager.applyBufferingAnimation(take.element);
+        }
         
         try {
           audioUrl = await this.convertToSpeech(take, ttsManager);
@@ -192,7 +203,10 @@ class UnifiedTTSManager {
             take.isBuffered = true;
           }
         } finally {
-          ttsManager.removeBufferingAnimation(take.element);
+          // 버퍼링 애니메이션 제거 (함수가 있는 경우만)
+          if (ttsManager.removeBufferingAnimation) {
+            ttsManager.removeBufferingAnimation(take.element);
+          }
         }
       }
       
@@ -201,6 +215,8 @@ class UnifiedTTSManager {
         
         // 🎯 다음 테이크 버퍼링 시작
         if (sessionId === this.currentSessionId) {
+          // maintainContinuousBuffering 호출 전에 로그 추가
+          ttsManager.log(`🎯 버퍼링 시작: 현재 ${playListIndex + 1}번째 테이크`);
           this.maintainContinuousBuffering(playListIndex, ttsManager);
         }
       } else {
@@ -231,8 +247,14 @@ class UnifiedTTSManager {
     const bufferAhead = 5; // 현재 테이크 뒤로 5개 유지
     const unbufferedTakes = [];
     
+    // 🎯 재생 목록 기준으로 버퍼링 인덱스 계산
+    // currentIndex는 재생 목록 내 인덱스이므로, 원본 preTakes 배열의 실제 인덱스로 변환 필요
+    const actualTakeIndex = this.getOriginalTakeIndex(currentIndex, ttsManager);
+    
+    ttsManager.log(`🎯 원본 테이크 인덱스: ${actualTakeIndex + 1}번째 (재생 목록 ${currentIndex + 1}번째)`);
+    
     // 버퍼링이 필요한 테이크들 찾기
-    for (let i = currentIndex + 1; i <= Math.min(currentIndex + bufferAhead, ttsManager.preTakes.length - 1); i++) {
+    for (let i = actualTakeIndex + 1; i <= Math.min(actualTakeIndex + bufferAhead, ttsManager.preTakes.length - 1); i++) {
       if (!ttsManager.preTakes[i].isBuffered) {
         unbufferedTakes.push({ index: i, take: ttsManager.preTakes[i] });
       }
@@ -312,9 +334,11 @@ class UnifiedTTSManager {
         setTimeout(() => {
           // 다음 테이크 재생
           if (this.currentTakeIndex + 1 < this.currentPlayList.length) {
+            ttsManager.log(`🎯 다음 테이크로 이동: ${this.currentTakeIndex + 2}번째`);
             this.playTakeAtIndex(this.currentTakeIndex + 1, ttsManager);
           } else {
             // 모든 테이크 재생 완료
+            ttsManager.log(`✅ 모든 테이크 재생 완료`);
             ttsManager.updateStatus('재생 완료', '#4CAF50');
           }
           
@@ -381,6 +405,20 @@ class UnifiedTTSManager {
     this.currentSessionId++;
     
     ttsManager.log('✅ 모든 버퍼링 제거 완료');
+  }
+
+  // 🎯 원본 테이크 인덱스 계산 (재생 목록 인덱스를 원본 인덱스로 변환)
+  getOriginalTakeIndex(playListIndex, ttsManager) {
+    if (!this.currentPlayList || playListIndex >= this.currentPlayList.length) {
+      return 0;
+    }
+    
+    const currentTake = this.currentPlayList[playListIndex];
+    const originalIndex = ttsManager.preTakes.findIndex(take => take.id === currentTake.id);
+    
+    ttsManager.log(`🎯 인덱스 변환: 재생 목록 ${playListIndex + 1}번째 → 원본 ${originalIndex + 1}번째`);
+    
+    return originalIndex >= 0 ? originalIndex : 0;
   }
 
   // 🎯 텍스트 API 변환 함수
