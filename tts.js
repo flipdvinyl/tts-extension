@@ -4046,6 +4046,362 @@ class TTSManager {
     
     return 0;
   }
+
+  // 🎯 글감 분석 및 변환 (audiobook-ui 스타일)
+  analyzeAndConvertText(text) {
+    if (!text) return { displayText: '', apiText: '', hasSpecialCommands: false };
+    
+    let displayText = text;
+    let apiText = text;
+    let hasSpecialCommands = false;
+    
+    // 🎯 ::n초::, ::nsec::, ::n:: 패턴 감지 (묵음)
+    const silencePattern = /::(\d+)(?:초|sec)?::/g;
+    if (silencePattern.test(text)) {
+      hasSpecialCommands = true;
+      // API 텍스트에서는 묵음 명령 제거
+      apiText = apiText.replace(silencePattern, '');
+      this.log(`🔇 묵음 명령 감지: ${text.match(silencePattern).join(', ')}`);
+    }
+    
+    // 🎯 ::화자명:: 패턴 감지 (화자 변경)
+    const voicePattern = /::([^:]+)::/g;
+    const voiceMatches = text.match(voicePattern);
+    if (voiceMatches) {
+      hasSpecialCommands = true;
+      // API 텍스트에서는 화자 명령 제거
+      apiText = apiText.replace(voicePattern, '');
+      this.log(`🎤 화자 명령 감지: ${voiceMatches.join(', ')}`);
+    }
+    
+    // 🎯 특수 명령이 있는 경우 로그
+    if (hasSpecialCommands) {
+      this.log(`🎯 글감 분석 완료: displayText="${displayText.substring(0, 50)}...", apiText="${apiText.substring(0, 50)}..."`);
+    }
+    
+    return {
+      displayText: displayText,
+      apiText: apiText,
+      hasSpecialCommands: hasSpecialCommands
+    };
+  }
+  
+  // 🎯 묵음 시간 추출
+  extractSilenceTime(text) {
+    const silencePattern = /::(\d+)(?:초|sec)?::/g;
+    const matches = text.match(silencePattern);
+    
+    if (!matches) return 0;
+    
+    let totalSilenceTime = 0;
+    matches.forEach(match => {
+      const seconds = parseInt(match.replace(/::|초|sec/g, ''));
+      if (!isNaN(seconds)) {
+        totalSilenceTime += seconds;
+      }
+    });
+    
+    return totalSilenceTime;
+  }
+  
+  // 🎯 화자 명령 추출
+  extractVoiceCommand(text) {
+    const voicePattern = /::([^:]+)::/g;
+    const match = text.match(voicePattern);
+    
+    if (!match) return null;
+    
+    // 첫 번째 화자 명령만 사용
+    const voiceName = match[0].replace(/::/g, '');
+    return voiceName;
+  }
+  
+  // 🎯 단어1::단어2:: 패턴 감지 (보여줄 텍스트와 발화할 텍스트 분리)
+  extractDisplayAndSpeechText(text) {
+    const pattern = /([^:]+)::([^:]+)::/g;
+    const matches = text.match(pattern);
+    
+    if (!matches) return { displayText: text, speechText: text };
+    
+    let displayText = text;
+    let speechText = text;
+    
+    matches.forEach(match => {
+      const parts = match.match(/([^:]+)::([^:]+)::/);
+      if (parts) {
+        const displayWord = parts[1];
+        const speechWord = parts[2];
+        
+        // 보여줄 텍스트에서는 단어1만 유지
+        displayText = displayText.replace(match, displayWord);
+        // 발화할 텍스트에서는 단어2로 교체
+        speechText = speechText.replace(match, speechWord);
+      }
+    });
+    
+    return { displayText, speechText };
+  }
+  
+  // 🎯 AAA::BBB::CCC 형식을 파싱하는 함수 (audiobook-ui 스타일)
+  parseSpecialFormat(text) {
+    // 정확히 두 개의 ::가 있는 패턴을 찾는 정규식
+    // AAA::BBB::CCC, AAA::BBB::, 또는 :::: 형식 모두 처리
+    const specialFormatRegex = /([^::\s]*::[^::\s]*::)/g;
+    const matches = [];
+    let match;
+    
+    this.log('파싱 시작 - 텍스트:', text);
+    
+    while ((match = specialFormatRegex.exec(text)) !== null) {
+      const fullMatch = match[1];
+      const parts = fullMatch.split('::');
+      this.log('찾은 매치:', fullMatch, '파트:', parts);
+      
+      if (parts.length === 3) {
+        matches.push({
+          full: fullMatch,
+          aaa: parts[0] || '', // AAA가 없으면 빈 문자열
+          bbb: parts[1] || '', // BBB가 없으면 빈 문자열
+          ccc: parts[2] || '', // CCC가 없으면 빈 문자열
+          startIndex: match.index,
+          endIndex: match.index + fullMatch.length
+        });
+      }
+    }
+    
+    this.log('최종 매치 결과:', matches);
+    return matches;
+  }
+  
+  // 🎯 API 호출용 텍스트 변환 (AAA를 BBB로 대체)
+  convertTextForAPI(text) {
+    const matches = this.parseSpecialFormat(text);
+    this.log('API 변환 - 원본 텍스트:', text);
+    this.log('API 변환 - 찾은 매치:', matches);
+    
+    let result = text;
+    
+    // 뒤에서부터 변환하여 인덱스 변화를 방지
+    for (let i = matches.length - 1; i >= 0; i--) {
+      const match = matches[i];
+      const replacement = match.bbb + match.ccc;
+      this.log(`API 변환 - ${match.full} -> ${replacement}`);
+      this.log(`API 변환 - 인덱스: ${match.startIndex} ~ ${match.endIndex}`);
+      this.log(`API 변환 - 변환 전: "${result}"`);
+      result = result.slice(0, match.startIndex) + replacement + result.slice(match.endIndex);
+      this.log(`API 변환 - 변환 후: "${result}"`);
+    }
+    
+    this.log('API 변환 - 최종 결과:', result);
+    return result;
+  }
+  
+  // 🎯 화면 표시용 텍스트 변환 (AAA 그대로 유지)
+  convertTextForDisplay(text) {
+    let result = text.replace(/^::[^:]+::/, '');
+    // 기존 변환 로직 유지
+    const matches = this.parseSpecialFormat(result);
+    this.log('화면 변환 - 원본 텍스트:', text);
+    this.log('화면 변환 - 찾은 매치:', matches);
+    
+    // 뒤에서부터 변환하여 인덱스 변화를 방지
+    for (let i = matches.length - 1; i >= 0; i--) {
+      const match = matches[i];
+      const replacement = match.aaa + match.ccc;
+      this.log(`화면 변환 - ${match.full} -> ${replacement}`);
+      result = result.slice(0, match.startIndex) + replacement + result.slice(match.endIndex);
+    }
+    
+    this.log('화면 변환 - 결과:', result);
+    return result;
+  }
+  
+  // 🎯 문자열 유사도 계산 (audiobook-ui 스타일)
+  calculateSimilarity(str1, str2) {
+    if (str1 === str2) return 1.0;
+    if (str1.length === 0) return str2.length === 0 ? 1.0 : 0.0;
+    if (str2.length === 0) return 0.0;
+    
+    const matrix = [];
+    for (let i = 0; i <= str2.length; i++) {
+      matrix[i] = [i];
+    }
+    for (let j = 0; j <= str1.length; j++) {
+      matrix[0][j] = j;
+    }
+    
+    for (let i = 1; i <= str2.length; i++) {
+      for (let j = 1; j <= str1.length; j++) {
+        if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
+          matrix[i][j] = matrix[i - 1][j - 1];
+        } else {
+          matrix[i][j] = Math.min(
+            matrix[i - 1][j - 1] + 1,
+            matrix[i][j - 1] + 1,
+            matrix[i - 1][j] + 1
+          );
+        }
+      }
+    }
+    
+    const maxLength = Math.max(str1.length, str2.length);
+    return maxLength === 0 ? 1.0 : (maxLength - matrix[str2.length][str1.length]) / maxLength;
+  }
+  
+  // 🎯 묵음 처리가 포함된 단일 청크 오디오 생성
+  async generateSingleChunkAudioWithSilence(text, voice, language, silenceTime) {
+    try {
+      // 기본 오디오 생성
+      const audioUrl = await this.generateSingleChunkAudio(text, voice, language);
+      
+      if (!audioUrl || silenceTime <= 0) {
+        return audioUrl;
+      }
+      
+      // 묵음 시간이 있는 경우 오디오에 묵음 추가
+      this.log(`🔇 묵음 ${silenceTime}초 추가 중...`);
+      return await this.addSilenceToAudio(audioUrl, silenceTime);
+      
+    } catch (error) {
+      this.error('묵음 포함 오디오 생성 실패:', error);
+      return null;
+    }
+  }
+  
+  // 🎯 묵음 처리가 포함된 멀티 청크 오디오 생성
+  async generateMultiChunkAudioWithSilence(take, apiText, voice, silenceTime) {
+    try {
+      // 기본 멀티 청크 오디오 생성
+      const audioUrl = await this.generateMultiChunkAudio({
+        ...take,
+        text: apiText
+      });
+      
+      if (!audioUrl || silenceTime <= 0) {
+        return audioUrl;
+      }
+      
+      // 묵음 시간이 있는 경우 오디오에 묵음 추가
+      this.log(`🔇 묵음 ${silenceTime}초 추가 중...`);
+      return await this.addSilenceToAudio(audioUrl, silenceTime);
+      
+    } catch (error) {
+      this.error('묵음 포함 멀티 청크 오디오 생성 실패:', error);
+      return null;
+    }
+  }
+  
+  // 🎯 오디오에 묵음 추가
+  async addSilenceToAudio(audioUrl, silenceTime) {
+    try {
+      // 오디오 컨텍스트 생성
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      
+      // 원본 오디오 로드
+      const response = await fetch(audioUrl);
+      const arrayBuffer = await response.arrayBuffer();
+      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+      
+      // 묵음 버퍼 생성 (샘플레이트 44100Hz 기준)
+      const sampleRate = audioBuffer.sampleRate;
+      const silenceSamples = Math.floor(silenceTime * sampleRate);
+      const silenceBuffer = audioContext.createBuffer(1, silenceSamples, sampleRate);
+      
+      // 묵음 채널 데이터 (모든 샘플을 0으로 설정)
+      const silenceChannelData = silenceBuffer.getChannelData(0);
+      for (let i = 0; i < silenceSamples; i++) {
+        silenceChannelData[i] = 0;
+      }
+      
+      // 새로운 오디오 버퍼 생성 (원본 + 묵음)
+      const totalSamples = audioBuffer.length + silenceSamples;
+      const newBuffer = audioContext.createBuffer(audioBuffer.numberOfChannels, totalSamples, sampleRate);
+      
+      // 각 채널에 데이터 복사
+      for (let channel = 0; channel < audioBuffer.numberOfChannels; channel++) {
+        const originalChannelData = audioBuffer.getChannelData(channel);
+        const newChannelData = newBuffer.getChannelData(channel);
+        
+        // 원본 오디오 복사
+        for (let i = 0; i < audioBuffer.length; i++) {
+          newChannelData[i] = originalChannelData[i];
+        }
+        
+        // 묵음 추가 (묵음은 모노로 처리)
+        const silenceData = silenceBuffer.getChannelData(0);
+        for (let i = 0; i < silenceSamples; i++) {
+          newChannelData[audioBuffer.length + i] = silenceData[i];
+        }
+      }
+      
+      // 새로운 오디오 버퍼를 Blob으로 변환
+      const offlineContext = new OfflineAudioContext(
+        newBuffer.numberOfChannels,
+        newBuffer.length,
+        newBuffer.sampleRate
+      );
+      
+      const source = offlineContext.createBufferSource();
+      source.buffer = newBuffer;
+      source.connect(offlineContext.destination);
+      source.start();
+      
+      const renderedBuffer = await offlineContext.startRendering();
+      
+      // WAV 파일로 인코딩
+      const wavBlob = this.audioBufferToWav(renderedBuffer);
+      const newAudioUrl = URL.createObjectURL(wavBlob);
+      
+      this.log(`🔇 묵음 ${silenceTime}초 추가 완료`);
+      return newAudioUrl;
+      
+    } catch (error) {
+      this.error('묵음 추가 실패:', error);
+      return audioUrl; // 실패 시 원본 반환
+    }
+  }
+  
+  // 🎯 AudioBuffer를 WAV Blob으로 변환
+  audioBufferToWav(buffer) {
+    const length = buffer.length;
+    const numberOfChannels = buffer.numberOfChannels;
+    const sampleRate = buffer.sampleRate;
+    const arrayBuffer = new ArrayBuffer(44 + length * numberOfChannels * 2);
+    const view = new DataView(arrayBuffer);
+    
+    // WAV 헤더 작성
+    const writeString = (offset, string) => {
+      for (let i = 0; i < string.length; i++) {
+        view.setUint8(offset + i, string.charCodeAt(i));
+      }
+    };
+    
+    writeString(0, 'RIFF');
+    view.setUint32(4, 36 + length * numberOfChannels * 2, true);
+    writeString(8, 'WAVE');
+    writeString(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, numberOfChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * numberOfChannels * 2, true);
+    view.setUint16(32, numberOfChannels * 2, true);
+    view.setUint16(34, 16, true);
+    writeString(36, 'data');
+    view.setUint32(40, length * numberOfChannels * 2, true);
+    
+    // 오디오 데이터 작성
+    let offset = 44;
+    for (let i = 0; i < length; i++) {
+      for (let channel = 0; channel < numberOfChannels; channel++) {
+        const sample = Math.max(-1, Math.min(1, buffer.getChannelData(channel)[i]));
+        view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
+        offset += 2;
+      }
+    }
+    
+    return new Blob([arrayBuffer], { type: 'audio/wav' });
+  }
   
   // 🎯 순수 텍스트 내용 추출 (HTML 태그 제거)
   getPureTextContent(element) {
@@ -7929,15 +8285,66 @@ class TTSManager {
     this.log(`🌍 언어: ${take.language}`);
     this.log(`📏 텍스트 길이: ${take.text.length}자`);
     
-    // 멀티 청크 필요 여부 확인
-    const isMultiChunk = this.needsMultiChunk(take.text, take.language);
+    // 🎯 글감 분석 및 변환 (audiobook-ui 스타일)
+    const analysis = this.analyzeAndConvertText(take.text);
+    let apiText = analysis.apiText;
+    let displayText = analysis.displayText;
+    let silenceTime = 0;
+    let customVoice = null;
+    
+    // 🎯 묵음 시간 추출
+    silenceTime = this.extractSilenceTime(take.text);
+    
+    // 🎯 화자 명령 추출 및 처리
+    const voiceCommand = this.extractVoiceCommand(take.text);
+    if (voiceCommand) {
+      // Voice ID인지 확인 (22자리 영문숫자)
+      const voiceIdMatch = voiceCommand.match(/^[a-zA-Z0-9]{22}$/);
+      if (voiceIdMatch) {
+        customVoice = this.VOICES.find(v => v.id === voiceCommand);
+        this.log(`🎤 Voice ID 감지: ${voiceCommand}`);
+      } else {
+        // Voice 이름인지 확인
+        customVoice = this.VOICES.find(v => v.name === voiceCommand);
+        if (!customVoice) {
+          // 유사도 검색 (0.75 이상)
+          let best = { sim: 0, voice: null };
+          for (const voice of this.VOICES) {
+            const sim = this.calculateSimilarity(voiceCommand, voice.name);
+            if (sim > best.sim) best = { sim, voice };
+          }
+          if (best.sim >= 0.75) {
+            customVoice = best.voice;
+            this.log(`🎤 유사한 Voice 이름 감지: ${voiceCommand} → ${customVoice.name} (유사도: ${best.sim})`);
+          }
+        } else {
+          this.log(`🎤 Voice 이름 감지: ${voiceCommand}`);
+        }
+      }
+    }
+    
+    // 🎯 단어1::단어2:: 패턴 처리
+    const displayAndSpeech = this.extractDisplayAndSpeechText(take.text);
+    if (displayAndSpeech.displayText !== take.text || displayAndSpeech.speechText !== take.text) {
+      displayText = displayAndSpeech.displayText;
+      apiText = displayAndSpeech.speechText;
+      this.log(`🎯 단어 변환 패턴 감지: "${take.text}" → 표시: "${displayText}", 발화: "${apiText}"`);
+    }
+    
+    // 🎯 사용할 음성 결정
+    const targetVoice = customVoice || this.selectedVoice;
+    
+    this.log(`🎵 최종 설정 - 음성: ${targetVoice.name}, API 텍스트: "${apiText.substring(0, 50)}...", 묵음: ${silenceTime}초`);
+    
+    // 멀티 청크 필요 여부 확인 (API 텍스트 기준)
+    const isMultiChunk = this.needsMultiChunk(apiText, take.language);
     
     if (isMultiChunk) {
-      this.log(`🔄 멀티청크 TTS 모드: ${take.text.length}자 → 분할 처리`);
-      return await this.generateMultiChunkAudio(take);
+      this.log(`🔄 멀티청크 TTS 모드: ${apiText.length}자 → 분할 처리`);
+      return await this.generateMultiChunkAudioWithSilence(take, apiText, targetVoice, silenceTime);
     } else {
-      this.log(`🎵 단일청크 TTS 모드: ${take.text.length}자 → 단일 처리`);
-      return await this.generateSingleChunkAudio(take.text, this.selectedVoice, take.language);
+      this.log(`🎵 단일청크 TTS 모드: ${apiText.length}자 → 단일 처리`);
+      return await this.generateSingleChunkAudioWithSilence(apiText, targetVoice, take.language, silenceTime);
     }
   }
 
