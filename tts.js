@@ -71,7 +71,7 @@ class TTSManager {
     
     // 플러그인 활성화 상태
     this.isPluginEnabled = true;
-    this.takeListVisible = true;
+    this.takeListVisible = false;
     this.floatingBarVisible = true;
     
     // API URL
@@ -699,9 +699,9 @@ class TTSManager {
     });
 
     // 오버레이 하이라이트 제거
-    const overlayHighlight = document.getElementById('tts-overlay-highlight');
-    if (overlayHighlight) {
-      overlayHighlight.remove();
+    const wordHighlight = document.getElementById('tts-word-highlight');
+    if (wordHighlight) {
+      wordHighlight.remove();
     }
     
     // 테이크 호버 아이콘 제거
@@ -920,8 +920,8 @@ class TTSManager {
           }
           
           // 기본값 사용
-          this.log('기본 테이크 리스트 표시 설정 사용: ON');
-          resolve(true); // 기본값: 표시
+          this.log('기본 테이크 리스트 표시 설정 사용: OFF');
+          resolve(false); // 기본값: 숨김
         });
       } catch (error) {
         this.warn('Chrome storage 불러오기 실패, localStorage로 폴백:', error);
@@ -940,8 +940,8 @@ class TTSManager {
         }
         
         // 기본값 사용
-        this.log('기본 테이크 리스트 표시 설정 사용: ON');
-        resolve(true); // 기본값: 표시
+        this.log('기본 테이크 리스트 표시 설정 사용: OFF');
+        resolve(false); // 기본값: 숨김
       }
     });
   }
@@ -2510,8 +2510,8 @@ class TTSManager {
     `;
     
     // 🎯 구분선
-    const divider = document.createElement('div');
-    divider.style.cssText = `
+    this.divider = document.createElement('div');
+    this.divider.style.cssText = `
       height: 1px !important;
       background: ${borderColor} !important;
       margin: 4px 0 8px 0 !important;
@@ -2540,7 +2540,7 @@ class TTSManager {
 
     // 🎯 요소 조립
     this.floatingUI.appendChild(this.consoleLogStatusLabel);
-    this.floatingUI.appendChild(divider);
+    this.floatingUI.appendChild(this.divider);
     this.floatingUI.appendChild(this.takeCountLabel);
     this.floatingUI.appendChild(this.takeListContainer);
 
@@ -2563,9 +2563,15 @@ class TTSManager {
       if (this.DEBUG_MODE) {
         this.consoleLogStatusLabel.textContent = 'Console log: ON\n⚠️ 성능저하 있음 ⚠️';
         this.consoleLogStatusLabel.style.color = this.currentTheme === 'dark' ? 'rgba(255, 255, 255, 0.6)' : '#1d1d1d'; // 기본 색상
+        this.consoleLogStatusLabel.style.display = 'block';
+        if (this.divider) {
+          this.divider.style.display = 'block';
+        }
       } else {
-        this.consoleLogStatusLabel.textContent = 'Console log: OFF';
-        this.consoleLogStatusLabel.style.color = this.currentTheme === 'dark' ? 'rgba(255, 255, 255, 0.6)' : '#1d1d1d'; // 기본 색상
+        this.consoleLogStatusLabel.style.display = 'none';
+        if (this.divider) {
+          this.divider.style.display = 'none';
+        }
       }
     }
   }
@@ -2601,7 +2607,7 @@ class TTSManager {
       
       // 🎯 입력 필드에서 스페이스바 처리 개선
       if (this.isInputField(event.target)) {
-        // 입력 필드에서는 스페이스바 기본 동작 허용
+        // 입력 필드에서는 스페이스바 기본 동작 허용 (공백 입력)
         if (event.key === ' ') {
           return;
         }
@@ -2626,12 +2632,9 @@ class TTSManager {
         this.stopAll();
         event.preventDefault();
       } else if (key === ' ') {
-        // 🤖 Zeta AI / ChatGPT에서는 스페이스바 기능 비활성화
-        if (!this.isZetaOrChatGPTMode()) {
-          // 🎯 스페이스바로 하단 플로팅바 재생/일시정지 토글
-          this.handleSpacebarToggle();
-          event.preventDefault();
-        }
+        // 🎯 스페이스바로 하단 플로팅바 재생/일시정지 토글 (입력 필드가 아닐 때만)
+        this.handleSpacebarToggle();
+        event.preventDefault();
       } else if (key === 'Enter') {
         // 🤖 Zeta AI / ChatGPT: 엔터키 입력 감지 (화자 구분용) - 포괄적 감지
         this.handleZetaAIEnterKey();
@@ -3313,21 +3316,21 @@ class TTSManager {
     });
   }
   
-  // 🎯 오버레이 단어 트래킹 준비 (모든 사이트 공통)
+  // 🎯 오버레이 단어 트래킹 준비 (모든 사이트 공통, 인라인 태그 무시)
   prepareWordTracking(take) {
     this.log(`🎨 오버레이 단어 트래킹 준비 시작: ${take.id}`);
     
     // 기존 트래킹 정리
     this.cleanupWordTracking();
     
-    // 🎯 모든 사이트에서 오버레이 모드 사용 (DOM 조작 없음)
+    // 🎯 모든 사이트에서 오버레이 모드 사용 (DOM 조작 없음, 인라인 태그 무시)
     this.currentTakeWords = this.splitIntoWords(take.text, take.language);
     this.currentTakeWordElements = []; // DOM 조작 없으므로 항상 빈 배열
     
-    // 오버레이 트래킹 설정
+    // 오버레이 트래킹 설정 (개선된 버전)
     this.setupOverlayWordTracking(take);
     
-    this.log(`🎨 오버레이 트래킹 준비 완료: ${this.currentTakeWords.length}개 단어`);
+    this.log(`🎨 오버레이 트래킹 준비 완료: ${this.currentTakeWords.length}개 단어 (인라인 태그 무시)`);
   }
   
   // 🛡️ DOM 조작이 안전한지 체크하는 메서드 (BBC 예외 처리 포함)
@@ -3429,9 +3432,11 @@ class TTSManager {
     }
   }
   
-  // 🎯 App.js 스타일 단어 분할 (언어별 가중치 적용)
+  // 🎯 App.js 스타일 단어 분할 (언어별 가중치 적용, 단순화)
   splitIntoWords(text, language) {
-    const words = text.split(/\s+/).filter(word => word.length > 0);
+    // 🎯 단순한 공백 기반 분할 (특수문자 구분 제거)
+    const normalizedText = text.replace(/\s+/g, ' ').trim();
+    const words = normalizedText.split(/\s+/).filter(word => word.length > 0);
     
     return words.map(word => ({
       text: word,
@@ -3482,7 +3487,7 @@ class TTSManager {
     }
   }
   
-  // 🎯 오버레이 단어 트래킹 업데이트 (모든 사이트 공통)
+  // 🎯 오버레이 단어 트래킹 업데이트 (모든 사이트 공통, 인라인 태그 무시)
   updateAppJsStyleWordTracking(take) {
     if (!this.currentAudio || !this.currentTakeWords || this.currentTakeWords.length === 0) {
       return;
@@ -3494,9 +3499,9 @@ class TTSManager {
     // App.js의 calculateCurrentWordIndex 로직
     const currentWordIndex = this.calculateCurrentWordIndex(currentTime, duration, this.currentTakeWords);
     
-    // 🎯 오버레이 모드로 단어 하이라이트 (모든 사이트)
-    if (this.overlayHighlight) {
-      this.updateOverlayWordHighlight(currentWordIndex);
+          // 🎯 새로운 단어 트래킹 시스템으로 하이라이트
+      if (this.wordHighlight) {
+        this.updateWordHighlight(currentWordIndex);
     }
     
     // UI 업데이트
@@ -3506,23 +3511,23 @@ class TTSManager {
     }
   }
   
-  // 🎯 DOM 모드에서 단어 하이라이트 업데이트
-  updateDOMWordHighlight(currentWordIndex) {
-    // 이전 하이라이트 제거
-    this.currentTakeWordElements.forEach(element => {
-      if (element && element.classList) {
-        element.classList.remove('tts-current-word-appjs');
-      }
-    });
-    
-    // 🎯 App.js 스타일 갈색 밑줄 하이라이트 적용
-    if (currentWordIndex >= 0 && currentWordIndex < this.currentTakeWordElements.length) {
-      const currentWordElement = this.currentTakeWordElements[currentWordIndex];
-      if (currentWordElement) {
-        currentWordElement.classList.add('tts-current-word-appjs');
-      }
-    }
-  }
+  // 🎯 DOM 모드에서 단어 하이라이트 업데이트 (더 이상 사용되지 않음 - 오버레이 방식으로 대체)
+  // updateDOMWordHighlight(currentWordIndex) {
+  //   // 이전 하이라이트 제거
+  //   this.currentTakeWordElements.forEach(element => {
+  //     if (element && element.classList) {
+  //       element.classList.remove('tts-current-word-appjs');
+  //     }
+  //   });
+  //   
+  //   // 🎯 App.js 스타일 갈색 밑줄 하이라이트 적용
+  //   if (currentWordIndex >= 0 && currentWordIndex < this.currentTakeWordElements.length) {
+  //     const currentWordElement = this.currentTakeWordElements[currentWordIndex];
+  //     if (currentWordElement) {
+  //       currentWordElement.classList.add('tts-current-word-appjs');
+  //     }
+  //   }
+  // }
   
   // 🎯 App.js의 calculateCurrentWordIndex 로직 재현
   calculateCurrentWordIndex(currentTime, duration, words) {
@@ -3544,302 +3549,309 @@ class TTSManager {
     return Math.max(0, words.length - 1);
   }
   
-  // 🎯 단어 래핑 (DOM에서 텍스트를 span으로 감싸기)
-  wrapWordsInElement(element, targetText) {
-    if (!element || !targetText) return;
-    
-    this.log(`🔤 단어 래핑 시작: ${targetText.substring(0, 50)}...`);
-    
-    // TreeWalker로 텍스트 노드들 찾기
-    const walker = document.createTreeWalker(
-      element,
-      NodeFilter.SHOW_TEXT,
-      null,
-      false
-    );
-    
-    const textNodes = [];
-    let node;
-    while (node = walker.nextNode()) {
-      if (node.textContent.trim().length > 0) {
-        textNodes.push(node);
-      }
-    }
-    
-    // 각 텍스트 노드에서 단어들을 span으로 래핑
-    for (const textNode of textNodes) {
-      this.wrapWordsInTextNode(textNode);
-    }
-    
-    this.log(`✅ 단어 래핑 완료: ${this.currentTakeWordElements.length}개 span 생성`);
-  }
+  // 🎯 단어 래핑 (DOM에서 텍스트를 span으로 감싸기) - 더 이상 사용되지 않음 (오버레이 방식으로 대체)
+  // wrapWordsInElement(element, targetText) {
+  //   if (!element || !targetText) return;
+  //   
+  //   this.log(`🔤 단어 래핑 시작: ${targetText.substring(0, 50)}...`);
+  //   
+  //   // TreeWalker로 텍스트 노드들 찾기
+  //   const walker = document.createTreeWalker(
+  //     element,
+  //     NodeFilter.SHOW_TEXT,
+  //     null,
+  //     false
+  //   );
+  //   
+  //   const textNodes = [];
+  //   let node;
+  //   while (node = walker.nextNode()) {
+  //     if (node.textContent.trim().length > 0) {
+  //       textNodes.push(node);
+  //     }
+  //   }
+  //   
+  //   // 각 텍스트 노드에서 단어들을 span으로 래핑
+  //   for (const textNode of textNodes) {
+  //     this.wrapWordsInTextNode(textNode);
+  //   }
+  //   
+  //   this.log(`✅ 단어 래핑 완료: ${this.currentTakeWordElements.length}개 span 생성`);
+  // }
   
-  // 🎯 단일 텍스트 노드에서 단어 래핑
-  wrapWordsInTextNode(textNode) {
-    const text = textNode.textContent;
-    const words = text.split(/(\s+)/); // 공백도 보존
-    
-    if (words.length <= 1) return;
-    
-    const fragment = document.createDocumentFragment();
-    
-    for (const word of words) {
-      if (word.trim().length > 0) {
-        // 단어인 경우 span으로 감싸기
-        const span = document.createElement('span');
-        span.textContent = word;
-        span.className = 'tts-word-appjs';
-        this.currentTakeWordElements.push(span);
-        fragment.appendChild(span);
-      } else {
-        // 공백인 경우 그대로 추가
-        fragment.appendChild(document.createTextNode(word));
-      }
-    }
-    
-    // 원본 텍스트 노드를 새로운 구조로 교체
-    textNode.parentNode.replaceChild(fragment, textNode);
-  }
+  // 🎯 단일 텍스트 노드에서 단어 래핑 - 더 이상 사용되지 않음 (오버레이 방식으로 대체)
+  // wrapWordsInTextNode(textNode) {
+  //   const text = textNode.textContent;
+  //   const words = text.split(/(\s+)/); // 공백도 보존
+  //   
+  //   if (words.length <= 1) return;
+  //   
+  //   const fragment = document.createDocumentFragment();
+  //   
+  //   for (const word of words) {
+  //     if (word.trim().length > 0) {
+  //       // 단어인 경우 span으로 감싸기
+  //       const span = document.createElement('span');
+  //       span.textContent = word;
+  //       span.className = 'tts-word-appjs';
+  //       this.currentTakeWordElements.push(span);
+  //       fragment.appendChild(span);
+  //     } else {
+  //       // 공백인 경우 그대로 추가
+  //       fragment.appendChild(document.createTextNode(word));
+  //     }
+  //   }
+  //   
+  //   // 원본 텍스트 노드를 새로운 구조로 교체
+  //   textNode.parentNode.replaceChild(fragment, textNode);
+  // }
   
-  // 🔵 BBC 전용 안전한 단어 래핑 메서드
-  wrapWordsInElementSafely(element, targetText) {
-    if (!element || !targetText) return;
-    
-    this.log(`🔵 BBC 안전 래핑 시작: ${targetText.substring(0, 50)}...`);
-    
-    try {
-      // BBC 페이지에서 안전한 텍스트 노드만 선택
-      const safeTextNodes = this.findSafeBBCTextNodes(element, targetText);
-      this.log(`🔵 BBC: ${safeTextNodes.length}개 안전한 텍스트 노드 발견`);
-      
-      // 각 텍스트 노드를 안전하게 래핑
-      for (const textNode of safeTextNodes) {
-        this.wrapSingleTextNodeSafely(textNode);
-      }
-      
-      this.log(`🔵 BBC 안전 래핑 완료: ${this.currentTakeWordElements.length}개 span 생성`);
-      
-    } catch (error) {
-      this.error('🔵 BBC 안전 래핑 실패:', error);
-      this.currentTakeWordElements = [];
-    }
-  }
+  // 🔵 BBC 전용 안전한 단어 래핑 메서드 - 더 이상 사용되지 않음 (오버레이 방식으로 대체)
+  // wrapWordsInElementSafely(element, targetText) {
+  //   if (!element || !targetText) return;
+  //   
+  //   this.log(`🔵 BBC 안전 래핑 시작: ${targetText.substring(0, 50)}...`);
+  //   
+  //   try {
+  //     // BBC 페이지에서 안전한 텍스트 노드만 선택
+  //     const safeTextNodes = this.findSafeBBCTextNodes(element, targetText);
+  //     this.log(`🔵 BBC: ${safeTextNodes.length}개 안전한 텍스트 노드 발견`);
+  //     
+  //     // 각 텍스트 노드를 안전하게 래핑
+  //     for (const textNode of safeTextNodes) {
+  //       this.wrapSingleTextNodeSafely(textNode);
+  //     }
+  //     
+  //     this.log(`🔵 BBC 안전 래핑 완료: ${this.currentTakeWordElements.length}개 span 생성`);
+  //     
+  //   } catch (error) {
+  //     this.error('🔵 BBC 안전 래핑 실패:', error);
+  //     this.currentTakeWordElements = [];
+  //   }
+  // }
   
-  // 🔵 BBC에서 안전한 텍스트 노드 찾기
-  findSafeBBCTextNodes(element, targetText) {
-    const safeNodes = [];
-    
-    // BBC 특화 안전 영역들
-    const bbcSafeSelectors = [
-      'p', // 문단
-      '[data-component="text-block"] p',
-      '.story-body p',
-      '.gel-body-copy p',
-      'article p',
-      '.qa-story-body p'
-    ];
-    
-    // 안전한 문단들만 선택
-    for (const selector of bbcSafeSelectors) {
-      try {
-        const safeParagraphs = element.querySelectorAll ? 
-          element.querySelectorAll(selector) : 
-          [element].filter(el => el.matches && el.matches(selector));
-          
-        for (const paragraph of safeParagraphs) {
-          // 각 문단의 텍스트 노드들 수집
-          const walker = document.createTreeWalker(
-            paragraph,
-            NodeFilter.SHOW_TEXT,
-            {
-              acceptNode: (node) => {
-                // 텍스트가 있고, BBC 위험 요소가 아닌 노드만
-                if (node.textContent.trim().length === 0) return NodeFilter.FILTER_REJECT;
-                
-                // 부모가 버튼이나 링크가 아닌지 확인
-                const parent = node.parentElement;
-                if (!parent) return NodeFilter.FILTER_REJECT;
-                
-                const parentTag = parent.tagName.toLowerCase();
-                if (['button', 'a', 'nav', 'header', 'footer'].includes(parentTag)) {
-                  return NodeFilter.FILTER_REJECT;
-                }
-                
-                return NodeFilter.FILTER_ACCEPT;
-              }
-            }
-          );
-          
-          let textNode;
-          while (textNode = walker.nextNode()) {
-            safeNodes.push(textNode);
-          }
-        }
-      } catch (error) {
-        this.warn(`🔵 BBC 선택자 "${selector}" 처리 실패:`, error);
-      }
-    }
-    
-    return safeNodes;
-  }
+  // 🔵 BBC에서 안전한 텍스트 노드 찾기 - 더 이상 사용되지 않음 (오버레이 방식으로 대체)
+  // findSafeBBCTextNodes(element, targetText) {
+  //   const safeNodes = [];
+  //   
+  //   // BBC 특화 안전 영역들
+  //   const bbcSafeSelectors = [
+  //     'p', // 문단
+  //     '[data-component="text-block"] p',
+  //     '.story-body p',
+  //     '.gel-body-copy p',
+  //     'article p',
+  //     '.qa-story-body p'
+  //   ];
+  //   
+  //   // 안전한 문단들만 선택
+  //   for (const selector of bbcSafeSelectors) {
+  //     try {
+  //       const safeParagraphs = element.querySelectorAll ? 
+  //         element.querySelectorAll(selector) : 
+  //         [element].filter(el => el.matches && el.matches(selector));
+  //           
+  //       for (const paragraph of safeParagraphs) {
+  //         // 각 문단의 텍스트 노드들 수집
+  //         const walker = document.createTreeWalker(
+  //           paragraph,
+  //           NodeFilter.SHOW_TEXT,
+  //           {
+  //             acceptNode: (node) => {
+  //               // 텍스트가 있고, BBC 위험 요소가 아닌 노드만
+  //               if (node.textContent.trim().length === 0) return NodeFilter.FILTER_REJECT;
+  //               
+  //               // 부모가 버튼이나 링크가 아닌지 확인
+  //               const parent = node.parentElement;
+  //               if (!parent) return NodeFilter.FILTER_REJECT;
+  //               
+  //               const parentTag = parent.tagName.toLowerCase();
+  //               if (['button', 'a', 'nav', 'header', 'footer'].includes(parentTag)) {
+  //                 return NodeFilter.FILTER_REJECT;
+  //               }
+  //               
+  //               return NodeFilter.FILTER_ACCEPT;
+  //             }
+  //           }
+  //         );
+  //           
+  //         let textNode;
+  //         while (textNode = walker.nextNode()) {
+  //           safeNodes.push(textNode);
+  //         }
+  //       }
+  //     } catch (error) {
+  //       this.warn(`🔵 BBC 선택자 "${selector}" 처리 실패:`, error);
+  //     }
+  //   }
+  //   
+  //   return safeNodes;
+  // }
+  // 
+  // 🔵 BBC용 안전한 단일 텍스트 노드 래핑 - 더 이상 사용되지 않음 (오버레이 방식으로 대체)
+  // wrapSingleTextNodeSafely(textNode) {
+  //   try {
+  //     const text = textNode.textContent;
+  //     const words = text.split(/(\s+)/);
+  //     
+  //     if (words.length <= 1) return;
+  //     
+  //     const fragment = document.createDocumentFragment();
+  //     
+  //     for (const word of words) {
+  //       if (word.trim().length > 0) {
+  //         const span = document.createElement('span');
+  //         span.textContent = word;
+  //         // BBC용 특별 클래스 (더 안전한 스타일 적용)
+  //         span.className = 'tts-word-appjs tts-word-bbc-safe';
+  //         this.currentTakeWordElements.push(span);
+  //         fragment.appendChild(span);
+  //       } else {
+  //         fragment.appendChild(document.createTextNode(word));
+  //       }
+  //     }
+  //     
+  //     // 안전한 교체
+  //     if (textNode.parentNode) {
+  //       textNode.parentNode.replaceChild(fragment, textNode);
+  //     }
+  //     
+  //   } catch (error) {
+  //     this.warn('🔵 BBC 텍스트 노드 래핑 실패:', error);
+  //   }
+  // }
   
-  // 🔵 BBC용 안전한 단일 텍스트 노드 래핑
-  wrapSingleTextNodeSafely(textNode) {
-    try {
-      const text = textNode.textContent;
-      const words = text.split(/(\s+)/);
-      
-      if (words.length <= 1) return;
-      
-      const fragment = document.createDocumentFragment();
-      
-      for (const word of words) {
-        if (word.trim().length > 0) {
-          const span = document.createElement('span');
-          span.textContent = word;
-          // BBC용 특별 클래스 (더 안전한 스타일 적용)
-          span.className = 'tts-word-appjs tts-word-bbc-safe';
-          this.currentTakeWordElements.push(span);
-          fragment.appendChild(span);
-        } else {
-          fragment.appendChild(document.createTextNode(word));
-        }
-      }
-      
-      // 안전한 교체
-      if (textNode.parentNode) {
-        textNode.parentNode.replaceChild(fragment, textNode);
-      }
-      
-    } catch (error) {
-      this.warn('🔵 BBC 텍스트 노드 래핑 실패:', error);
-    }
-  }
-  
-  // 🎯 오버레이 단어 트래킹 정리 (모든 사이트 공통)
+  // 🎯 오버레이 단어 트래킹 정리 (모든 사이트 공통, DOM 조작 없음)
   cleanupWordTracking() {
     this.log('🧹 오버레이 트래킹 정리 시작');
     
-    // 🛡️ 매우 엄격한 DOM 정리 - 우리가 생성한 요소만 정리
-    this.safeCleanupTTSElements();
-    
-    // 🎯 오버레이 하이라이트 제거
-    this.removeOverlayHighlight();
+    // 🎯 오버레이 하이라이트 제거 (DOM 조작 없음)
+          this.removeWordHighlight();
     
     // 배열 초기화
     this.currentTakeWords = [];
     this.currentTakeWordElements = [];
     
-    this.log('✅ 오버레이 트래킹 정리 완료');
+    // 🎯 캐시 정리
+    this.wordPositionCache = null;
+    
+    this.log('✅ 오버레이 트래킹 정리 완료 (DOM 조작 없음)');
   }
   
-  // 🛡️ 매우 안전한 TTS 요소 정리 (엄격한 검증)
-  safeCleanupTTSElements() {
-    try {
-      // 🔍 우리가 생성한 TTS 요소들만 엄격하게 선별
-      const ttsElements = document.querySelectorAll('[class*="tts-"]');
-      this.log(`🔍 발견된 TTS 관련 요소: ${ttsElements.length}개`);
-      
-      let cleanedCount = 0;
-      
-      ttsElements.forEach((element, index) => {
-        try {
-          // 🛡️ 엄격한 검증: 우리가 생성한 요소인지 확인
-          if (this.isSafeTTSElement(element)) {
-            const parent = element.parentNode;
-            const textContent = element.textContent;
-            
-            if (parent && textContent) {
-              // 🔄 안전한 텍스트 노드로 교체
-              const textNode = document.createTextNode(textContent);
-              parent.replaceChild(textNode, element);
-              cleanedCount++;
-              
-              this.log(`🧹 안전하게 정리됨 ${cleanedCount}: "${textContent.substring(0, 20)}..."`);
-            }
-          } else {
-            this.warn(`⚠️ 안전하지 않은 요소 발견, 건너뛰기: ${element.className}`);
-          }
-          
-        } catch (elementError) {
-          this.warn(`⚠️ 요소 ${index + 1} 정리 중 오류 (안전하게 건너뛰기):`, elementError);
-        }
-      });
-      
-      this.log(`✅ 총 ${cleanedCount}개 TTS 요소 안전하게 정리됨`);
-      
-    } catch (error) {
-      this.error('🚨 DOM 정리 중 치명적 오류 (안전하게 무시):', error);
-    }
-  }
+  // 🛡️ 매우 안전한 TTS 요소 정리 (엄격한 검증) - 더 이상 사용되지 않음 (오버레이 방식으로 대체)
+  // safeCleanupTTSElements() {
+  //   try {
+  //     // 🔍 우리가 생성한 TTS 요소들만 엄격하게 선별
+  //     const ttsElements = document.querySelectorAll('[class*="tts-"]');
+  //     this.log(`🔍 발견된 TTS 관련 요소: ${ttsElements.length}개`);
+  //     
+  //     let cleanedCount = 0;
+  //     
+  //     ttsElements.forEach((element, index) => {
+  //       try {
+  //         // 🛡️ 엄격한 검증: 우리가 생성한 요소인지 확인
+  //         if (this.isSafeTTSElement(element)) {
+  //           const parent = element.parentNode;
+  //           const textContent = element.textContent;
+  //           
+  //           if (parent && textContent) {
+  //             // 🔄 안전한 텍스트 노드로 교체
+  //             const textNode = document.createTextNode(textContent);
+  //             parent.replaceChild(textNode, element);
+  //             cleanedCount++;
+  //             
+  //             this.log(`🧹 안전하게 정리됨 ${cleanedCount}: "${textContent.substring(0, 20)}..."`);
+  //           }
+  //         } else {
+  //           this.warn(`⚠️ 안전하지 않은 요소 발견, 건너뛰기: ${element.className}`);
+  //         }
+  //         
+  //       } catch (elementError) {
+  //         this.warn(`⚠️ 요소 ${index + 1} 정리 중 오류 (안전하게 건너뛰기):`, elementError);
+  //       }
+  //     });
+  //     
+  //     this.log(`✅ 총 ${cleanedCount}개 TTS 요소 안전하게 정리됨`);
+  //     
+  //   } catch (error) {
+  //     this.error('🚨 DOM 정리 중 치명적 오류 (안전하게 무시):', error);
+  //   }
+  // }
+  // 
+  // 🔍 안전한 TTS 요소인지 엄격하게 검증 - 더 이상 사용되지 않음 (오버레이 방식으로 대체)
+  // isSafeTTSElement(element) {
+  //   if (!element || !element.className) {
+  //     return false;
+  //   }
+  //   
+  //   // 🛡️ 우리가 생성한 TTS 클래스만 허용
+  //   const safeTTSClasses = [
+  //     'tts-word-appjs',
+  //     'tts-current-word-appjs', 
+  //     'tts-word-bbc-safe'
+  //   ];
+  //   
+  //   // 정확한 클래스 매칭 (부분 매칭 방지)
+  //   const elementClasses = element.className.split(/\s+/);
+  //   const hasSafeTTSClass = elementClasses.some(cls => safeTTSClasses.includes(cls));
+  //   
+  //   if (!hasSafeTTSClass) {
+  //     return false;
+  //   }
+  //   
+  //   // 🔍 추가 안전성 검사
+  //   const tagName = element.tagName.toLowerCase();
+  //   if (tagName !== 'span') {
+  //     this.warn(`⚠️ 예상치 못한 태그: ${tagName}, TTS span이어야 함`);
+  //     return false;
+  //     }
+  //   
+  //   // 🔍 부모 요소 검증
+  //   const parent = element.parentNode;
+  //   if (!parent || parent === document) {
+  //     this.warn(`⚠️ 잘못된 부모 요소 구조`);
+  //     return false;
+  //   }
+  //   
+  //   // 🔍 텍스트 콘텐츠 검증
+  //   const textContent = element.textContent;
+  //   if (!textContent || textContent.length === 0) {
+  //     this.warn(`⚠️ 빈 텍스트 콘텐츠`);
+  //     return false;
+  //   }
+  //   
+  //   return true;
+  // }
   
-  // 🔍 안전한 TTS 요소인지 엄격하게 검증
-  isSafeTTSElement(element) {
-    if (!element || !element.className) {
-      return false;
-    }
-    
-    // 🛡️ 우리가 생성한 TTS 클래스만 허용
-    const safeTTSClasses = [
-      'tts-word-appjs',
-      'tts-current-word-appjs', 
-      'tts-word-bbc-safe'
-    ];
-    
-    // 정확한 클래스 매칭 (부분 매칭 방지)
-    const elementClasses = element.className.split(/\s+/);
-    const hasSafeTTSClass = elementClasses.some(cls => safeTTSClasses.includes(cls));
-    
-    if (!hasSafeTTSClass) {
-      return false;
-    }
-    
-    // 🔍 추가 안전성 검사
-    const tagName = element.tagName.toLowerCase();
-    if (tagName !== 'span') {
-      this.warn(`⚠️ 예상치 못한 태그: ${tagName}, TTS span이어야 함`);
-      return false;
-    }
-    
-    // 🔍 부모 요소 검증
-    const parent = element.parentNode;
-    if (!parent || parent === document) {
-      this.warn(`⚠️ 잘못된 부모 요소 구조`);
-      return false;
-    }
-    
-    // 🔍 텍스트 콘텐츠 검증
-    const textContent = element.textContent;
-    if (!textContent || textContent.length === 0) {
-      this.warn(`⚠️ 빈 텍스트 콘텐츠`);
-      return false;
-    }
-    
-    return true;
-  }
-  
-  // 🎯 오버레이 모드 단어 트래킹 설정 (DOM 조작 없음)
+  // 🎯 새로운 단어 트래킹 시스템 (가장 확실한 방법)
   setupOverlayWordTracking(take) {
-    this.log(`🎨 오버레이 모드 단어 트래킹 설정: ${take.id}`);
+    this.log(`🎨 새로운 단어 트래킹 시스템 설정: ${take.id}`);
     
     this.currentOverlayTake = take;
+    this.currentTakeWords = this.splitIntoWords(take.text, this.currentLanguage);
     this.overlayWordIndex = 0;
     
-    // 오버레이 하이라이트 엘리먼트 생성
-    this.createOverlayHighlight();
+    // 마지막 위치 초기화
+    this.lastSuccessfulPosition = null;
     
-    this.log(`🎨 오버레이 모드 준비 완료: ${this.currentTakeWords.length}개 단어`);
+    // 기존 하이라이트 제거
+    this.removeWordHighlight();
+    
+    // 새로운 하이라이트 생성
+    this.createWordHighlight();
+    
+    // 스크롤 이벤트 리스너 추가
+    this.addScrollListener();
+    
+    this.log(`🎨 새로운 단어 트래킹 시스템 준비 완료: ${this.currentTakeWords.length}개 단어`);
   }
   
-  // 🎨 오버레이 하이라이트 엘리먼트 생성
-  createOverlayHighlight() {
-    // 기존 오버레이 제거
-    this.removeOverlayHighlight();
-    
-    this.overlayHighlight = document.createElement('div');
-    this.overlayHighlight.id = 'tts-overlay-highlight';
-    this.overlayHighlight.style.cssText = `
-      position: absolute !important;
+  // 🎨 단어 하이라이트 엘리먼트 생성
+  createWordHighlight() {
+    this.wordHighlight = document.createElement('div');
+    this.wordHighlight.id = 'tts-word-highlight';
+    this.wordHighlight.style.cssText = `
+      position: fixed !important;
       pointer-events: none !important;
       z-index: 99996 !important;
       background: rgba(34, 124, 255, 0.1) !important;
@@ -3849,93 +3861,225 @@ class TTSManager {
       display: none !important;
     `;
     
-    document.body.appendChild(this.overlayHighlight);
-    this.log('🎨 오버레이 하이라이트 엘리먼트 생성');
+    document.body.appendChild(this.wordHighlight);
+    this.log('🎨 단어 하이라이트 엘리먼트 생성');
   }
   
-  // 🎨 오버레이 하이라이트 제거
-  removeOverlayHighlight() {
-    if (this.overlayHighlight) {
-      this.overlayHighlight.remove();
-      this.overlayHighlight = null;
-      this.log('🎨 오버레이 하이라이트 제거');
+  // 🎨 단어 하이라이트 제거
+  removeWordHighlight() {
+    if (this.wordHighlight) {
+      this.wordHighlight.remove();
+      this.wordHighlight = null;
+    }
+    this.removeScrollListener();
+    this.log('🎨 단어 하이라이트 제거');
+  }
+  
+  // 🎯 스크롤 이벤트 리스너 추가 (스크롤 시 Y좌표만 실시간 대응)
+  addScrollListener() {
+    this.scrollHandler = () => {
+      // 스크롤할 때 Y좌표만 다시 계산 (X좌표는 그대로 유지)
+      if (this.wordHighlight && this.currentOverlayTake && this.overlayWordIndex >= 0) {
+        const currentWordPosition = this.findCurrentWordPosition(this.overlayWordIndex);
+        if (currentWordPosition) {
+          // X좌표는 그대로, Y좌표만 업데이트
+          this.wordHighlight.style.top = currentWordPosition.top + 'px';
+          this.wordHighlight.style.height = currentWordPosition.height + 'px';
+          this.wordHighlight.style.display = 'block';
+          
+          // 마지막 성공한 위치 업데이트 (Y좌표만)
+          if (this.lastSuccessfulPosition) {
+            this.lastSuccessfulPosition.top = currentWordPosition.top;
+            this.lastSuccessfulPosition.height = currentWordPosition.height;
+          } else {
+            this.lastSuccessfulPosition = currentWordPosition;
+          }
+        }
+      }
+    };
+    
+    window.addEventListener('scroll', this.scrollHandler, { passive: true });
+    this.log('🎯 스크롤 이벤트 리스너 추가 (Y좌표만 실시간 대응)');
+  }
+  
+  // 🎯 스크롤 이벤트 리스너 제거
+  removeScrollListener() {
+    if (this.scrollHandler) {
+      window.removeEventListener('scroll', this.scrollHandler);
+      this.scrollHandler = null;
+      this.log('🎯 스크롤 이벤트 리스너 제거');
     }
   }
   
-  // 🎯 오버레이 모드에서 현재 단어 하이라이트
-  updateOverlayWordHighlight(wordIndex) {
-    if (!this.overlayHighlight || !this.currentOverlayTake || !this.currentTakeWords) {
+  // 🎯 단어 하이라이트 업데이트 (재생 중에만 위치 업데이트)
+  updateWordHighlight(wordIndex) {
+    if (!this.wordHighlight || !this.currentOverlayTake || !this.currentTakeWords) {
       return;
     }
     
     if (wordIndex < 0 || wordIndex >= this.currentTakeWords.length) {
-      this.overlayHighlight.style.display = 'none';
+      this.wordHighlight.style.display = 'none';
       return;
     }
     
     try {
-      // 🎯 현재 단어의 위치를 텍스트에서 찾기
-      const wordPosition = this.findWordPositionInText(wordIndex);
+      const currentWord = this.currentTakeWords[wordIndex];
+      if (!currentWord) {
+        this.wordHighlight.style.display = 'none';
+        return;
+      }
+      
+      // 재생 중일 때만 새로운 위치 찾기
+      let wordPosition = null;
+      if (this.isPlaying) {
+        wordPosition = this.findCurrentWordPosition(wordIndex);
+      }
       
       if (wordPosition) {
-        // 🎨 박스 확장: 좌우 25%, 위 15%, 아래 10%
-        const fontSizeExpansion = wordPosition.fontSize * 0.25; // 좌우 25%
-        const topExpansion = wordPosition.fontSize * 0.15; // 위쪽 15%
-        const bottomExpansion = wordPosition.fontSize * 0.1; // 아래쪽은 10%
+        // 하이라이트 위치 설정
+        this.wordHighlight.style.left = wordPosition.left + 'px';
+        this.wordHighlight.style.top = wordPosition.top + 'px';
+        this.wordHighlight.style.width = wordPosition.width + 'px';
+        this.wordHighlight.style.height = wordPosition.height + 'px';
+        this.wordHighlight.style.display = 'block';
         
-        this.overlayHighlight.style.left = (wordPosition.left - fontSizeExpansion) + 'px';
-        this.overlayHighlight.style.top = (wordPosition.top - topExpansion) + 'px';
-        this.overlayHighlight.style.width = (wordPosition.width + fontSizeExpansion * 2) + 'px'; // 좌우 25%씩 확장
-        this.overlayHighlight.style.height = (wordPosition.height + topExpansion + bottomExpansion) + 'px'; // 위 15% + 아래 10%
-        this.overlayHighlight.style.display = 'block';
+        // 마지막 성공한 위치 저장
+        this.lastSuccessfulPosition = wordPosition;
         
-        this.log(`🎨 오버레이 하이라이트 업데이트: 단어 ${wordIndex + 1} "${this.currentTakeWords[wordIndex]?.text}" (폰트: ${wordPosition.fontSize}px, 좌우: ${fontSizeExpansion.toFixed(1)}px, 위: ${topExpansion.toFixed(1)}px, 아래: ${bottomExpansion.toFixed(1)}px)`);
-      } else {
-        this.overlayHighlight.style.display = 'none';
+        this.log(`🎨 단어 하이라이트 업데이트: "${currentWord.text}"`);
+      } else if (this.lastSuccessfulPosition) {
+        // 위치를 찾지 못하거나 재생 중이 아닐 때 마지막 위치 유지
+        this.wordHighlight.style.left = this.lastSuccessfulPosition.left + 'px';
+        this.wordHighlight.style.top = this.lastSuccessfulPosition.top + 'px';
+        this.wordHighlight.style.width = this.lastSuccessfulPosition.width + 'px';
+        this.wordHighlight.style.height = this.lastSuccessfulPosition.height + 'px';
+        this.wordHighlight.style.display = 'block';
+        
+        this.log(`🎨 마지막 위치 유지: "${currentWord.text}"`);
+        } else {
+        this.wordHighlight.style.display = 'none';
       }
       
     } catch (error) {
-      this.warn('🎨 오버레이 하이라이트 업데이트 실패:', error);
-      this.overlayHighlight.style.display = 'none';
+      this.warn('🎨 단어 하이라이트 업데이트 실패:', error);
+      // 에러 발생 시에도 마지막 위치 유지
+      if (this.lastSuccessfulPosition) {
+        this.wordHighlight.style.left = this.lastSuccessfulPosition.left + 'px';
+        this.wordHighlight.style.top = this.lastSuccessfulPosition.top + 'px';
+        this.wordHighlight.style.width = this.lastSuccessfulPosition.width + 'px';
+        this.wordHighlight.style.height = this.lastSuccessfulPosition.height + 'px';
+        this.wordHighlight.style.display = 'block';
+      } else {
+        this.wordHighlight.style.display = 'none';
+      }
     }
   }
   
-  // 🔍 텍스트에서 단어 위치 찾기 (오버레이용)
-  findWordPositionInText(wordIndex) {
+  // 🔍 현재 단어 위치 찾기 (정확한 위치 매칭)
+  findCurrentWordPosition(wordIndex) {
     if (!this.currentOverlayTake || !this.currentTakeWords) {
       return null;
     }
     
     try {
-      // 현재 테이크의 텍스트에서 해당 단어까지의 텍스트 추출
-      const wordsUpToIndex = this.currentTakeWords.slice(0, wordIndex + 1);
-      const textUpToWord = wordsUpToIndex.map(w => w.text).join(' ');
-      const currentWord = this.currentTakeWords[wordIndex]?.text || '';
-      
-      // 테이크 엘리먼트에서 텍스트 찾기
       const takeElement = this.currentOverlayTake.element;
-      
       if (!takeElement) {
         return null;
       }
       
-      // Range API를 사용해서 단어 위치 찾기
-      const range = this.findTextRangeInElement(takeElement, textUpToWord, currentWord);
+      const currentWord = this.currentTakeWords[wordIndex];
+      if (!currentWord) {
+        return null;
+      }
       
-      if (range) {
-        const rect = range.getBoundingClientRect();
+      // 🎯 현재 단어까지의 전체 텍스트 구성
+      const wordsUpToCurrent = this.currentTakeWords.slice(0, wordIndex + 1);
+      const textUpToCurrent = wordsUpToCurrent.map(w => w.text).join(' ');
+      
+      // 🎯 테이크 엘리먼트의 전체 텍스트 구성
+      const allTextNodes = this.getAllTextNodes(takeElement);
+      let fullText = '';
+      const textNodeInfo = [];
+      
+      for (const textNode of allTextNodes) {
+        const nodeText = textNode.textContent;
+        const startPos = fullText.length;
+        fullText += nodeText;
+        const endPos = fullText.length;
         
-        // 폰트 크기 정보 가져오기
-        const computedStyle = window.getComputedStyle(takeElement);
-        const fontSize = parseFloat(computedStyle.fontSize) || 16; // 기본값 16px
+        textNodeInfo.push({
+          textNode: textNode,
+          startPos: startPos,
+          endPos: endPos,
+          nodeText: nodeText
+        });
+      }
+      
+      // 🎯 전체 텍스트에서 현재 단어까지의 텍스트 위치 찾기
+      const targetTextEnd = textUpToCurrent;
+      const endIndex = fullText.indexOf(targetTextEnd);
+      
+      if (endIndex !== -1) {
+        // 🎯 현재 단어의 시작 위치 계산
+        const wordStartIndex = endIndex - currentWord.text.length;
+        const wordEndIndex = endIndex;
         
-        return {
-          left: rect.left + window.scrollX,
-          top: rect.top + window.scrollY,
-          width: rect.width,
-          height: rect.height,
-          fontSize: fontSize
-        };
+        // 🎯 현재 단어가 위치한 텍스트 노드 찾기
+        let targetTextNode = null;
+        let targetStartOffset = 0;
+        let targetEndOffset = 0;
+        
+        for (const info of textNodeInfo) {
+          // 현재 단어가 이 텍스트 노드에 포함되는지 확인
+          if (wordStartIndex >= info.startPos && wordStartIndex < info.endPos) {
+            targetTextNode = info.textNode;
+            targetStartOffset = wordStartIndex - info.startPos;
+            targetEndOffset = Math.min(wordEndIndex - info.startPos, info.nodeText.length);
+            break;
+          }
+        }
+        
+        if (targetTextNode) {
+          // 🎯 Range 생성
+          const range = document.createRange();
+          range.setStart(targetTextNode, targetStartOffset);
+          range.setEnd(targetTextNode, targetEndOffset);
+          
+          // 🎯 위치 정보 가져오기
+          const rect = range.getBoundingClientRect();
+          
+          if (rect.width > 0 && rect.height > 0) {
+            this.log(`🎯 정확한 단어 위치 찾기: "${currentWord.text}" (${wordIndex + 1}/${this.currentTakeWords.length})`);
+            return {
+              left: rect.left,
+              top: rect.top,
+              width: rect.width,
+              height: rect.height
+            };
+          }
+        }
+      }
+      
+      // 🎯 대안: 현재 단어만으로 직접 검색 (fallback)
+      this.log(`🎯 대안 검색 시도: "${currentWord.text}"`);
+      for (const info of textNodeInfo) {
+        const wordIndexInNode = info.nodeText.indexOf(currentWord.text);
+        if (wordIndexInNode !== -1) {
+          const range = document.createRange();
+          range.setStart(info.textNode, wordIndexInNode);
+          range.setEnd(info.textNode, wordIndexInNode + currentWord.text.length);
+          
+          const rect = range.getBoundingClientRect();
+          if (rect.width > 0 && rect.height > 0) {
+            this.log(`🎯 대안 검색 성공: "${currentWord.text}"`);
+            return {
+              left: rect.left,
+              top: rect.top,
+              width: rect.width,
+              height: rect.height
+            };
+          }
+        }
       }
       
     } catch (error) {
@@ -3945,42 +4089,145 @@ class TTSManager {
     return null;
   }
   
-  // 🔍 엘리먼트에서 텍스트 범위 찾기
+  // 🔍 모든 텍스트 노드 가져오기
+  getAllTextNodes(element) {
+    const textNodes = [];
+    const walker = document.createTreeWalker(
+      element,
+      NodeFilter.SHOW_TEXT,
+      {
+        acceptNode: (node) => {
+          // 스크립트, 스타일, 노스크립트 태그 내부 제외
+          const parent = node.parentElement;
+          if (parent && (parent.tagName === 'SCRIPT' || parent.tagName === 'STYLE' || parent.tagName === 'NOSCRIPT')) {
+            return NodeFilter.FILTER_REJECT;
+          }
+          return node.textContent.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+        }
+      }
+    );
+    
+    let node;
+    while (node = walker.nextNode()) {
+      textNodes.push(node);
+    }
+    
+    return textNodes;
+  }
+  
+  // 🔍 엘리먼트에서 텍스트 범위 찾기 (개선된 버전 - 인라인 태그 무시)
   findTextRangeInElement(element, textUpToWord, currentWord) {
     try {
-      const walker = document.createTreeWalker(
-        element,
-        NodeFilter.SHOW_TEXT,
-        null,
-        false
-      );
+      // 🎯 모든 텍스트 노드를 순서대로 수집 (인라인 태그 무시)
+      const textNodes = this.collectAllTextNodes(element);
       
-      let textNode;
-      let accumulatedText = '';
+      // 🎯 전체 텍스트를 하나의 문자열로 만들고 각 텍스트 노드의 위치 정보 저장
+      let fullText = '';
+      const textNodeInfo = [];
       
-      while (textNode = walker.nextNode()) {
+      for (const textNode of textNodes) {
         const nodeText = textNode.textContent;
-        const newAccumulatedText = accumulatedText + nodeText;
+        const startPos = fullText.length;
+        fullText += nodeText;
+        const endPos = fullText.length;
         
-        // 현재 단어가 이 텍스트 노드에 있는지 확인
-        const targetText = textUpToWord;
-        const startIndex = newAccumulatedText.indexOf(targetText);
+        textNodeInfo.push({
+          textNode: textNode,
+          startPos: startPos,
+          endPos: endPos,
+          nodeText: nodeText
+        });
+      }
+      
+      // 🎯 디버깅: 텍스트 노드 정보 로깅
+      this.log(`🔍 텍스트 노드 정보: ${textNodeInfo.length}개 노드`);
+      textNodeInfo.forEach((info, index) => {
+        this.log(`  ${index + 1}. "${info.nodeText}" (${info.startPos}-${info.endPos})`);
+      });
+      
+      // 🎯 전체 텍스트에서 타겟 텍스트 찾기 (단순화)
+      const targetText = textUpToWord;
+      let startIndex = fullText.indexOf(targetText);
+      
+      this.log(`🔍 텍스트 범위 찾기: 전체 텍스트 길이 ${fullText.length}, 타겟 "${targetText}", 현재 단어 "${currentWord}"`);
+      this.log(`🔍 전체 텍스트: "${fullText.substring(0, 100)}..."`);
+      
+      // 🎯 대안 매칭: 공백 차이로 인한 매칭 실패 시 대안 시도
+      if (startIndex === -1) {
+        // 🎯 정규화된 텍스트로 재시도
+        const normalizedFullText = fullText.replace(/\s+/g, ' ').trim();
+        const normalizedTargetText = targetText.replace(/\s+/g, ' ').trim();
+        startIndex = normalizedFullText.indexOf(normalizedTargetText);
         
         if (startIndex !== -1) {
-          // 텍스트 노드에서 단어의 정확한 위치 계산
-          const nodeStartIndex = startIndex - accumulatedText.length;
-          const wordStart = Math.max(0, nodeStartIndex + targetText.length - currentWord.length);
-          const wordEnd = wordStart + currentWord.length;
+          this.log(`✅ 정규화된 텍스트로 매칭 성공: "${normalizedTargetText}"`);
+        } else {
+          // 🎯 현재 단어만으로 직접 검색 (대안)
+          const wordIndex = fullText.indexOf(currentWord);
+          if (wordIndex !== -1) {
+            this.log(`✅ 현재 단어로 직접 매칭: "${currentWord}"`);
+            startIndex = wordIndex;
+          } else {
+            this.warn(`❌ 매칭 실패: 타겟 "${targetText}", 현재 단어 "${currentWord}"`);
+          }
+        }
+      }
+      
+      if (startIndex !== -1) {
+        // 🎯 단어의 시작과 끝 위치 계산
+        let wordStartInFullText, wordEndInFullText;
+        
+        // 🎯 현재 단어로 직접 매칭한 경우와 타겟 텍스트로 매칭한 경우 구분
+        if (fullText.indexOf(targetText) === -1 && fullText.indexOf(currentWord) !== -1) {
+          // 현재 단어로 직접 매칭한 경우
+          wordStartInFullText = startIndex;
+          wordEndInFullText = startIndex + currentWord.length;
+        } else {
+          // 타겟 텍스트로 매칭한 경우
+          wordStartInFullText = startIndex + targetText.length - currentWord.length;
+          wordEndInFullText = wordStartInFullText + currentWord.length;
+        }
+        
+        // 🎯 해당 위치가 포함된 텍스트 노드 찾기 (여러 노드에 걸친 경우 처리, 단순화)
+        let startNode = null;
+        let startOffset = 0;
+        let endNode = null;
+        let endOffset = 0;
+        
+        for (const info of textNodeInfo) {
+          // 시작 노드 찾기
+          if (!startNode && wordStartInFullText >= info.startPos && wordStartInFullText < info.endPos) {
+            startNode = info.textNode;
+            startOffset = wordStartInFullText - info.startPos;
+          }
           
-          if (wordStart >= 0 && wordEnd <= nodeText.length) {
-            const range = document.createRange();
-            range.setStart(textNode, wordStart);
-            range.setEnd(textNode, wordEnd);
-            return range;
+          // 끝 노드 찾기
+          if (wordEndInFullText > info.startPos && wordEndInFullText <= info.endPos) {
+            endNode = info.textNode;
+            endOffset = wordEndInFullText - info.startPos;
+            break;
           }
         }
         
-        accumulatedText = newAccumulatedText + ' ';
+        // 🎯 시작 노드는 찾았지만 끝 노드를 못 찾은 경우, 시작 노드에서 끝내기
+        if (startNode && !endNode) {
+          endNode = startNode;
+          endOffset = Math.min(startOffset + currentWord.length, startNode.textContent.length);
+        }
+        
+        // 🎯 Range 생성 (단일 노드 또는 여러 노드)
+        if (startNode && endNode) {
+          const range = document.createRange();
+          range.setStart(startNode, startOffset);
+          range.setEnd(endNode, endOffset);
+          
+          this.log(`✅ Range 생성 성공: "${currentWord}" (시작: ${startOffset}, 끝: ${endOffset})`);
+          this.log(`✅ Range 노드: 시작="${startNode.textContent}", 끝="${endNode.textContent}"`);
+          return range;
+        } else {
+          this.warn(`❌ Range 생성 실패: 시작 노드 ${startNode ? '찾음' : '못찾음'}, 끝 노드 ${endNode ? '찾음' : '못찾음'}`);
+          this.warn(`❌ 단어 위치: ${wordStartInFullText}-${wordEndInFullText}, 전체 텍스트 길이: ${fullText.length}`);
+        }
       }
       
     } catch (error) {
@@ -3988,6 +4235,42 @@ class TTSManager {
     }
     
     return null;
+  }
+  
+  // 🎯 모든 텍스트 노드 수집 (인라인 태그 무시, 범용적 개선)
+  collectAllTextNodes(element) {
+    const textNodes = [];
+      const walker = document.createTreeWalker(
+        element,
+        NodeFilter.SHOW_TEXT,
+      {
+        acceptNode: (node) => {
+          // 빈 텍스트 노드 제외
+          if (node.textContent.trim().length === 0) {
+            return NodeFilter.FILTER_REJECT;
+          }
+          
+          // 🎯 스크립트나 스타일 태그 내부 제외
+          const parent = node.parentElement;
+          if (parent) {
+            const tagName = parent.tagName.toLowerCase();
+            if (['script', 'style', 'noscript'].includes(tagName)) {
+              return NodeFilter.FILTER_REJECT;
+            }
+          }
+          
+          return NodeFilter.FILTER_ACCEPT;
+        }
+      },
+      false
+    );
+    
+    let node;
+    while (node = walker.nextNode()) {
+      textNodes.push(node);
+    }
+    
+    return textNodes;
   }
   
   // 🎯 재생 UI 업데이트
@@ -4980,16 +5263,14 @@ class TTSManager {
       this.bottomFloatingUI.style.transformOrigin = 'center center'; // 기본 회전축으로 복원
       this.bottomFloatingUI.style.transform = 'rotate(0deg)';
       
-      // 스냅 상태가 아닐 때: 폭 800px, 마우스 위치에 따라 이동
+      // 스냅 상태가 아닐 때: 폭 700px, 마우스 포인터 중앙에 맞춤
       if (finalBottom > 10 && finalBottom < maxBottom - 10) {
-        // 스냅 영역 밖: 폭 800px, Y축처럼 상대적 이동
-        const deltaX = e.clientX - startX;
-        const deltaY = startY - e.clientY;
-        const newLeft = startLeft + deltaX;
-        const halfWidth = 700;
+        // 중앙 영역: 마우스 포인터보다 왼쪽으로 200px 이동
+        const halfWidth = 350; // 700px의 절반
+        const mouseX = e.clientX;
         
-        // 화면 경계 제한
-        let leftPosition = Math.max(0, Math.min(newLeft, window.innerWidth - halfWidth));
+        // 마우스 포인터보다 왼쪽으로 200px 이동하되, 화면 경계를 벗어나지 않도록 제한
+        let leftPosition = Math.max(0, Math.min(mouseX - halfWidth - 200, window.innerWidth - 700));
         
         this.bottomFloatingUI.style.left = `${leftPosition}px`;
         this.bottomFloatingUI.style.bottom = `${finalBottom}px`;
@@ -5223,7 +5504,7 @@ class TTSManager {
       bottom: 0 !important;
       left: 50% !important;
       transform: translate(-50%, 0) !important;
-      width: 60% !important;
+      width: 15% !important;
       min-height: 40vh !important;
       max-height: 60vh !important;
       background: ${bgColor} !important;
@@ -5254,7 +5535,7 @@ class TTSManager {
       paint-order: stroke fill !important;
       color: ${textColor} !important;
       padding: 24px 24px 0 24px !important;
-      text-align: left !important;
+      text-align: center !important;
       text-transform: none !important;
               font-size: ${this.UI_FONT_SIZE} !important;
     `;
@@ -5275,7 +5556,7 @@ class TTSManager {
       // Typography 컨테이너 (app.js 스타일)
       const typography = document.createElement('div');
       typography.style.cssText = `
-        text-align: left !important;
+        text-align: center !important;
         text-transform: none !important;
       `;
       
@@ -5563,24 +5844,40 @@ class TTSManager {
     }
   }
 
-  // 🎯 하단 플로팅 버튼 클릭 처리
+  // 🎯 하단 플로팅 버튼 클릭 처리 (개선된 이벤트 위임)
   async handleBottomFloatingButtonClick(event) {
+    // 🎯 클릭된 요소나 그 부모 요소에서 data-action 찾기
+    const findActionElement = (element) => {
+      let currentElement = element;
+      while (currentElement && currentElement !== this.bottomFloatingButton) {
+        if (currentElement.dataset && currentElement.dataset.action) {
+          return currentElement.dataset.action;
+        }
+        currentElement = currentElement.parentElement;
+      }
+      return null;
+    };
+
+    const action = findActionElement(event.target);
+    
+    this.log(`🎯 하단 플로팅 버튼 클릭: action="${action}", target="${event.target.tagName}.${event.target.className}"`);
+    
     // 화자 메뉴 클릭 처리
-    if (event && event.target.dataset.action === 'voice-menu') {
+    if (action === 'voice-menu') {
       event.stopPropagation();
       this.showVoiceMenu();
       return;
     }
 
     // '읽어 보세요' 클릭 처리
-    if (event && event.target.dataset.action === 'start-reading') {
+    if (action === 'start-reading') {
       event.stopPropagation();
       await this.startReadingFromFirst();
       return;
     }
 
     // 속도 메뉴 클릭 처리
-    if (event && event.target.dataset.action === 'speed-menu') {
+    if (action === 'speed-menu') {
       event.stopPropagation();
       this.showSpeedMenu();
       return;
@@ -6394,7 +6691,7 @@ class TTSManager {
       bottom: 0 !important;
       left: 50% !important;
       transform: translate(-50%, 0) !important;
-      width: 60% !important;
+      width: 40% !important;
       min-height: 40vh !important;
       max-height: 60vh !important;
       background: ${bgColor} !important;

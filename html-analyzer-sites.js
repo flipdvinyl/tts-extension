@@ -78,6 +78,9 @@ class HTMLAnalyzerSites {
     if (hostname.includes('musicbusinessworldwide.com')) {
       console.log('🎼 Music Business Worldwide 사이트 감지');
       
+      // MBW 로딩 후 2초 뒤 테이크 리프레시 1회 요청
+      this.setupMBWAutoRefresh();
+      
       const mbwSelectors = [
         '.mb-article__body',      // MBW 기사 본문 (실제 클래스)
         '.post-content',          // 포스트 콘텐츠
@@ -196,6 +199,22 @@ class HTMLAnalyzerSites {
       
       // @thread 요소를 찾지 못한 경우 경고
       console.log('⚠️ ChatGPT @thread 영역을 찾을 수 없음');
+      return null;
+    }
+
+    // YES24 특화 로직
+    if (hostname.includes('yes24.com')) {
+      console.log('📚 YES24 사이트 감지');
+      
+      // YES24는 <div id="infoset_introduce"> 안의 글만 감지
+      const yes24IntroduceContainer = body.querySelector('#infoset_introduce');
+      if (yes24IntroduceContainer && yes24IntroduceContainer.textContent?.trim().length > 50) {
+        console.log('✅ YES24 #infoset_introduce 영역 발견');
+        return yes24IntroduceContainer;
+      }
+      
+      // #infoset_introduce를 찾지 못한 경우 경고
+      console.log('⚠️ YES24 #infoset_introduce 영역을 찾을 수 없음');
       return null;
     }
     
@@ -633,6 +652,30 @@ class HTMLAnalyzerSites {
     
     // 사이트별 판단 결과가 없으면 null 반환 (일반 로직 적용)
     return null;
+  }
+
+  // 🎼 MBW 자동 리프레시 설정
+  setupMBWAutoRefresh() {
+    console.log('🎼 MBW 자동 리프레시 설정 시작');
+    
+    // 이미 설정되었는지 확인
+    if (this.mbwRefreshTimeout) {
+      clearTimeout(this.mbwRefreshTimeout);
+    }
+    
+    // 2초 후 테이크 리프레시 1회 요청
+    this.mbwRefreshTimeout = setTimeout(() => {
+      console.log('🎼 MBW 2초 후 테이크 리프레시 요청');
+      
+      // TTS 매니저가 존재하는지 확인하고 리프레시 요청
+      if (window.ttsManager && typeof window.ttsManager.requestRefresh === 'function') {
+        window.ttsManager.requestRefresh();
+      } else {
+        console.log('🎼 MBW: TTS 매니저를 찾을 수 없음');
+      }
+    }, 2000);
+    
+    console.log('🎼 MBW 자동 리프레시 설정 완료 (2초 후 실행)');
   }
 }
 
