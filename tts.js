@@ -3235,11 +3235,21 @@ class TTSManager {
         this.cleanupWordTracking();
         
         // 🎯 테이크 종료 후 0.5초 지연
-        setTimeout(() => {
+        setTimeout(async () => {
           const nextIndex = this.currentTakeIndex + 1;
           if (nextIndex < this.currentPlayList.length) {
-            // 다음 테이크가 있으면 연속 재생 (재생 상태 유지)
-            this.playTakeAtIndex(nextIndex);
+            // 🎯 다음 테이크에 묵음 명령이 있는지 확인
+            const nextTake = this.currentPlayList[nextIndex];
+            const silenceTime = this.extractSilenceTime(nextTake.text);
+            
+            if (silenceTime > 0) {
+              this.log(`🔇 다음 테이크에 묵음 ${silenceTime}초 감지 - 묵음 재생 후 테이크 재생`);
+              await this.playSilenceBetweenTakes(silenceTime, nextIndex);
+            } else {
+              // 묵음이 없으면 바로 다음 테이크 재생
+              this.playTakeAtIndex(nextIndex);
+            }
+            
             // 🎯 다음 테이크 재생 시작과 동시에 연속적 버퍼링 확인
             this.maintainContinuousBuffering(nextIndex);
           } else {
@@ -3389,7 +3399,10 @@ class TTSManager {
   
   // 🎯 App.js 스타일 단어 분할 (언어별 가중치 적용)
   splitIntoWords(text, language) {
-    const words = text.split(/\s+/).filter(word => word.length > 0);
+    // 🎯 ::요소:: 패턴 제거 (화자 변경, 묵음 등 명령어)
+    const cleanedText = text.replace(/::[^:]+::/g, '');
+    
+    const words = cleanedText.split(/\s+/).filter(word => word.length > 0);
     
     return words.map(word => ({
       text: word,
@@ -4012,7 +4025,9 @@ class TTSManager {
   
   // 🎯 텍스트를 단어로 분리 (공백 기준)
   splitTextIntoWords(text) {
-    return text.split(/\s+/).filter(word => word.length > 0);
+    // 🎯 ::요소:: 패턴 제거 (화자 변경, 묵음 등 명령어)
+    const cleanedText = text.replace(/::[^:]+::/g, '');
+    return cleanedText.split(/\s+/).filter(word => word.length > 0);
   }
   
   // 🎯 텍스트 노드에서 특정 단어의 시작 위치 찾기
@@ -4248,118 +4263,7 @@ class TTSManager {
     return maxLength === 0 ? 1.0 : (maxLength - matrix[str2.length][str1.length]) / maxLength;
   }
   
-  // 🎯 묵음 처리가 포함된 단일 청크 오디오 생성
-  async generateSingleChunkAudioWithSilence(text, voice, language, silenceTime) {
-    try {
-      // 기본 오디오 생성
-      const audioUrl = await this.generateSingleChunkAudio(text, voice, language);
-      
-      if (!audioUrl || silenceTime <= 0) {
-        return audioUrl;
-      }
-      
-      // 묵음 시간이 있는 경우 오디오에 묵음 추가
-      this.log(`🔇 묵음 ${silenceTime}초 추가 중...`);
-      return await this.addSilenceToAudio(audioUrl, silenceTime);
-      
-    } catch (error) {
-      this.error('묵음 포함 오디오 생성 실패:', error);
-      return null;
-    }
-  }
-  
-  // 🎯 묵음 처리가 포함된 멀티 청크 오디오 생성
-  async generateMultiChunkAudioWithSilence(take, apiText, voice, silenceTime) {
-    try {
-      // 기본 멀티 청크 오디오 생성
-      const audioUrl = await this.generateMultiChunkAudio({
-        ...take,
-        text: apiText
-      });
-      
-      if (!audioUrl || silenceTime <= 0) {
-        return audioUrl;
-      }
-      
-      // 묵음 시간이 있는 경우 오디오에 묵음 추가
-      this.log(`🔇 묵음 ${silenceTime}초 추가 중...`);
-      return await this.addSilenceToAudio(audioUrl, silenceTime);
-      
-    } catch (error) {
-      this.error('묵음 포함 멀티 청크 오디오 생성 실패:', error);
-      return null;
-    }
-  }
-  
-  // 🎯 오디오에 묵음 추가
-  async addSilenceToAudio(audioUrl, silenceTime) {
-    try {
-      // 오디오 컨텍스트 생성
-      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-      
-      // 원본 오디오 로드
-      const response = await fetch(audioUrl);
-      const arrayBuffer = await response.arrayBuffer();
-      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-      
-      // 묵음 버퍼 생성 (샘플레이트 44100Hz 기준)
-      const sampleRate = audioBuffer.sampleRate;
-      const silenceSamples = Math.floor(silenceTime * sampleRate);
-      const silenceBuffer = audioContext.createBuffer(1, silenceSamples, sampleRate);
-      
-      // 묵음 채널 데이터 (모든 샘플을 0으로 설정)
-      const silenceChannelData = silenceBuffer.getChannelData(0);
-      for (let i = 0; i < silenceSamples; i++) {
-        silenceChannelData[i] = 0;
-      }
-      
-      // 새로운 오디오 버퍼 생성 (원본 + 묵음)
-      const totalSamples = audioBuffer.length + silenceSamples;
-      const newBuffer = audioContext.createBuffer(audioBuffer.numberOfChannels, totalSamples, sampleRate);
-      
-      // 각 채널에 데이터 복사
-      for (let channel = 0; channel < audioBuffer.numberOfChannels; channel++) {
-        const originalChannelData = audioBuffer.getChannelData(channel);
-        const newChannelData = newBuffer.getChannelData(channel);
-        
-        // 원본 오디오 복사
-        for (let i = 0; i < audioBuffer.length; i++) {
-          newChannelData[i] = originalChannelData[i];
-        }
-        
-        // 묵음 추가 (묵음은 모노로 처리)
-        const silenceData = silenceBuffer.getChannelData(0);
-        for (let i = 0; i < silenceSamples; i++) {
-          newChannelData[audioBuffer.length + i] = silenceData[i];
-        }
-      }
-      
-      // 새로운 오디오 버퍼를 Blob으로 변환
-      const offlineContext = new OfflineAudioContext(
-        newBuffer.numberOfChannels,
-        newBuffer.length,
-        newBuffer.sampleRate
-      );
-      
-      const source = offlineContext.createBufferSource();
-      source.buffer = newBuffer;
-      source.connect(offlineContext.destination);
-      source.start();
-      
-      const renderedBuffer = await offlineContext.startRendering();
-      
-      // WAV 파일로 인코딩
-      const wavBlob = this.audioBufferToWav(renderedBuffer);
-      const newAudioUrl = URL.createObjectURL(wavBlob);
-      
-      this.log(`🔇 묵음 ${silenceTime}초 추가 완료`);
-      return newAudioUrl;
-      
-    } catch (error) {
-      this.error('묵음 추가 실패:', error);
-      return audioUrl; // 실패 시 원본 반환
-    }
-  }
+
   
   // 🎯 AudioBuffer를 WAV Blob으로 변환
   audioBufferToWav(buffer) {
@@ -4401,6 +4305,84 @@ class TTSManager {
     }
     
     return new Blob([arrayBuffer], { type: 'audio/wav' });
+  }
+  
+  // 🎯 테이크 사이에 묵음 재생
+  async playSilenceBetweenTakes(silenceTime, nextTakeIndex) {
+    try {
+      this.log(`🔇 테이크 사이 묵음 ${silenceTime}초 재생 시작`);
+      this.updateStatus(`묵음 ${silenceTime}초...`, '#9E9E9E');
+      
+      // 묵음 오디오 생성
+      const silenceAudioUrl = await this.createSilenceAudio(silenceTime);
+      
+      if (!silenceAudioUrl) {
+        this.log(`🔇 묵음 오디오 생성 실패 - 다음 테이크로 바로 진행`);
+        this.playTakeAtIndex(nextTakeIndex);
+        return;
+      }
+      
+      // 묵음 재생
+      await this.playSilenceAudio(silenceAudioUrl, silenceTime);
+      
+      // 묵음 재생 완료 후 다음 테이크 재생
+      this.log(`🔇 묵음 ${silenceTime}초 재생 완료 - 다음 테이크 재생 시작`);
+      this.playTakeAtIndex(nextTakeIndex);
+      
+    } catch (error) {
+      this.error('묵음 재생 중 오류:', error);
+      // 오류 발생 시 다음 테이크로 바로 진행
+      this.playTakeAtIndex(nextTakeIndex);
+    }
+  }
+  
+  // 🎯 묵음 오디오 생성
+  async createSilenceAudio(duration) {
+    try {
+      // 오디오 컨텍스트 생성
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      
+      // 묵음 버퍼 생성 (샘플레이트 44100Hz 기준)
+      const sampleRate = 44100;
+      const silenceSamples = Math.floor(duration * sampleRate);
+      const silenceBuffer = audioContext.createBuffer(1, silenceSamples, sampleRate);
+      
+      // 묵음 채널 데이터 (모든 샘플을 0으로 설정)
+      const silenceChannelData = silenceBuffer.getChannelData(0);
+      for (let i = 0; i < silenceSamples; i++) {
+        silenceChannelData[i] = 0;
+      }
+      
+      // WAV 파일로 인코딩
+      const wavBlob = this.audioBufferToWav(silenceBuffer);
+      const silenceAudioUrl = URL.createObjectURL(wavBlob);
+      
+      this.log(`🔇 묵음 ${duration}초 오디오 생성 완료`);
+      return silenceAudioUrl;
+      
+    } catch (error) {
+      this.error('묵음 오디오 생성 실패:', error);
+      return null;
+    }
+  }
+  
+  // 🎯 묵음 오디오 재생
+  async playSilenceAudio(silenceAudioUrl, duration) {
+    return new Promise((resolve, reject) => {
+      const silenceAudio = new Audio(silenceAudioUrl);
+      
+      silenceAudio.onended = () => {
+        this.log(`🔇 묵음 ${duration}초 재생 완료`);
+        resolve();
+      };
+      
+      silenceAudio.onerror = (error) => {
+        this.error('묵음 재생 오류:', error);
+        reject(error);
+      };
+      
+      silenceAudio.play().catch(reject);
+    });
   }
   
   // 🎯 순수 텍스트 내용 추출 (HTML 태그 제거)
@@ -7533,7 +7515,9 @@ class TTSManager {
   
   // 🎯 테이크에 가장 적합한 컨테이너 요소 찾기
   findBestContainerForTake(takeText, parentElement) {
-    const normalizedTakeText = this.normalizeForMatching(takeText);
+    // ::요소:: 패턴 제거 후 정규화
+    const cleanedTakeText = takeText.replace(/::[^:]+::/g, '');
+    const normalizedTakeText = this.normalizeForMatching(cleanedTakeText);
     const takeWords = normalizedTakeText.split(/\s+/).filter(w => w.length > 2);
     
     // 최소 3개 키워드가 필요
@@ -8292,9 +8276,6 @@ class TTSManager {
     let silenceTime = 0;
     let customVoice = null;
     
-    // 🎯 묵음 시간 추출
-    silenceTime = this.extractSilenceTime(take.text);
-    
     // 🎯 화자 명령 추출 및 처리
     const voiceCommand = this.extractVoiceCommand(take.text);
     if (voiceCommand) {
@@ -8334,17 +8315,17 @@ class TTSManager {
     // 🎯 사용할 음성 결정
     const targetVoice = customVoice || this.selectedVoice;
     
-    this.log(`🎵 최종 설정 - 음성: ${targetVoice.name}, API 텍스트: "${apiText.substring(0, 50)}...", 묵음: ${silenceTime}초`);
+    this.log(`🎵 최종 설정 - 음성: ${targetVoice.name}, API 텍스트: "${apiText.substring(0, 50)}..."`);
     
     // 멀티 청크 필요 여부 확인 (API 텍스트 기준)
     const isMultiChunk = this.needsMultiChunk(apiText, take.language);
     
     if (isMultiChunk) {
       this.log(`🔄 멀티청크 TTS 모드: ${apiText.length}자 → 분할 처리`);
-      return await this.generateMultiChunkAudioWithSilence(take, apiText, targetVoice, silenceTime);
+      return await this.generateMultiChunkAudio(take, apiText, targetVoice);
     } else {
       this.log(`🎵 단일청크 TTS 모드: ${apiText.length}자 → 단일 처리`);
-      return await this.generateSingleChunkAudioWithSilence(apiText, targetVoice, take.language, silenceTime);
+      return await this.generateSingleChunkAudio(apiText, targetVoice, take.language);
     }
   }
 
@@ -8454,8 +8435,9 @@ class TTSManager {
     // 🎯 해당 요소에서만 텍스트 추출 및 래핑
     this.wrapTakeWordsInSpecificElement(targetElement, take.text, takeIndex);
 
-    // 현재 테이크의 텍스트만을 단어별로 분할
-    this.currentTakeWords = take.text.split(/\s+/).filter(word => word.length > 0);
+    // 현재 테이크의 텍스트만을 단어별로 분할 (::요소:: 패턴 제거)
+    const cleanedText = take.text.replace(/::[^:]+::/g, '');
+    this.currentTakeWords = cleanedText.split(/\s+/).filter(word => word.length > 0);
     this.currentTakeWordElements = [];
     
     this.log(`테이크 ${takeIndex + 1} 단어 트래킹 시작: ${this.currentTakeWords.length}개 단어`);
@@ -8487,8 +8469,8 @@ class TTSManager {
     let bestContainer = originalElement;
     let maxTextLength = 0;
 
-    // 전체 테이크들의 합친 텍스트 (더 많은 키워드 사용)
-    const allTakesText = this.takes.map(t => t.text).join(' ');
+    // 전체 테이크들의 합친 텍스트 (더 많은 키워드 사용) - ::요소:: 패턴 제거
+    const allTakesText = this.takes.map(t => t.text.replace(/::[^:]+::/g, '')).join(' ');
     const normalizedAllText = this.normalizeForMatching(allTakesText);
     const allTextWords = normalizedAllText.split(/\s+/).filter(w => w.length > 0);
     
@@ -8707,7 +8689,7 @@ class TTSManager {
     // 🎯 직접 현재 테이크 매칭 (이전 테이크 건너뛰기)
     this.log(`현재 테이크 ${this.currentTakeIndex + 1} 직접 매칭 시작`);
     
-    // 현재 테이크의 처음 5개 단어 추출 (정규화된 텍스트에서)
+    // 현재 테이크의 처음 5개 단어 추출 (정규화된 텍스트에서) - ::요소:: 패턴 제거
     const currentTakeWords = normalizedTakeText.split(/\s+/).filter(w => w.length > 0);
     const keyWords = currentTakeWords.slice(0, Math.min(5, currentTakeWords.length)).join(' ');
     

@@ -48,8 +48,10 @@
     <h1>글감 분석 기능 테스트</h1>
     
     <div class="test-section">
-        <h2>테스트 1: 묵음 기능</h2>
-        <p>안녕하세요::3초::반갑습니다.::2sec::오늘 날씨가 좋네요.</p>
+        <h2>테스트 1: 묵음 기능 (테이크 사이)</h2>
+        <p><strong>테이크 1:</strong> 안녕하세요. 반갑습니다.</p>
+        <p><strong>테이크 2:</strong> ::3초::오늘 날씨가 좋네요.</p>
+        <p><strong>테이크 3:</strong> ::2sec::정말 좋은 하루입니다.</p>
         <button class="test-button" onclick="testSilence()">묵음 테스트</button>
         <div id="silence-result" class="result"></div>
     </div>
@@ -76,7 +78,14 @@
     </div>
 
     <div class="test-section">
-        <h2>테스트 5: AAA::BBB::CCC 형식</h2>
+        <h2>테스트 5: 단어 트래킹 제외</h2>
+        <p>::책뚫남::안녕하세요. ::차분한 그녀::반갑습니다. ::3초::오늘 날씨가 좋네요.</p>
+        <button class="test-button" onclick="testWordTrackingExclusion()">단어 트래킹 제외 테스트</button>
+        <div id="tracking-exclusion-result" class="result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>테스트 6: AAA::BBB::CCC 형식</h2>
         <p>보여줄텍스트::발화할텍스트::나머지텍스트</p>
         <button class="test-button" onclick="testSpecialFormat()">특수 형식 테스트</button>
         <div id="special-result" class="result"></div>
@@ -196,9 +205,14 @@
         
         // 테스트 함수들
         function testSilence() {
-            const text = "안녕하세요::3초::반갑습니다.::2sec::오늘 날씨가 좋네요.";
-            const silenceTime = extractSilenceTime(text);
-            const result = `원본 텍스트: ${text}\n묵음 시간: ${silenceTime}초`;
+            const take1 = "안녕하세요. 반갑습니다.";
+            const take2 = "::3초::오늘 날씨가 좋네요.";
+            const take3 = "::2sec::정말 좋은 하루입니다.";
+            
+            const silenceTime2 = extractSilenceTime(take2);
+            const silenceTime3 = extractSilenceTime(take3);
+            
+            const result = `테이크 1: ${take1}\n테이크 2: ${take2} (묵음: ${silenceTime2}초)\n테이크 3: ${take3} (묵음: ${silenceTime3}초)\n\n재생 순서:\n1. 테이크 1 재생\n2. 묵음 ${silenceTime2}초\n3. 테이크 2 재생\n4. 묵음 ${silenceTime3}초\n5. 테이크 3 재생`;
             document.getElementById('silence-result').textContent = result;
         }
         
@@ -232,6 +246,17 @@
             const displayText = convertTextForDisplay(text);
             const result = `원본 텍스트: ${text}\n파싱 결과: ${JSON.stringify(matches, null, 2)}\nAPI 텍스트: ${apiText}\n표시 텍스트: ${displayText}`;
             document.getElementById('special-result').textContent = result;
+        }
+        
+        function testWordTrackingExclusion() {
+            const text = "::책뚫남::안녕하세요. ::차분한 그녀::반갑습니다. ::3초::오늘 날씨가 좋네요.";
+            
+            // ::요소:: 패턴 제거 후 단어 분할
+            const cleanedText = text.replace(/::[^:]+::/g, '');
+            const words = cleanedText.split(/\s+/).filter(word => word.length > 0);
+            
+            const result = `원본 텍스트: ${text}\n정리된 텍스트: ${cleanedText}\n트래킹 대상 단어: ${words.join(', ')}\n트래킹 제외된 명령어: ::책뚫남::, ::차분한 그녀::, ::3초::`;
+            document.getElementById('tracking-exclusion-result').textContent = result;
         }
     </script>
 </body>
