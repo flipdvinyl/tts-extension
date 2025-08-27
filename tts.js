@@ -1626,6 +1626,13 @@ class TTSManager {
     // 클릭 이벤트
     this.takeHoverIcon.addEventListener('click', async (event) => {
       event.stopPropagation();
+      this.log(`🎯 테이크 호버 아이콘 클릭: ${take.id} (인덱스: ${take.index})`);
+      this.log(`🎯 테이크 정보:`, {
+        id: take.id,
+        index: take.index,
+        text: take.text?.substring(0, 50) + '...',
+        element: take.element ? `${take.element.tagName}.${take.element.className}` : 'null'
+      });
       await this.startPlaybackFromTake(take);
     });
     
