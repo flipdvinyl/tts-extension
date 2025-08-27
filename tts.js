@@ -8415,7 +8415,7 @@ class TTSManager {
             
             // 그 다음 테이크 미리 생성 (더 앞서서)
             for (let i = takeIndex + 2; i < Math.min(takeIndex + 5, this.takes.length); i++) {
-              if (!this.audioBuffer[i]) {
+              // 🛑 레거시 audioBuffer 체크 제거 - 새로운 시스템만 사용
                 this.prepareNextTake(i);
               }
             }
