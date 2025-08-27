@@ -712,6 +712,9 @@ class TTSManager {
     // 테이크 호버 아이콘 제거
     this.hideTakeHoverIcon();
     
+    // 🎯 플러그인 완전 비활성화 시에만 스크롤 리스너 제거
+    this.removeIconScrollListener();
+    
     // 🎥 YouTube 아이콘 제거
     this.removeYouTubeIcon();
     
@@ -1636,8 +1639,8 @@ class TTSManager {
       this.takeHoverIcon = null;
     }
     
-    // 스크롤 이벤트 리스너 제거
-    this.removeIconScrollListener();
+    // 🎯 스크롤 이벤트 리스너는 유지 (재생 중지 시에도 스크롤 대응 필요)
+    // this.removeIconScrollListener();
     
     // 자동 숨김 타이머 제거
     this.clearIconAutoHideTimer();
@@ -3247,7 +3250,7 @@ class TTSManager {
               await this.playSilenceBetweenTakes(silenceTime, nextIndex);
             } else {
               // 묵음이 없으면 바로 다음 테이크 재생
-              this.playTakeAtIndex(nextIndex);
+            this.playTakeAtIndex(nextIndex);
             }
             
             // 🎯 다음 테이크 재생 시작과 동시에 연속적 버퍼링 확인
@@ -3931,9 +3934,9 @@ class TTSManager {
       const currentWord = this.currentTakeWords[wordIndex]?.text || '';
       
       if (!takeElement || !currentWord) {
-        return null;
-      }
-      
+    return null;
+  }
+  
       // 🎯 정확한 단어 인덱스 기반 위치 찾기 (같은 단어가 여러 개 있어도 정확히 매칭)
       return this.findWordPositionByExactIndex(takeElement, wordIndex);
       
@@ -8284,7 +8287,7 @@ class TTSManager {
       if (voiceIdMatch) {
         customVoice = this.VOICES.find(v => v.id === voiceCommand);
         this.log(`🎤 Voice ID 감지: ${voiceCommand}`);
-      } else {
+    } else {
         // Voice 이름인지 확인
         customVoice = this.VOICES.find(v => v.name === voiceCommand);
         if (!customVoice) {
@@ -8964,6 +8967,9 @@ class TTSManager {
         }
       });
     }
+    
+    // 🎯 스크롤 리스너는 유지 (재생 중지 시에도 스크롤 대응 필요)
+    // this.removeIconScrollListener(); // 이 줄 제거
   }
 
   // 단어 래핑 해제 (현재 테이크만)
