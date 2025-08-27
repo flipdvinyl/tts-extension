@@ -1648,9 +1648,11 @@ class TTSManager {
     // 호버 추적 정리
     this.cleanupCurrentTakeHoverTracking();
     
+    // 🎯 currentIconElement는 유지 (스크롤 대응을 위해)
+    // this.currentIconElement = null;
+    
     // 저장된 요소 정보 초기화
     this.currentIconTake = null;
-    this.currentIconElement = null;
   }
 
   // 🎥 YouTube 전용 아이콘 생성 (제목 행 오른쪽)
@@ -2194,7 +2196,18 @@ class TTSManager {
 
   // 🎯 아이콘 위치 업데이트 (뷰포트 기준)
   updateIconPosition() {
-    if (!this.takeHoverIcon || !this.currentIconElement) return;
+    if (!this.takeHoverIcon) return;
+    
+    // 🎯 currentIconElement가 없으면 현재 테이크에서 찾기
+    if (!this.currentIconElement && this.currentTakeIndex >= 0 && this.takes[this.currentTakeIndex]) {
+      const currentTake = this.takes[this.currentTakeIndex];
+      if (currentTake.elementInfo && currentTake.elementInfo.element) {
+        this.currentIconElement = currentTake.elementInfo.element;
+        this.log(`🎯 스크롤 대응: 현재 테이크 요소 재설정`);
+      }
+    }
+    
+    if (!this.currentIconElement) return;
     
     const rect = this.currentIconElement.getBoundingClientRect();
     
