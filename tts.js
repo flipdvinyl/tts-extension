@@ -27,20 +27,21 @@ class TTSManager {
     this.preTakes = [];  // 사전 생성된 테이크 목록
     this.currentAudio = null;
     
-    // 🎯 메모리 최적화: 스마트 오디오 버퍼 관리
-    this.audioBuffer = new Map(); // Map으로 변경하여 순서 관리
-    this.audioBufferTTL = new Map(); // TTL 관리
-    this.MAX_AUDIO_CACHE = 5; // 최대 5개 오디오만 캐시
-    this.CACHE_TTL = 300000; // 5분 TTL
-    
     this.takes = [];
     this.currentTakeIndex = 0;
     this.currentPlayingTakeId = null;
     this.isPlaying = false;
     this.isPaused = false;
     this.isGenerating = false;
-    this.bufferingTakes = new Set(); // 버퍼링 중인 테이크들
+    this.currentGeneratingTakeId = null;
     this.abortController = null;
+    this.shouldStopSequentialPlayback = false;
+    
+    // 🎯 버퍼링 시스템 관련 변수
+    this.isBuffering = false;
+    this.bufferedTakes = new Map(); // takeId -> audioUrl
+    this.bufferingTakeIds = new Set(); // 현재 버퍼링 중인 테이크 ID들
+    this.bufferAbortController = new AbortController(); // 버퍼링 전용 AbortController
     
     // 🎯 탭 간 동기화: 설정을 비동기로 불러오기 (기본값으로 초기화 후 업데이트)
     this.selectedVoice = this.VOICES[2]; // 기본값: 책뚫남
@@ -146,11 +147,6 @@ class TTSManager {
     
     // 🎯 탭 간 설정 동기화: storage 변경 리스너 설정
     this.setupStorageListener();
-    
-    // 🎯 메모리 최적화: 주기적 캐시 정리 (1분마다)
-    this.cacheCleanupInterval = setInterval(() => {
-      this.cleanExpiredAudioCache();
-    }, 60000);
   }
 
   // 🎯 메모리 최적화: 조건부 로깅 헬퍼 메소드들
@@ -179,61 +175,6 @@ class TTSManager {
   // 🎥 YouTube 모드 확인 헬퍼
   isYouTubeMode() {
     return window.location.hostname.includes('youtube.com') && window.location.pathname.includes('watch');
-  }
-
-  // 🎯 메모리 최적화: 스마트 오디오 버퍼 관리
-  cleanExpiredAudioCache() {
-    const now = Date.now();
-    const expiredKeys = [];
-    
-    for (const [key, timestamp] of this.audioBufferTTL.entries()) {
-      if (now - timestamp > this.CACHE_TTL) {
-        expiredKeys.push(key);
-      }
-    }
-    
-    for (const key of expiredKeys) {
-      this.removeFromAudioCache(key);
-    }
-    
-    if (expiredKeys.length > 0) {
-      this.log(`🧹 만료된 오디오 캐시 ${expiredKeys.length}개 정리 완료`);
-    }
-  }
-
-  removeFromAudioCache(key) {
-    if (this.audioBuffer.has(key)) {
-      const audioUrl = this.audioBuffer.get(key);
-      if (audioUrl && audioUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(audioUrl);
-      }
-      this.audioBuffer.delete(key);
-      this.audioBufferTTL.delete(key);
-    }
-  }
-
-  addToAudioCache(key, audioUrl) {
-    // 캐시 크기 제한 확인
-    if (this.audioBuffer.size >= this.MAX_AUDIO_CACHE) {
-      // LRU: 가장 오래된 항목 제거
-      const oldestKey = this.audioBuffer.keys().next().value;
-      this.removeFromAudioCache(oldestKey);
-    }
-    
-    // 새 항목 추가
-    this.audioBuffer.set(key, audioUrl);
-    this.audioBufferTTL.set(key, Date.now());
-    
-    this.log(`📦 오디오 캐시 추가: ${key} (총 ${this.audioBuffer.size}개)`);
-  }
-
-  getFromAudioCache(key) {
-    if (this.audioBuffer.has(key)) {
-      // 액세스 시 TTL 갱신 (LRU 효과)
-      this.audioBufferTTL.set(key, Date.now());
-      return this.audioBuffer.get(key);
-    }
-    return null;
   }
 
   // 📨 백그라운드 스크립트 메시지 리스너 설정
@@ -276,11 +217,6 @@ class TTSManager {
               this.selectedVoice = voice;
               this.updateVoiceUI();
               this.log(`🔄 다른 탭에서 화자 변경 감지: ${voice.name}`);
-              
-              // 🎯 통합 재생 시작 함수 호출
-              if (this.preTakes && this.preTakes.length > 0) {
-                this.unifiedPlaybackStart();
-              }
             }
           }
         }
@@ -292,11 +228,6 @@ class TTSManager {
             this.playbackSpeed = newSpeed;
             this.updateSpeedUI();
             this.log(`🔄 다른 탭에서 속도 변경 감지: ${newSpeed}x`);
-            
-            // 🎯 통합 재생 시작 함수 호출
-            if (this.preTakes && this.preTakes.length > 0) {
-              this.unifiedPlaybackStart();
-            }
           }
         }
         
@@ -731,10 +662,34 @@ class TTSManager {
   
   // 🎥 YouTube 아이콘 제거
   removeYouTubeIcon() {
-    if (this.youtubeIcon) {
-      this.youtubeIcon.remove();
+    if (this.youtubeIconContainer) {
+      // 클릭 이벤트 리스너 제거
+      if (this.youtubeClickHandler) {
+        this.youtubeIconContainer.removeEventListener('click', this.youtubeClickHandler);
+        this.youtubeClickHandler = null;
+        this.log('🎥 YouTube: 클릭 이벤트 리스너 제거됨');
+      }
+      
+      this.youtubeIconContainer.remove();
+      this.youtubeIconContainer = null;
       this.youtubeIcon = null;
-      this.log('🎥 YouTube: 아이콘 제거됨');
+      this.youtubeStatusText = null;
+      this.log('🎥 YouTube: 아이콘 컨테이너 제거됨');
+    }
+    
+    // 스크롤 이벤트 리스너 정리
+    if (this.youtubeScrollListener) {
+      window.removeEventListener('scroll', this.youtubeScrollListener);
+      window.removeEventListener('resize', this.youtubeScrollListener);
+      this.youtubeScrollListener = null;
+      this.log('🎥 YouTube: 스크롤 리스너 정리됨');
+    }
+    
+    // MutationObserver 정리
+    if (this.youtubeMutationObserver) {
+      this.youtubeMutationObserver.disconnect();
+      this.youtubeMutationObserver = null;
+      this.log('🎥 YouTube: MutationObserver 정리됨');
     }
     
     if (this.youtubeTitleObserver) {
@@ -747,6 +702,12 @@ class TTSManager {
       clearInterval(this.youtubeIconMonitoringInterval);
       this.youtubeIconMonitoringInterval = null;
       this.log('🎥 YouTube: 아이콘 모니터링 제거됨');
+    }
+    
+    if (this.youtubeSPAMonitoringInterval) {
+      clearInterval(this.youtubeSPAMonitoringInterval);
+      this.youtubeSPAMonitoringInterval = null;
+      this.log('🎥 YouTube: SPA 모니터링 제거됨');
     }
   }
 
@@ -1438,7 +1399,6 @@ class TTSManager {
           language: language,
           element: element,
           selector: this.generateElementSelector(element),
-          isBuffered: false,
           audioUrl: null
         };
         
@@ -1448,11 +1408,55 @@ class TTSManager {
     }
     
     this.log(`✅ 총 ${this.preTakes.length}개 테이크 사전 생성 완료`);
+    
+    // 🎯 HTML 순서대로 테이크 정렬
+    this.sortTakesByDOMOrder();
+    
     this.updateTakeListUI();
     this.updateTakeCount();
     
     // 테이크 호버 아이콘 설정
     this.setupTakeHoverIcons();
+  }
+
+  // 🎯 HTML DOM 순서대로 테이크 정렬
+  sortTakesByDOMOrder() {
+    if (!this.preTakes || this.preTakes.length === 0) {
+      this.log('🎯 정렬할 테이크가 없습니다');
+      return;
+    }
+
+    this.log(`🎯 HTML 순서대로 ${this.preTakes.length}개 테이크 정렬 시작`);
+
+    // DOM 순서를 기준으로 정렬
+    this.preTakes.sort((a, b) => {
+      // DOM 요소가 없는 경우 (YouTube 등)는 기존 순서 유지
+      if (!a.element || !b.element) {
+        return 0;
+      }
+
+      // DOM 순서 비교
+      const position = a.element.compareDocumentPosition(b.element);
+      
+      // a가 b보다 앞에 있으면 -1, 뒤에 있으면 1, 같으면 0
+      if (position & Node.DOCUMENT_POSITION_FOLLOWING) {
+        return -1; // a가 b보다 앞에 있음
+      } else if (position & Node.DOCUMENT_POSITION_PRECEDING) {
+        return 1;  // a가 b보다 뒤에 있음
+      } else {
+        return 0;  // 같은 위치
+      }
+    });
+
+    // 정렬 후 로그 출력
+    this.preTakes.forEach((take, index) => {
+      const elementInfo = take.element ? 
+        `${take.element.tagName}.${take.element.className || 'no-class'}` : 
+        'no-element';
+      this.log(`🎯 테이크 ${index + 1}: "${take.text.substring(0, 30)}..." (${elementInfo})`);
+    });
+
+    this.log(`✅ HTML 순서대로 테이크 정렬 완료`);
   }
 
   // 🎯 테이크 호버 아이콘 설정
@@ -1466,7 +1470,10 @@ class TTSManager {
     // 🎥 YouTube에서는 테이크 호버 아이콘 비활성화하고 YouTube 전용 아이콘 생성
     if (this.isYouTubeMode()) {
       this.log('🎥 YouTube: 테이크 호버 아이콘 비활성화, YouTube 전용 아이콘 생성');
+      // 아이콘이 이미 존재하는지 확인
+      if (!this.youtubeIconContainer) {
       this.createYouTubeIcon();
+      }
       return;
     }
     
@@ -1626,13 +1633,6 @@ class TTSManager {
     // 클릭 이벤트
     this.takeHoverIcon.addEventListener('click', async (event) => {
       event.stopPropagation();
-      this.log(`🎯 테이크 호버 아이콘 클릭: ${take.id} (인덱스: ${take.index})`);
-      this.log(`🎯 테이크 정보:`, {
-        id: take.id,
-        index: take.index,
-        text: take.text?.substring(0, 50) + '...',
-        element: take.element ? `${take.element.tagName}.${take.element.className}` : 'null'
-      });
       await this.startPlaybackFromTake(take);
     });
     
@@ -1669,12 +1669,20 @@ class TTSManager {
 
   // 🎥 YouTube 전용 아이콘 생성 (제목 행 오른쪽)
   createYouTubeIcon() {
+    // 이미 아이콘이 존재하는지 확인
+    if (this.youtubeIconContainer && document.body.contains(this.youtubeIconContainer)) {
+      this.log('🎥 YouTube: 아이콘이 이미 존재합니다. 중복 생성 방지');
+      return;
+    }
+    
     this.log('🎥 YouTube: 아이콘 생성 함수 시작');
     
-    // 기존 YouTube 아이콘 제거
-    if (this.youtubeIcon) {
-      this.youtubeIcon.remove();
+    // 기존 YouTube 아이콘 제거 (안전하게)
+    if (this.youtubeIconContainer) {
+      this.youtubeIconContainer.remove();
+      this.youtubeIconContainer = null;
       this.youtubeIcon = null;
+      this.youtubeStatusText = null;
     }
 
     // YouTube 제목 요소 찾기 (실제 YouTube 페이지 구조 기반)
@@ -1721,37 +1729,217 @@ class TTSManager {
         this.log(`  ${index + 1}. <h1> "${h1.textContent.trim()}" (클래스: ${h1.className})`);
       });
       this.log('🎥 YouTube: 기본 위치에 아이콘 생성');
-      this.createYouTubeIconAtDefaultPosition();
+      
+      // 기본 위치에 아이콘 생성 (제목 없을 때)
+      // 기본 위치에 아이콘 생성 (제목 없을 때)
+      this.youtubeIconContainer.style.cssText = `
+        position: fixed !important;
+        top: 13px !important;
+        left: calc(100vw - 195px) !important;
+        z-index: 100000 !important;
+        opacity: 1 !important;
+        background: transparent !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: flex-start !important;
+        cursor: pointer !important;
+        pointer-events: auto !important;
+        transition: transform 0.2s ease, opacity 0.2s ease !important;
+      `;
+      
+      this.youtubeIcon.style.cssText = `
+        border-radius: 50% !important;
+        width: ${iconSize}px !important;
+        height: ${iconSize}px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        box-shadow: 0 2px 8px #227cff40 !important;
+        transition: transform 0.2s ease, opacity 0.2s ease !important;
+      `;
+
+      // 클릭 이벤트 설정 (컨테이너에 추가) - 중복 방지
+      if (this.youtubeClickHandler) {
+        this.youtubeIconContainer.removeEventListener('click', this.youtubeClickHandler);
+      }
+      
+      this.youtubeClickHandler = async (event) => {
+        event.stopPropagation();
+        this.log('🎥 YouTube: 기본 위치 아이콘 컨테이너 클릭됨');
+        
+        // 유튜브 음성 제어 (뮤트 또는 정지)
+        this.controlYouTubeAudio();
+        
+        await this.handleYouTubeGeminiRequest();
+      };
+      
+      this.youtubeIconContainer.addEventListener('click', this.youtubeClickHandler);
+
+      // 호버 효과 (컨테이너에 추가) - 테이크 재생 아이콘과 동일
+      this.youtubeIconContainer.addEventListener('mouseenter', () => {
+        this.youtubeIcon.style.transform = 'scale(1.1)';
+        this.youtubeIcon.style.opacity = '1';
+        
+        // 호버 시 내부 요소들을 먼저 숨기고 애니메이션 트리거
+        this.hideYouTubeIconElements();
+        this.triggerYouTubeIconAnimation();
+      });
+
+      this.youtubeIconContainer.addEventListener('mouseleave', () => {
+        this.youtubeIcon.style.transform = 'scale(1.0)';
+        this.youtubeIcon.style.opacity = '0.9';
+        
+        // 호버 해제 시에도 애니메이션 클래스 유지 (내부 요소들이 사라지지 않도록)
+        // this.youtubeIcon.classList.remove('tts-icon-animate');
+      });
+
+      document.body.appendChild(this.youtubeIconContainer);
+      this.log('🎥 YouTube: 기본 위치에 TTS 재생 아이콘과 상태 텍스트 생성 완료');
+      this.log('🎥 YouTube: 기본 위치 컨테이너가 DOM에 추가됨:', document.body.contains(this.youtubeIconContainer));
+      
+      // 애니메이션 트리거 (DOM 추가 후 바로)
+      this.triggerYouTubeIconAnimation();
+      
+      // 기능 준비 완료 상태로 설정 (약간의 지연 후)
+      setTimeout(() => {
+        this.setYouTubeReady();
+      }, 500);
+      
       return;
     }
 
     const isDark = this.currentTheme === 'dark';
     const iconSize = 24; // 아이콘 크기 증가
 
-    // YouTube 아이콘 생성 (더 눈에 띄는 스타일)
+    // YouTube 아이콘과 상태 텍스트 컨테이너 생성
+    this.youtubeIconContainer = document.createElement('div');
+    this.youtubeIconContainer.id = 'youtube-tts-container';
+    
+    // 아이콘 생성 (파란색 테이크 호버 아이콘과 동일)
     this.youtubeIcon = document.createElement('div');
-    this.youtubeIcon.id = 'youtube-perplexity-icon';
+    this.youtubeIcon.id = 'youtube-tts-icon';
     this.youtubeIcon.innerHTML = `
-      <svg width="${iconSize}" height="${iconSize}" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <circle cx="12" cy="12" r="11" fill="${isDark ? '#ffffff' : '#000000'}" opacity="0.9"/>
-        <path d="M8 6v12l10-6z" fill="${isDark ? '#000000' : '#ffffff'}"/>
+      <svg width="${iconSize}" height="${iconSize}" viewBox="0 0 152 152" xmlns="http://www.w3.org/2000/svg">
+        <style>
+          .tts-icon-blue { fill: #007AFF; }
+          .tts-icon-white { fill: #fff; }
+          
+          /* 애니메이션 요소들 초기 상태: 투명 */
+          .tts-icon-element {
+            opacity: 0;
+          }
+          
+          /* 순차 애니메이션 지연 - 단순히 opacity만 변경 */
+          .tts-icon-animate .tts-icon-element-1 { 
+            animation: ttsIconShow 0.1s ease 0.1s forwards; 
+          }
+          .tts-icon-animate .tts-icon-element-2 { 
+            animation: ttsIconShow 0.1s ease 0.15s forwards; 
+          }
+          .tts-icon-animate .tts-icon-element-3 { 
+            animation: ttsIconShow 0.1s ease 0.20s forwards; 
+          }
+          .tts-icon-animate .tts-icon-element-4 { 
+            animation: ttsIconShow 0.1s ease 0.25s forwards; 
+          }
+          
+          /* 단순 표시 애니메이션 */
+          @keyframes ttsIconShow {
+            from { opacity: 0; }
+            to { opacity: 1; }
+          }
+        </style>
+        <g>
+          <circle class="tts-icon-white" cx="76" cy="76" r="72"/>
+          <path class="tts-icon-blue" d="M76,152C34.1,152,0,117.9,0,76S34.1,0,76,0s76,34.1,76,76-34.1,76-76,76ZM76,8C38.5,8,8,38.5,8,76s30.5,68,68,68,68-30.5,68-68S113.5,8,76,8Z"/>
+        </g>
+        <!-- 1. 왼쪽 작은 원 -->
+        <circle class="tts-icon-blue tts-icon-element tts-icon-element-1" cx="51.3" cy="76" r="10.8"/>
+        <!-- 2-1. 위쪽 사선 -->
+        <rect class="tts-icon-blue tts-icon-element tts-icon-element-2" x="77" y="41.2" width="23.3" height="8" transform="translate(-8.5 66.6) rotate(-39.4)"/>
+        <!-- 2-2. 가운데 직선 -->
+        <rect class="tts-icon-blue tts-icon-element tts-icon-element-3" x="83" y="72" width="22.8" height="8"/>
+        <!-- 2-3. 아래쪽 사선 -->
+        <rect class="tts-icon-blue tts-icon-element tts-icon-element-4" x="84.7" y="95.1" width="8" height="23.3" transform="translate(-50.1 107.5) rotate(-50.6)"/>
       </svg>
     `;
 
-    // 위치 설정 - 제목 행 오른쪽 (타이틀 우측 여백)
-    const rect = titleElement.getBoundingClientRect();
-    const titleContainer = titleElement.closest('div#title') || titleElement.parentElement;
-    const containerRect = titleContainer ? titleContainer.getBoundingClientRect() : rect;
+    // 상태 텍스트 생성
+    this.youtubeStatusText = document.createElement('div');
+    this.youtubeStatusText.id = 'youtube-tts-status';
+    this.youtubeStatusText.textContent = '기능 준비중';
+    this.youtubeStatusText.style.cssText = `
+      margin-left: 8px !important;
+      font-size: 16px !important;
+      font-weight: 500 !important;
+      color: #007AFF !important;
+      white-space: nowrap !important;
+      user-select: none !important;
+      transition: opacity 0.3s ease !important;
+    `;
     
-    this.youtubeIcon.style.cssText = `
+    // 컨테이너에 아이콘과 텍스트 추가
+    this.youtubeIconContainer.appendChild(this.youtubeIcon);
+    this.youtubeIconContainer.appendChild(this.youtubeStatusText);
+
+    // 위치 설정 - 제목 텍스트 끝에 배치
+    const rect = titleElement.getBoundingClientRect();
+    
+    // 제목 텍스트의 실제 끝 위치 계산 (더 정확한 방법)
+    const titleText = titleElement.textContent.trim();
+    
+    // Range API를 사용한 정확한 텍스트 측정
+    let textWidth = 0;
+    try {
+      const range = document.createRange();
+      range.selectNodeContents(titleElement);
+      const rects = range.getClientRects();
+      
+      if (rects.length > 0) {
+        // 마지막 텍스트 라인의 끝 위치 계산
+        const lastRect = rects[rects.length - 1];
+        textWidth = lastRect.right - rect.left;
+        this.log('🎥 YouTube: Range API로 측정된 텍스트 너비:', textWidth);
+      } else {
+        // Range API 실패 시 Canvas fallback
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        context.font = window.getComputedStyle(titleElement).font;
+        textWidth = context.measureText(titleText).width;
+        this.log('🎥 YouTube: Canvas fallback으로 측정된 텍스트 너비:', textWidth);
+      }
+    } catch (error) {
+      // 오류 시 Canvas fallback
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+      context.font = window.getComputedStyle(titleElement).font;
+      textWidth = context.measureText(titleText).width;
+      this.log('🎥 YouTube: 오류로 인한 Canvas fallback 텍스트 너비:', textWidth);
+    }
+    
+    // 제목 텍스트의 실제 끝 위치 계산 (정확한 위치)
+    const titleTextEndX = rect.left + textWidth;
+    
+    // 컨테이너를 제목 텍스트 끝 바로 옆에 배치
+    const containerLeft = Math.min(titleTextEndX + 18, window.innerWidth - 250); // 10px 추가 이동
+    const containerTop = rect.top + (rect.height - iconSize) / 2; // 제목과 수직 중앙 정렬
+    
+    this.youtubeIconContainer.style.cssText = `
       position: fixed !important;
-      top: ${rect.top + (rect.height - iconSize) / 2}px !important;
-      left: ${containerRect.right + 15}px !important;
-      z-index: 100000 !important;
+      top: ${containerTop - 1}px !important;
+      left: ${containerLeft}px !important;
+      z-index: 999999 !important;
       opacity: 1 !important;
       pointer-events: auto !important;
       cursor: pointer !important;
       background: transparent !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: flex-start !important;
+      transition: transform 0.2s ease, opacity 0.2s ease !important;
+    `;
+    
+    this.youtubeIcon.style.cssText = `
       border-radius: 50% !important;
       width: ${iconSize}px !important;
       height: ${iconSize}px !important;
@@ -1759,41 +1947,69 @@ class TTSManager {
       align-items: center !important;
       justify-content: center !important;
       transition: transform 0.2s ease, opacity 0.2s ease !important;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
+      box-shadow: 0 2px 8px #227cff40 !important;
     `;
 
     this.log('🎥 YouTube: 제목 요소 위치:', rect);
-    this.log('🎥 YouTube: 컨테이너 위치:', containerRect);
-    this.log('🎥 YouTube: 아이콘 위치 설정:', `${rect.top + (rect.height - iconSize) / 2}px, ${containerRect.right + 15}px`);
-    this.log('🎥 YouTube: 아이콘 요소 생성됨:', this.youtubeIcon);
+    this.log('🎥 YouTube: 제목 텍스트:', `"${titleText}"`);
+    this.log('🎥 YouTube: 컨테이너 위치 설정:', `${containerTop}px, ${containerLeft}px`);
+    this.log('🎥 YouTube: 컨테이너 요소 생성됨:', this.youtubeIconContainer);
 
-    // 클릭 이벤트 설정
-    this.youtubeIcon.addEventListener('click', async (event) => {
+    // 클릭 이벤트 설정 (컨테이너에 추가) - 중복 방지
+    if (this.youtubeClickHandler) {
+      this.youtubeIconContainer.removeEventListener('click', this.youtubeClickHandler);
+    }
+    
+    this.youtubeClickHandler = async (event) => {
       event.stopPropagation();
-      this.log('🎥 YouTube: 아이콘 클릭됨');
+      this.log('🎥 YouTube: 아이콘 컨테이너 클릭됨');
+      
+      // 유튜브 음성 제어 (뮤트 또는 정지)
+      this.controlYouTubeAudio();
+      
       await this.handleYouTubeGeminiRequest();
-    });
+    };
+    
+    this.youtubeIconContainer.addEventListener('click', this.youtubeClickHandler);
 
-    // 호버 효과
-    this.youtubeIcon.addEventListener('mouseenter', () => {
-      this.youtubeIcon.style.transform = 'scale(1.2)';
+    // 호버 효과 (컨테이너에 추가) - 테이크 재생 아이콘과 동일
+    this.youtubeIconContainer.addEventListener('mouseenter', () => {
+      this.youtubeIcon.style.transform = 'scale(1.1)';
       this.youtubeIcon.style.opacity = '1';
+      
+      // 호버 시 내부 요소들을 먼저 숨기고 애니메이션 트리거
+      this.hideYouTubeIconElements();
+      this.triggerYouTubeIconAnimation();
     });
 
-    this.youtubeIcon.addEventListener('mouseleave', () => {
+    this.youtubeIconContainer.addEventListener('mouseleave', () => {
       this.youtubeIcon.style.transform = 'scale(1.0)';
       this.youtubeIcon.style.opacity = '0.9';
+      
+      // 호버 해제 시에도 애니메이션 클래스 유지 (내부 요소들이 사라지지 않도록)
+      // this.youtubeIcon.classList.remove('tts-icon-animate');
     });
 
-    document.body.appendChild(this.youtubeIcon);
-    this.log('🎥 YouTube: Perplexity 아이콘 생성 완료');
-    this.log('🎥 YouTube: 아이콘이 DOM에 추가됨:', document.body.contains(this.youtubeIcon));
+    document.body.appendChild(this.youtubeIconContainer);
+    this.log('🎥 YouTube: TTS 재생 아이콘과 상태 텍스트 생성 완료');
+    this.log('🎥 YouTube: 컨테이너가 DOM에 추가됨:', document.body.contains(this.youtubeIconContainer));
+    
+    // 애니메이션 트리거 (DOM 추가 후 바로)
+    this.triggerYouTubeIconAnimation();
+    
+    // 스크롤 대응을 위한 이벤트 리스너 추가
+    this.setupYouTubeIconScrollListener(titleElement);
+    
+    // 기능 준비 완료 상태로 설정 (약간의 지연 후)
+    setTimeout(() => {
+      this.setYouTubeReady();
+    }, 500);
     
     // 추가 확인: 아이콘이 실제로 보이는지 확인
     setTimeout(() => {
-      if (this.youtubeIcon && document.body.contains(this.youtubeIcon)) {
-        const computedStyle = window.getComputedStyle(this.youtubeIcon);
-        this.log('🎥 YouTube: 아이콘 계산된 스타일:', {
+      if (this.youtubeIconContainer && document.body.contains(this.youtubeIconContainer)) {
+        const computedStyle = window.getComputedStyle(this.youtubeIconContainer);
+        this.log('🎥 YouTube: 컨테이너 계산된 스타일:', {
           display: computedStyle.display,
           visibility: computedStyle.visibility,
           opacity: computedStyle.opacity,
@@ -1806,69 +2022,178 @@ class TTSManager {
     }, 100);
   }
 
-  // 🎥 YouTube 기본 위치에 아이콘 생성
-  createYouTubeIconAtDefaultPosition() {
-    this.log('🎥 YouTube: 기본 위치 아이콘 생성 시작');
-    
-    const isDark = this.currentTheme === 'dark';
-    const iconSize = 24;
-    
-    // 더 눈에 띄는 아이콘 생성
-    this.youtubeIcon = document.createElement('div');
-    this.youtubeIcon.id = 'youtube-perplexity-icon';
-    this.youtubeIcon.innerHTML = `
-      <svg width="${iconSize}" height="${iconSize}" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <circle cx="12" cy="12" r="11" fill="${isDark ? '#ffffff' : '#000000'}" opacity="0.9"/>
-        <path d="M8 6v12l10-6z" fill="${isDark ? '#000000' : '#ffffff'}"/>
-      </svg>
-    `;
-    
-    this.youtubeIcon.style.cssText = `
-      position: fixed !important;
-      top: 20px !important;
-      left: calc(100vw - 60px) !important;
-      z-index: 100000 !important;
-      opacity: 1 !important;
-      background: transparent !important;
-      border-radius: 50% !important;
-      width: ${iconSize}px !important;
-      height: ${iconSize}px !important;
-      display: flex !important;
-      align-items: center !important;
-      justify-content: center !important;
-      cursor: pointer !important;
-      pointer-events: auto !important;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
-      transition: transform 0.2s ease, opacity 0.2s ease !important;
-    `;
-
-    // 클릭 이벤트 설정
-    this.youtubeIcon.addEventListener('click', async (event) => {
-      event.stopPropagation();
-      this.log('🎥 YouTube: 기본 위치 아이콘 클릭됨');
-      await this.handleYouTubeGeminiRequest();
-    });
-
-    // 호버 효과
-    this.youtubeIcon.addEventListener('mouseenter', () => {
-      this.youtubeIcon.style.transform = 'scale(1.2)';
-      this.youtubeIcon.style.opacity = '1';
-    });
-
-    this.youtubeIcon.addEventListener('mouseleave', () => {
-      this.youtubeIcon.style.transform = 'scale(1.0)';
-      this.youtubeIcon.style.opacity = '0.9';
-    });
-
-    document.body.appendChild(this.youtubeIcon);
-    this.log('🎥 YouTube: 기본 위치에 Perplexity 아이콘 생성 완료');
-    this.log('🎥 YouTube: 기본 위치 아이콘이 DOM에 추가됨:', document.body.contains(this.youtubeIcon));
+  // 🎥 YouTube 상태 텍스트 업데이트 함수들
+  updateYouTubeStatus(status, message) {
+    if (this.youtubeStatusText) {
+      this.youtubeStatusText.textContent = message;
+      this.log(`🎥 YouTube: 상태 업데이트 - ${status}: ${message}`);
+    }
   }
+
+  // 🎥 YouTube 기능 준비 완료 상태
+  setYouTubeReady() {
+    this.updateYouTubeStatus('ready', 'TLDRL로 유튜브 요약을 들어 보세요');
+  }
+
+  // 🎥 YouTube 클릭 시 상태 (글감 생성)
+  setYouTubeGeneratingContent() {
+    this.updateYouTubeStatus('generating_content', '요약 글감을 생성중 입니다.');
+  }
+
+  // 🎥 YouTube API 호출 중 상태 (음성 생성)
+  setYouTubeGeneratingAudio() {
+    this.updateYouTubeStatus('generating_audio', '음성을 생성중 입니다.');
+  }
+
+  // 🎥 YouTube API 실패 상태
+  setYouTubeFailed() {
+    this.updateYouTubeStatus('failed', '요약 API 호출에 실패했습니다.');
+  }
+
+  // 🎥 YouTube 재생 시간 표시
+  setYouTubePlaybackTime(currentTime, totalTime) {
+    // 1초마다만 업데이트 (성능 최적화)
+    const currentTimeSec = Math.floor(currentTime);
+    if (this.lastYouTubeTimeUpdate === currentTimeSec) {
+      return;
+    }
+    this.lastYouTubeTimeUpdate = currentTimeSec;
+    
+    const formatTime = (seconds) => {
+      const mins = Math.floor(seconds / 60);
+      const secs = Math.floor(seconds % 60);
+      return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    };
+    
+    const currentFormatted = formatTime(currentTime);
+    const totalFormatted = formatTime(totalTime);
+    const message = `${currentFormatted}/${totalFormatted}`;
+    
+    this.updateYouTubeStatus('playing', message);
+    this.log(`🎥 YouTube: 재생 시간 업데이트 - ${message}`);
+  }
+
+  // 🎥 YouTube 음성 제어 (뮤트만)
+  controlYouTubeAudio() {
+    try {
+      // 유튜브 비디오 요소 찾기
+      const video = document.querySelector('video');
+      if (!video) {
+        this.log('🎥 YouTube: 비디오 요소를 찾을 수 없습니다.');
+        return;
+      }
+      
+      // 항상 뮤트 설정 (복원하지 않음)
+      video.muted = true;
+      this.log('🎥 YouTube: 뮤트 설정됨');
+    } catch (error) {
+      this.log('🎥 YouTube: 음성 제어 실패:', error);
+    }
+  }
+
+  // 🎥 YouTube 아이콘 내부 요소들 숨기기
+  hideYouTubeIconElements() {
+    if (!this.youtubeIcon) return;
+    
+    // 애니메이션 클래스 제거하여 내부 요소들을 투명하게 만듦
+    this.youtubeIcon.classList.remove('tts-icon-animate');
+  }
+
+  // 🎥 YouTube 아이콘 순차 애니메이션 트리거
+  triggerYouTubeIconAnimation() {
+    if (!this.youtubeIcon) return;
+    
+    // 아이콘에 애니메이션 클래스 추가 (약간 지연 후)
+    requestAnimationFrame(() => {
+      this.youtubeIcon.classList.add('tts-icon-animate');
+    });
+  }
+
+  // 🎥 YouTube 아이콘 스크롤 대응
+  setupYouTubeIconScrollListener(titleElement) {
+    if (!this.youtubeIconContainer || !titleElement) return;
+    
+    const updateIconPosition = () => {
+      if (!this.youtubeIconContainer || !titleElement) return;
+      
+      try {
+        const rect = titleElement.getBoundingClientRect();
+        const titleText = titleElement.textContent.trim();
+        
+        // 제목 텍스트의 실제 끝 위치 계산
+        let textWidth = 0;
+        try {
+          const range = document.createRange();
+          range.selectNodeContents(titleElement);
+          const rects = range.getClientRects();
+          
+          if (rects.length > 0) {
+            const lastRect = rects[rects.length - 1];
+            textWidth = lastRect.right - rect.left;
+          } else {
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            context.font = window.getComputedStyle(titleElement).font;
+            textWidth = context.measureText(titleText).width;
+          }
+        } catch (error) {
+          const canvas = document.createElement('canvas');
+          const context = canvas.getContext('2d');
+          context.font = window.getComputedStyle(titleElement).font;
+          textWidth = context.measureText(titleText).width;
+        }
+        
+        const titleTextEndX = rect.left + textWidth;
+        const iconSize = 24;
+        
+        // 컨테이너 위치 업데이트
+        const containerLeft = Math.min(titleTextEndX + 18, window.innerWidth - 250); // 10px 추가 이동
+        const containerTop = rect.top + (rect.height - iconSize) / 2;
+        
+        this.youtubeIconContainer.style.top = `${containerTop}px`;
+        this.youtubeIconContainer.style.left = `${containerLeft}px`;
+        
+        this.log('🎥 YouTube: 스크롤에 따른 아이콘 위치 업데이트:', `${containerTop}px, ${containerLeft}px`);
+      } catch (error) {
+        this.error('🎥 YouTube: 스크롤 위치 업데이트 실패:', error);
+      }
+    };
+    
+    // 스크롤 이벤트 리스너 추가 (참조 저장)
+    this.youtubeScrollListener = updateIconPosition;
+    window.addEventListener('scroll', updateIconPosition, { passive: true });
+    
+    // 리사이즈 이벤트 리스너 추가
+    window.addEventListener('resize', updateIconPosition, { passive: true });
+    
+    // DOM 변경 감지 (제목이 변경될 수 있음)
+    this.youtubeMutationObserver = new MutationObserver(updateIconPosition);
+    this.youtubeMutationObserver.observe(titleElement, { 
+      childList: true, 
+      characterData: true, 
+      subtree: true 
+    });
+    
+    this.log('🎥 YouTube: 스크롤 대응 리스너 설정 완료');
+  }
+
+
 
   // 🎥 YouTube Gemini 요청 처리
   async handleYouTubeGeminiRequest() {
+    // 중복 호출 방지
+    if (this.isYouTubeRequesting) {
+      this.log('🎥 YouTube: 이미 요청 중입니다. 중복 호출 방지');
+      return;
+    }
+    
+    this.isYouTubeRequesting = true;
+    
     try {
       this.log('🎥 YouTube: Gemini 요청 시작');
+      
+      // 상태 업데이트: 글감 생성 중
+      this.setYouTubeGeneratingContent();
       
       const currentUrl = window.location.href;
       
@@ -1885,21 +2210,44 @@ class TTSManager {
         if (response) {
           this.log('🎥 YouTube: Gemini 응답 받음, 테이크 생성 시작');
           
+          // 상태 업데이트: 음성 생성 중
+          this.setYouTubeGeneratingAudio();
+          
           // 응답을 테이크로 변환
           await this.createTakesFromGeminiResponse(response);
           
           // 기본 테이크 재생 로직으로 1번 테이크부터 순차 재생
           if (this.preTakes && this.preTakes.length > 0) {
+            this.log(`🎥 YouTube: ${this.preTakes.length}개 테이크로 재생 시작`);
+            
+            // YouTube 전용 재생 시작 (안전한 방식)
+            try {
             await this.startPlaybackFromTake(this.preTakes[0]);
+              this.log('🎥 YouTube: 재생 시작 성공');
+              // 재생 시작 후 상태를 재생 중으로 유지 (초기화하지 않음)
+            } catch (error) {
+              this.error('🎥 YouTube: 재생 시작 실패, 단일 테이크 재생으로 fallback:', error);
+              // fallback: 단일 테이크 재생
+              await this.playSingleTake(this.preTakes[0]);
+            }
+          } else {
+            this.error('🎥 YouTube: 재생할 테이크가 없습니다');
+            // 테이크가 없으면 준비 상태로 복귀
+            this.setYouTubeReady();
           }
         }
       } else {
         this.error('🎥 YouTube: Gemini API를 사용할 수 없음');
+        this.setYouTubeFailed();
         alert('Gemini API를 로드할 수 없습니다. 페이지를 새로고침해보세요.');
       }
     } catch (error) {
       this.error('🎥 YouTube: Gemini 요청 실패:', error);
+      this.setYouTubeFailed();
       alert('Gemini API 요청에 실패했습니다: ' + error.message);
+    } finally {
+      // 요청 완료 시 플래그 리셋
+      this.isYouTubeRequesting = false;
     }
   }
   
@@ -1967,7 +2315,6 @@ class TTSManager {
             language: language,
             element: null, // YouTube에서는 DOM 요소 없음
             selector: null,
-            isBuffered: false,
             audioUrl: null
           };
           
@@ -1977,7 +2324,15 @@ class TTSManager {
       }
       
       this.log(`🎥 YouTube: 총 ${this.preTakes.length}개 테이크 생성 완료`);
+      
+      // 🎯 HTML 순서대로 테이크 정렬 (YouTube에서는 순서 유지)
+      this.sortTakesByDOMOrder();
+      
+      // UI 업데이트
+      this.updateTakeListUI();
       this.updateTakeCount();
+      
+      this.log(`🎥 YouTube: 테이크 생성 및 UI 업데이트 완료`);
       
     } catch (error) {
       this.error('🎥 YouTube: 테이크 변환 실패:', error);
@@ -1996,7 +2351,7 @@ class TTSManager {
     // YouTube에서는 일반적인 테이크 감지 비활성화
     // 대신 Perplexity 아이콘만 생성
     
-    // 더 많은 시점에서 아이콘 생성 시도 (실제 YouTube 로딩 시간 고려)
+    // 아이콘 생성 시도 (한 번만 성공하면 중단)
     const createIconAttempts = [
       { delay: 100, name: '즉시 시도' },
       { delay: 500, name: '0.5초 후 시도' },
@@ -2010,6 +2365,12 @@ class TTSManager {
     
     createIconAttempts.forEach(({ delay, name }) => {
       setTimeout(() => {
+        // 이미 아이콘이 생성되었으면 시도 중단
+        if (this.youtubeIconContainer && document.body.contains(this.youtubeIconContainer)) {
+          this.log(`🎥 YouTube: ${name} - 이미 아이콘이 존재하여 시도 중단`);
+          return;
+        }
+        
         this.log(`🎥 YouTube: ${name} - 아이콘 생성 시도`);
         this.createYouTubeIcon();
       }, delay);
@@ -2020,6 +2381,9 @@ class TTSManager {
     
     // 추가로 주기적으로 아이콘 상태 확인
     this.startYouTubeIconMonitoring();
+    
+    // SPA 페이지 변경 감지를 위한 History API 모니터링 설정
+    this.setupYouTubeSPAMonitoring();
   }
   
   // 🎥 YouTube 제목 요소 변경 감지
@@ -2037,7 +2401,10 @@ class TTSManager {
               // 제목 관련 요소가 추가되었는지 확인
               if (this.isYouTubeTitleElement(node)) {
                 this.log('🎥 YouTube: 새로운 제목 요소 감지, 아이콘 재생성');
+                // 아이콘이 없을 때만 생성
+                if (!this.youtubeIconContainer) {
                 setTimeout(() => this.createYouTubeIcon(), 100);
+                }
               }
             }
           });
@@ -2072,6 +2439,100 @@ class TTSManager {
     });
   }
   
+  // 🎥 YouTube SPA 페이지 변경 감지
+  setupYouTubeSPAMonitoring() {
+    if (!this.isYouTubeMode()) return;
+    
+    this.log('🎥 YouTube: SPA 페이지 변경 감지 설정');
+    
+    // 현재 URL 저장
+    this.lastYouTubeURL = window.location.href;
+    
+    // History API 변경 감지
+    const originalPushState = history.pushState;
+    const originalReplaceState = history.replaceState;
+    
+    // pushState 오버라이드
+    history.pushState = (...args) => {
+      originalPushState.apply(history, args);
+      setTimeout(() => this.handleYouTubeURLChange(), 100);
+    };
+    
+    // replaceState 오버라이드
+    history.replaceState = (...args) => {
+      originalReplaceState.apply(history, args);
+      setTimeout(() => this.handleYouTubeURLChange(), 100);
+    };
+    
+    // popstate 이벤트 감지 (뒤로가기/앞으로가기)
+    window.addEventListener('popstate', () => {
+      setTimeout(() => this.handleYouTubeURLChange(), 100);
+    });
+    
+    // URL 변경 감지 (hashchange 포함)
+    window.addEventListener('hashchange', () => {
+      setTimeout(() => this.handleYouTubeURLChange(), 100);
+    });
+    
+    // 추가: 주기적으로 URL 변경 확인 (백업)
+    this.youtubeSPAMonitoringInterval = setInterval(() => {
+      const currentURL = window.location.href;
+      if (this.lastYouTubeURL !== currentURL) {
+        this.log('🎥 YouTube: 주기적 모니터링에서 URL 변경 감지');
+        this.handleYouTubeURLChange();
+      }
+    }, 2000); // 2초마다 확인
+  }
+  
+  // 🎥 YouTube URL 변경 처리
+  handleYouTubeURLChange() {
+    const currentURL = window.location.href;
+    
+    // URL이 실제로 변경되었는지 확인
+    if (this.lastYouTubeURL === currentURL) {
+      return;
+    }
+    
+    // YouTube 동영상 페이지인지 확인
+    if (!currentURL.includes('/watch?v=')) {
+      this.log('🎥 YouTube: 동영상 페이지가 아님, 아이콘 제거');
+      this.removeYouTubeIcon();
+      this.lastYouTubeURL = currentURL;
+      return;
+    }
+    
+    this.log('🎥 YouTube: URL 변경 감지', {
+      from: this.lastYouTubeURL,
+      to: currentURL
+    });
+    
+    // 이전 URL 업데이트
+    this.lastYouTubeURL = currentURL;
+    
+    // 아이콘 초기화
+    this.resetYouTubeIcon();
+  }
+  
+  // 🎥 YouTube 아이콘 초기화
+  resetYouTubeIcon() {
+    this.log('🎥 YouTube: 아이콘 초기화 시작');
+    
+    // 기존 TTS 음성 재생 종료
+    this.stopAll();
+    
+    // 기존 아이콘 제거
+    this.removeYouTubeIcon();
+    
+    // 상태 초기화
+    this.isYouTubeRequesting = false;
+    this.lastYouTubeTimeUpdate = null;
+    
+    // 잠시 후 새 아이콘 생성 (DOM 업데이트 대기)
+    setTimeout(() => {
+      this.createYouTubeIcon();
+    }, 500);
+  }
+
   // 🎥 YouTube 아이콘 모니터링 시작
   startYouTubeIconMonitoring() {
     if (!this.isYouTubeMode()) return;
@@ -2080,13 +2541,12 @@ class TTSManager {
     
     // 30초마다 아이콘 상태 확인
     this.youtubeIconMonitoringInterval = setInterval(() => {
-      const existingIcon = document.getElementById('youtube-perplexity-icon');
       const titleElement = document.querySelector('h1.ytd-watch-metadata, h1.style-scope.ytd-watch-metadata, ytd-watch-metadata h1');
       
-      if (!existingIcon && titleElement) {
+      if (!this.youtubeIconContainer && titleElement) {
         this.log('🎥 YouTube: 모니터링에서 제목 발견, 아이콘 재생성');
         this.createYouTubeIcon();
-      } else if (existingIcon && !titleElement) {
+      } else if (this.youtubeIconContainer && !titleElement) {
         this.log('🎥 YouTube: 모니터링에서 제목 사라짐, 아이콘 제거');
         this.removeYouTubeIcon();
       }
@@ -2872,7 +3332,7 @@ class TTSManager {
         // 현재 재생 중이면 현재 테이크부터 새 목소리로 재시작
         if (this.isPlaying && this.currentPlayList && this.currentPlayList.length > 0) {
           this.log(`🎤 단축키로 화자 변경: 현재 테이크부터 새 목소리로 재시작`);
-          this.clearAllBuffering();
+          this.clearAllAudio();
           
           if (this.currentAudio) {
             this.currentAudio.pause();
@@ -2978,18 +3438,102 @@ class TTSManager {
   
   // 🎯 테이크부터 순차적 재생 시작
   async startPlaybackFromTake(startTake) {
-    this.log(`🎬 테이크 선택: ${startTake.id} (${startTake.text.substring(0, 30)}...)`);
+    this.log(`🎬 재생 시작: ${startTake.id} (${startTake.text.substring(0, 30)}...)`);
     
-    // 🎯 통합 재생 시작 함수 호출
-    if (window.unifiedTTSManager) {
-      await window.unifiedTTSManager.unifiedPlaybackStart(startTake, this);
-    } else {
-      this.error('통합 TTS 매니저를 찾을 수 없습니다');
+    // 🚫 생성 중인지 확인
+    const wasGenerating = this.isGenerating;
+    const previousGeneratingTakeId = this.currentGeneratingTakeId;
+    
+    if (wasGenerating) {
+      this.log(`🚫 생성 중인 테이크(${previousGeneratingTakeId})에서 새 테이크(${startTake.id})로 변경`);
+    }
+    
+    // 1. 이전 재생 중지 (완전한 초기화)
+    this.stopAll();
+    
+    // 2. 생성 중이었던 경우 추가 정리
+    if (wasGenerating) {
+      // 생성 상태 강제 초기화
+      this.isGenerating = false;
+      this.currentGeneratingTakeId = null;
+      
+      // 순차 재생 중단 플래그 강제 설정
+      this.shouldStopSequentialPlayback = true;
+      
+      this.log(`🚫 생성 중 테이크 변경: 상태 강제 초기화 완료`);
+    }
+    
+    // 3. 짧은 지연으로 stopAll 완료 보장
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    // 4. 순차 재생 중단 플래그 초기화 (새로운 테이크 생성을 위해 false로 설정)
+    this.shouldStopSequentialPlayback = false;
+    this.log(`🚫 순차 재생 중단 플래그 초기화: 새로운 테이크 생성 허용`);
+    
+    // 5. 재생할 테이크 목록 설정 (시작 테이크부터 끝까지)
+    const startIndex = this.preTakes.findIndex(take => take.id === startTake.id);
+    if (startIndex === -1) {
+      this.error(`❌ 테이크를 찾을 수 없음: ${startTake.id}`);
+      return;
+    }
+    
+    this.currentPlayList = this.preTakes.slice(startIndex);
+    this.currentTakeIndex = 0; // 항상 0으로 초기화
+    this.currentPlayingTakeId = startTake.id;
+    
+    this.log(`📋 재생 목록: ${this.currentPlayList.length}개 테이크 (${startIndex + 1}번째부터)`);
+    this.log(`🎯 현재 테이크 인덱스: 0 (항상 처음부터 시작)`);
+    
+    // 6. UI 업데이트
+    this.updateStatus(`재생 준비 중... (${startIndex + 1}/${this.preTakes.length})`, '#FF9800');
+    this.updatePlaybackUI(startTake);
+    
+
+    
+    // 7. 첫 번째 테이크 재생 시작
+    await this.playTakeAtIndex(0);
+  }
+
+  // 🎯 단일 테이크 재생 (통합 TTS 생성 함수 활용)
+  async playSingleTake(take) {
+    this.log(`🎵 단일 테이크 재생: ${take.id}`);
+    
+    // 🚫 순차 재생 중단 플래그 초기화
+    this.shouldStopSequentialPlayback = false;
+    
+    try {
+      const audioUrl = await this.generateTTSAudio(take, {
+        showAnimation: true,
+        updateStatus: true,
+        scrollToElement: true,
+        playAfterGenerate: true,
+        context: 'single_play'
+      });
+      
+      if (audioUrl) {
+        this.log(`✅ 단일 테이크 재생 완료: ${take.id}`);
+      } else {
+        this.error(`❌ 단일 테이크 재생 실패: ${take.id}`);
+      }
+      
+      return audioUrl;
+    } catch (error) {
+      this.error(`❌ 단일 테이크 재생 오류: ${take.id}`, error);
+      return null;
     }
   }
   
   // 🎯 인덱스에 해당하는 테이크 재생
   async playTakeAtIndex(playListIndex) {
+    // 🚫 순차 재생이 중단되었는지 확인
+    if (this.shouldStopSequentialPlayback) {
+      this.log('🚫 순차 재생이 중단됨 - 테이크 재생 중단');
+      return;
+    }
+    
+    // 🚫 순차 재생 중단 플래그만 확인 (generateTTSAudio에서 생성 중 체크)
+    // isGenerating 체크는 generateTTSAudio에서 처리하므로 여기서는 제거
+    
     if (!this.currentPlayList || playListIndex >= this.currentPlayList.length) {
       this.log('✅ 모든 테이크 재생 완료');
       this.updateStatus('재생 완료', '#4CAF50');
@@ -2997,6 +3541,13 @@ class TTSManager {
     }
     
     const take = this.currentPlayList[playListIndex];
+    
+    // 🚫 테이크 인덱스 검증
+    if (!take) {
+      this.error(`❌ 테이크를 찾을 수 없음: 인덱스 ${playListIndex}`);
+      return;
+    }
+    
     this.currentTakeIndex = playListIndex;
     this.currentPlayingTakeId = take.id;
     
@@ -3006,49 +3557,31 @@ class TTSManager {
     this.updatePlaybackUI(take);
     this.updateStatus(`재생 중... (${playListIndex + 1}/${this.currentPlayList.length})`, '#4CAF50');
     
+
+    
     try {
       let audioUrl;
       
-      // 🚀 이미 버퍼링된 경우 바로 재생
-      if (take.isBuffered && take.audioUrl) {
-        this.log(`🎯 버퍼링된 오디오 즉시 재생: ${take.id}`);
-        audioUrl = take.audioUrl;
-      } else {
-        // 버퍼링되지 않은 경우 생성 (재생을 위한 생성)
-        this.log(`🔄 테이크 실시간 생성: ${take.id}`);
-        this.updateStatus(`음성 생성 중... (${playListIndex + 1}/${this.currentPlayList.length})`, '#FF9800');
+        // 1. 버퍼에서 오디오 URL 확인
+        const bufferedAudioUrl = this.getBufferedAudio(take.id);
         
-        // 🎯 재생을 위한 생성 시 해당 테이크 위치로 자동 스크롤
-        if (take.element) {
-          this.log(`📜 재생을 위한 생성 - 테이크 위치로 스크롤: <${take.element.tagName.toLowerCase()}>`);
-          take.element.scrollIntoView({ 
-            behavior: 'smooth', 
-            block: 'center',
-            inline: 'nearest'
+        if (bufferedAudioUrl) {
+          this.log(`🎯 버퍼에서 오디오 사용: ${take.id}`);
+          audioUrl = bufferedAudioUrl;
+        } else if (this.bufferingTakeIds.has(take.id)) {
+          // 2. 버퍼링 중인 경우 완료 대기
+          this.log(`⏳ 버퍼링 중인 테이크 대기: ${take.id}`);
+          audioUrl = await this.waitForBuffering(take.id);
+        } else {
+          // 3. 버퍼에 없고 버퍼링 중도 아니면 생성
+          this.log(`🎯 새로 생성: ${take.id}`);
+          audioUrl = await this.generateTTSAudio(take, {
+            showAnimation: true,
+            updateStatus: true,
+            scrollToElement: true,
+            playAfterGenerate: false,
+            context: 'selection'
           });
-        }
-        
-        // 🎯 현재 재생 테이크에도 버퍼링 애니메이션 적용
-        this.log(`🎭 현재 재생 테이크 애니메이션 시작: ${take.id}`);
-        this.applyBufferingAnimation(take.element);
-        
-        try {
-          audioUrl = await this.convertToSpeech(take);
-          if (audioUrl) {
-            take.audioUrl = audioUrl;
-            take.isBuffered = true;
-          }
-        } finally {
-          // 🎯 생성 완료 후 애니메이션 제거
-          this.log(`🎭 현재 재생 테이크 애니메이션 종료: ${take.id}`);
-          this.removeBufferingAnimation(take.element);
-        }
-        
-        // 🎯 현재 테이크 생성 완료 후 연속적 버퍼링 확인
-        if (audioUrl) {
-          this.log(`✅ ${playListIndex + 1}번째 테이크 생성 완료 - 연속적 버퍼링 확인`);
-          this.maintainContinuousBuffering(playListIndex);
-        }
       }
       
       if (audioUrl) {
@@ -3065,109 +3598,30 @@ class TTSManager {
     }
   }
   
-      // 🎯 연속적 버퍼링 유지 (현재 테이크 기준 뒤 5개 항상 유지)
-    maintainContinuousBuffering(currentIndex) {
-      this.log(`🔄 연속적 버퍼링 확인: ${currentIndex + 1}번째 테이크 기준`);
-      
-      const bufferAhead = 5; // 현재 테이크 뒤로 5개 유지
-    const maxBufferIndex = Math.min(currentIndex + bufferAhead, this.currentPlayList.length - 1);
-    
-    this.log(`📊 버퍼링 확인 범위: ${currentIndex + 1} ~ ${maxBufferIndex + 1}번째 테이크`);
-    
-    // 🎯 현재 테이크 뒤 3개 중 버퍼링되지 않은 것들 찾기
-    const unbufferedTakes = [];
-    
-    for (let i = currentIndex + 1; i <= maxBufferIndex; i++) {
-      const take = this.currentPlayList[i];
-      
-      if (!take.isBuffered && !this.bufferingTakes.has(take.id)) {
-        unbufferedTakes.push({
-          take: take,
-          index: i
-        });
-        this.log(`🔍 버퍼링 필요: ${i + 1}번째 테이크 "${take.id}"`);
-      } else {
-        this.log(`✅ 이미 버퍼링됨: ${i + 1}번째 테이크 "${take.id}"`);
-      }
-    }
-    
-    // 🎯 필요한 테이크들만 순차적으로 버퍼링
-    if (unbufferedTakes.length > 0) {
-      this.log(`🔄 ${unbufferedTakes.length}개 테이크 순차 버퍼링 시작`);
-      this.bufferTakesSequentially(unbufferedTakes, 0);
-    } else {
-      this.log(`✅ 모든 필요한 테이크가 이미 버퍼링됨`);
-    }
-  }
-  
-  // 🎯 테이크들을 순차적으로 버퍼링 (연속적)
-  async bufferTakesSequentially(unbufferedTakes, index) {
-    if (index >= unbufferedTakes.length) {
-      this.log(`✅ 순차 버퍼링 완료: ${unbufferedTakes.length}개 테이크`);
-      return;
-    }
-    
-    const { take, index: takeIndex } = unbufferedTakes[index];
-    
-    // 이미 버퍼링 중이거나 완료된 경우 스킵
-    if (take.isBuffered || this.bufferingTakes.has(take.id)) {
-      this.log(`⏭️ 버퍼링 스킵: ${takeIndex + 1}번째 테이크 "${take.id}" (이미 처리됨)`);
-      setTimeout(() => {
-        this.bufferTakesSequentially(unbufferedTakes, index + 1);
-      }, 50);
-      return;
-    }
-    
-    // 버퍼링 시작
-    this.bufferingTakes.add(take.id);
-    this.log(`🔄 순차 버퍼링: ${takeIndex + 1}번째 테이크 "${take.id}" (${index + 1}/${unbufferedTakes.length})`);
-    
-    // 🎯 버퍼링 애니메이션 적용
-    this.applyBufferingAnimation(take.element);
-    
-    try {
-      const audioUrl = await this.convertToSpeech(take);
-      if (audioUrl) {
-        take.audioUrl = audioUrl;
-        take.isBuffered = true;
-        this.log(`✅ 순차 버퍼링 완료: ${takeIndex + 1}번째 "${take.id}" → 다음 테이크`);
-      } else {
-        this.error(`❌ 순차 버퍼링 실패: ${takeIndex + 1}번째 "${take.id}"`);
-      }
-    } catch (error) {
-      this.error(`❌ 순차 버퍼링 오류: ${takeIndex + 1}번째 "${take.id}"`, error);
-    } finally {
-      this.bufferingTakes.delete(take.id);
-      this.removeBufferingAnimation(take.element);
-    }
-    
-    // 🔗 다음 테이크 버퍼링 (짧은 간격 후)
-    setTimeout(() => {
-      this.bufferTakesSequentially(unbufferedTakes, index + 1);
-    }, 100);
-  }
+
   
 
   
-  // 🎯 App.js 스타일 버퍼링 알파값 애니메이션 적용
-  applyBufferingAnimation(element) {
+  
+  // 🎯 App.js 스타일 생성 알파값 애니메이션 적용
+  applyGeneratingAnimation(element) {
     if (!element) {
       this.warn('⚠️ 애니메이션 적용 실패: 요소가 없음');
       return;
     }
     
-    this.log(`🎭 버퍼링 애니메이션 적용 시작: <${element.tagName.toLowerCase()}> ${element.className || 'no-class'}`);
+    this.log(`🎭 생성 애니메이션 적용 시작: <${element.tagName.toLowerCase()}> ${element.className || 'no-class'}`);
     
     // 기존 애니메이션 제거
     element.style.animation = '';
     
     // CSS 애니메이션이 없으면 스타일시트에 추가
-    if (!document.querySelector('#tts-buffering-animation')) {
+    if (!document.querySelector('#tts-generating-animation')) {
       this.log('📝 CSS 애니메이션 스타일시트 추가');
       const style = document.createElement('style');
-      style.id = 'tts-buffering-animation';
+      style.id = 'tts-generating-animation';
       style.textContent = `
-        @keyframes tts-buffering {
+        @keyframes tts-generating {
           0% { opacity: 1; }
           50% { opacity: 0.3; }
           100% { opacity: 1; }
@@ -3177,7 +3631,7 @@ class TTSManager {
     }
     
     // App.js의 fadeInOut 애니메이션 적용
-    element.style.animation = 'tts-buffering 3s infinite';
+    element.style.animation = 'tts-generating 3s infinite';
     this.log(`✅ 애니메이션 적용 완료: ${element.style.animation}`);
     
     // 실제 적용 확인 (약간 지연 후)
@@ -3189,14 +3643,14 @@ class TTSManager {
     }, 100);
   }
   
-  // 🎯 버퍼링 애니메이션 제거
-  removeBufferingAnimation(element) {
+  // 🎯 생성 애니메이션 제거
+  removeGeneratingAnimation(element) {
     if (!element) {
       this.warn('⚠️ 애니메이션 제거 실패: 요소가 없음');
       return;
     }
     
-    this.log(`🎭 버퍼링 애니메이션 제거: <${element.tagName.toLowerCase()}> ${element.className || 'no-class'}`);
+    this.log(`🎭 생성 애니메이션 제거: <${element.tagName.toLowerCase()}> ${element.className || 'no-class'}`);
     
     element.style.animation = '';
     element.style.opacity = '';
@@ -3222,6 +3676,14 @@ class TTSManager {
       this.currentAudio.onloadedmetadata = () => {
         this.log(`📊 오디오 메타데이터 로드 완료 - 길이: ${this.currentAudio.duration}초`);
         this.startAppJsStyleWordTracking(take);
+        
+        // 🎯 오디오 로드 완료 후 순차 버퍼링 시작
+        this.startSequentialBuffering(this.currentTakeIndex);
+        
+        // 🎥 YouTube 아이콘 초기 시간 정보 설정
+        if (this.youtubeStatusText) {
+          this.setYouTubePlaybackTime(0, this.currentAudio.duration);
+        }
       };
       
       this.currentAudio.ontimeupdate = () => {
@@ -3231,6 +3693,11 @@ class TTSManager {
           // 진행률 업데이트
           const progress = (this.currentAudio.currentTime / this.currentAudio.duration) * 100;
           this.updateProgress(progress);
+          
+          // 🎥 YouTube 아이콘 시간 정보 업데이트
+          if (this.youtubeStatusText) {
+            this.setYouTubePlaybackTime(this.currentAudio.currentTime, this.currentAudio.duration);
+          }
         }
       };
       
@@ -3242,6 +3709,16 @@ class TTSManager {
         
         // 🎯 테이크 종료 후 0.5초 지연
         setTimeout(async () => {
+          // 🚫 순차 재생이 중단되었는지 확인
+          if (this.shouldStopSequentialPlayback) {
+            this.log('🚫 순차 재생이 중단됨 - 다음 테이크 재생 중단');
+            this.isPlaying = false;
+            this.isPaused = false;
+            this.updateBottomFloatingUIState();
+            resolve();
+            return;
+          }
+          
           const nextIndex = this.currentTakeIndex + 1;
           if (nextIndex < this.currentPlayList.length) {
             // 🎯 다음 테이크에 묵음 명령이 있는지 확인
@@ -3255,9 +3732,6 @@ class TTSManager {
               // 묵음이 없으면 바로 다음 테이크 재생
             this.playTakeAtIndex(nextIndex);
             }
-            
-            // 🎯 다음 테이크 재생 시작과 동시에 연속적 버퍼링 확인
-            this.maintainContinuousBuffering(nextIndex);
           } else {
             // 모든 테이크 재생 완료 시에만 상태 변경
             this.log('🎉 모든 테이크 재생 완료');
@@ -3265,6 +3739,13 @@ class TTSManager {
             this.isPaused = false;
             this.updateBottomFloatingUIState();
             this.updateStatus('재생 완료', '#4CAF50');
+            
+            // 🎥 YouTube 아이콘 상태를 준비 상태로 복귀
+            if (this.youtubeStatusText) {
+              setTimeout(() => {
+                this.setYouTubeReady();
+              }, 1000); // 1초 후 준비 상태로 복귀
+            }
           }
           resolve();
         }, 500); // 0.5초 지연
@@ -3279,6 +3760,13 @@ class TTSManager {
         
         // 하단 플로팅 UI 상태 업데이트
         this.updateBottomFloatingUIState();
+        
+        // 🎥 YouTube 아이콘 상태를 준비 상태로 복귀
+        if (this.youtubeStatusText) {
+          setTimeout(() => {
+            this.setYouTubeReady();
+          }, 1000); // 1초 후 준비 상태로 복귀
+        }
         
         reject(error);
       };
@@ -3948,7 +4436,6 @@ class TTSManager {
   
       // 🎯 정확한 단어 인덱스 기반 위치 찾기 (같은 단어가 여러 개 있어도 정확히 매칭)
       return this.findWordPositionByExactIndex(takeElement, wordIndex);
-      
     } catch (error) {
       this.warn('🔍 대체 위치 찾기 실패:', error);
       return null;
@@ -4322,6 +4809,12 @@ class TTSManager {
   // 🎯 테이크 사이에 묵음 재생
   async playSilenceBetweenTakes(silenceTime, nextTakeIndex) {
     try {
+      // 🚫 순차 재생이 중단되었는지 확인
+      if (this.shouldStopSequentialPlayback) {
+        this.log('🚫 순차 재생이 중단됨 - 묵음 재생 중단');
+        return;
+      }
+      
       this.log(`🔇 테이크 사이 묵음 ${silenceTime}초 재생 시작`);
       this.updateStatus(`묵음 ${silenceTime}초...`, '#9E9E9E');
       
@@ -4336,6 +4829,12 @@ class TTSManager {
       
       // 묵음 재생
       await this.playSilenceAudio(silenceAudioUrl, silenceTime);
+      
+      // 🚫 순차 재생이 중단되었는지 다시 확인
+      if (this.shouldStopSequentialPlayback) {
+        this.log('🚫 순차 재생이 중단됨 - 묵음 후 다음 테이크 재생 중단');
+        return;
+      }
       
       // 묵음 재생 완료 후 다음 테이크 재생
       this.log(`🔇 묵음 ${silenceTime}초 재생 완료 - 다음 테이크 재생 시작`);
@@ -4653,12 +5152,6 @@ class TTSManager {
       this.abortController.abort();
       this.abortController = null;
     }
-    
-    // 버퍼링 애니메이션 제거
-    this.bufferingTakes.clear();
-    document.querySelectorAll('[style*="tts-buffering"]').forEach(element => {
-      this.removeBufferingAnimation(element);
-    });
     
     // 단어 트래킹 정리
     this.cleanupWordTracking();
@@ -5124,42 +5617,7 @@ class TTSManager {
     return null;
   }
 
-  // 🎯 하단 스크롤 영역 추가 (플로팅 UI 높이만큼)
-  addBottomScrollSpacer() {
-    // 기존 스크롤 영역 제거
-    const existingSpacer = document.getElementById('tts-bottom-scroll-spacer');
-    if (existingSpacer) {
-      existingSpacer.remove();
-    }
 
-    // 새로운 스크롤 영역 생성
-    const scrollSpacer = document.createElement('div');
-    scrollSpacer.id = 'tts-bottom-scroll-spacer';
-    scrollSpacer.style.cssText = `
-      width: 100% !important;
-      height: 45px !important;
-      min-height: 45px !important;
-      max-height: 45px !important;
-      position: relative !important;
-      display: block !important;
-      margin: 0 !important;
-      padding: 0 !important;
-      border: 0 !important;
-      background: transparent !important;
-      pointer-events: none !important;
-      user-select: none !important;
-      z-index: 1 !important;
-      box-sizing: border-box !important;
-      flex-shrink: 0 !important;
-      flex-grow: 0 !important;
-      overflow: hidden !important;
-    `;
-
-    // body의 마지막 자식으로 추가 (플로팅 UI보다 앞에)
-    document.body.appendChild(scrollSpacer);
-    
-    this.log('📏 하단 스크롤 영역 추가: 45px');
-  }
 
     // 🎨 하단 플로팅 UI 테마 업데이트
   updateBottomFloatingUITheme() {
@@ -5466,9 +5924,6 @@ class TTSManager {
     
     // 초기 보더 설정: 하단 모드 (상단 보더만 보임)
     this.updateFloatingBarBorder('bottom');
-    
-    // 하단 스크롤 영역 추가
-    this.addBottomScrollSpacer();
     
     // 테마 적용 후 상태 업데이트
     this.updateBottomFloatingUITheme();
@@ -6528,15 +6983,19 @@ class TTSManager {
         this.selectedVoice = speechItem.voice;
         this.playbackSpeed = 1.0; // Zeta AI / ChatGPT에서는 모든 캐릭터 속도 1.0 고정
         
-        // 음성 생성
-        const zetaTake = {
+        // 음성 생성 (Zeta AI 전용)
+        const audioUrl = await this.generateTTSAudio({
           id: 'zeta-ai-take',
           text: speechItem.text,
           language: speechItem.language,
           element: null
-        };
-        
-        const audioUrl = await this.convertToSpeech(zetaTake);
+        }, {
+          showAnimation: false,
+          updateStatus: false,
+          scrollToElement: false,
+          playAfterGenerate: false,
+          context: 'zeta_ai'
+        });
         
         // 🤖 Zeta AI / ChatGPT: 원래 음성과 속도로 복원
         this.selectedVoice = originalVoice;
@@ -7206,131 +7665,63 @@ class TTSManager {
     this.updateStatus(`화자 변경: ${voice.name}`, '#4CAF50');
   }
 
-  // 🎤 화자/속도 변경 처리 (기존 테이크 재생 로직 활용)
-  handleVoiceOrSpeedChange() {
-    this.log('🎤 화자/속도 변경으로 인한 재시작 처리 시작');
+  // 🎤 화자/속도 변경 처리 (재생 아이콘 클릭과 동일한 액션)
+  async handleVoiceOrSpeedChange(context = 'voice_change') {
+    this.log(`🎤 화자/속도 변경으로 인한 재시작 처리 시작 (컨텍스트: ${context})`);
     
-    // 현재 재생 중인 테이크가 있는 경우에만 처리
-    if (this.isPlaying && this.currentPlayList && this.currentTakeIndex >= 0) {
+    // 현재 재생 중이거나 선택된 테이크가 있는 경우에만 처리
+    if (this.currentPlayList && this.currentPlayList.length > 0 && this.currentTakeIndex >= 0) {
       const currentTake = this.currentPlayList[this.currentTakeIndex];
       if (currentTake) {
-        // 모든 버퍼링 제거
-        this.clearAllBuffering();
-        
-        // 현재 재생 중지
-        if (this.currentAudio) {
-          this.currentAudio.pause();
-          this.currentAudio = null;
-        }
-        
-        // 단어 트래킹 중지
-        this.stopWordTracking();
-        
-        // 기존 테이크 재생 로직을 사용하여 현재 테이크부터 다시 시작
-        this.log(`🎯 현재 테이크부터 새로운 설정으로 재시작: ${currentTake.id} (${this.currentTakeIndex + 1}/${this.currentPlayList.length})`);
-        
-        // 상태를 재생 중으로 유지하고 현재 테이크부터 재생
-        this.isPlaying = true;
-        this.isPaused = false;
-        this.updateBottomFloatingUIState();
-        
-        // 기존 테이크 재생 로직 활용
-        this.playTakeAtIndex(this.currentTakeIndex);
+        // 재생 아이콘 클릭과 동일한 액션: startPlaybackFromTake 호출
+        this.log(`🎯 현재 테이크(${currentTake.id})의 재생 아이콘 클릭과 동일한 액션 실행`);
+        await this.startPlaybackFromTake(currentTake);
       }
+    } else {
+      // 재생 중이 아니고 선택된 테이크도 없는 경우: 화자/속도 값만 변경
+      this.log('🎤 재생 중이 아니므로 화자/속도 값만 변경');
+        this.updateBottomFloatingUIState();
     }
   }
 
-  // 🎤 화자 변경 처리 (레거시 - 호환성 유지)
-  handleVoiceChange() {
+  // 🎤 화자 변경 처리 (재생 아이콘 클릭과 동일한 액션)
+  async handleVoiceChange() {
     this.log('🎤 화자 변경으로 인한 재시작 처리 시작');
     
-    // 1. 현재 재생 상태 저장
-    const wasPlaying = this.isPlaying;
-    const currentTakeIndex = this.currentTakeIndex;
-    const currentPlayList = this.currentPlayList;
-    
-    // 2. 모든 버퍼링 제거
-    this.clearAllBuffering();
-    
-    // 3. 현재 오디오 정지
-    if (this.currentAudio) {
-      this.currentAudio.pause();
-      this.currentAudio = null;
-    }
-    
-    // 4. 상태 초기화
-    this.isPlaying = false;
-    this.isPaused = false;
-    
-    // 5. 재생 중이었다면 현재 테이크부터 새 목소리로 재시작
-    if (wasPlaying && currentPlayList && currentPlayList.length > 0 && currentTakeIndex >= 0) {
-      this.log(`🎤 마지막 테이크 ${currentTakeIndex + 1}번부터 새 목소리로 재시작`);
-      this.updateStatus(`새 목소리로 재시작 중...`, '#FF9800');
-      
-      // 잠시 후 재시작 (UI 업데이트 후)
-      setTimeout(() => {
-        this.playTakeAtIndex(currentTakeIndex);
-      }, 500);
+    // 현재 재생 중이거나 선택된 테이크가 있는 경우에만 처리
+    if (this.currentPlayList && this.currentPlayList.length > 0 && this.currentTakeIndex >= 0) {
+      const currentTake = this.currentPlayList[this.currentTakeIndex];
+      if (currentTake) {
+        // 재생 아이콘 클릭과 동일한 액션: startPlaybackFromTake 호출
+        this.log(`🎯 현재 테이크(${currentTake.id})의 재생 아이콘 클릭과 동일한 액션 실행`);
+        await this.startPlaybackFromTake(currentTake);
+      }
     } else {
-      // 재생 중이 아니었다면 단순히 상태만 업데이트
+      // 재생 중이 아니고 선택된 테이크도 없는 경우: 화자 값만 변경
+      this.log('🎤 재생 중이 아니므로 화자 값만 변경');
       this.updateBottomFloatingUIState();
     }
   }
 
-  // 🗑️ 모든 버퍼링 제거 (새로운 시스템 전용)
-  clearAllBuffering() {
-    this.log('🗑️ 모든 버퍼링 제거 시작');
+  // 🗑️ 모든 오디오 정리
+  clearAllAudio() {
+    this.log('🗑️ 모든 오디오 정리 시작');
     
-    // 1. 레거시 audioBuffer 시스템 완전 제거 (더 이상 사용하지 않음)
-    if (this.audioBuffer && typeof this.audioBuffer.forEach === 'function') {
-      this.audioBuffer.forEach((url, key) => {
-        if (url && typeof url === 'string' && url.startsWith('blob:')) {
-          URL.revokeObjectURL(url);
-          this.log(`🗑️ 레거시 버퍼 URL 해제: ${url.substring(0, 30)}...`);
-        }
-      });
-      this.audioBuffer.clear();
-    }
-    
-    // 2. 새로운 시스템의 모든 테이크 버퍼링 상태 초기화
-    if (this.preTakes) {
-      this.preTakes.forEach(take => {
-        if (take.audioUrl && take.audioUrl.startsWith('blob:')) {
-          URL.revokeObjectURL(take.audioUrl);
-          this.log(`🗑️ 테이크 버퍼 URL 해제: ${take.id}`);
-        }
-        take.isBuffered = false;
-        take.audioUrl = null;
-      });
-    }
-    
-    if (this.currentPlayList) {
-      this.currentPlayList.forEach(take => {
-        if (take.audioUrl && take.audioUrl.startsWith('blob:')) {
-          URL.revokeObjectURL(take.audioUrl);
-          this.log(`🗑️ 플레이리스트 버퍼 URL 해제: ${take.id}`);
-        }
-        take.isBuffered = false;
-        take.audioUrl = null;
-      });
-    }
-    
-    // 3. 버퍼링 진행 중인 테이크들 중단
-    this.bufferingTakes.clear();
-    
-    // 4. AbortController로 진행 중인 요청 중단
+    // 1. AbortController로 진행 중인 요청 중단
     if (this.abortController) {
       this.abortController.abort();
       this.log('🗑️ 진행 중인 TTS 요청 중단');
     }
     this.abortController = new AbortController();
     
-    // 5. 버퍼링 애니메이션 모두 제거
-    document.querySelectorAll('[style*="tts-buffering"]').forEach(element => {
-      this.removeBufferingAnimation(element);
-    });
+    // 2. 플레이리스트의 오디오 URL 초기화
+    if (this.currentPlayList) {
+      this.currentPlayList.forEach(take => {
+        take.audioUrl = null;
+      });
+    }
     
-    this.log('✅ 모든 버퍼링 제거 완료 (새로운 시스템)');
+    this.log('✅ 모든 오디오 정리 완료');
   }
 
   // 🎯 화자 메뉴에서 선택 상태 업데이트
@@ -8067,14 +8458,11 @@ class TTSManager {
         audioUrl = cachedAudio;
         this.updateStatus(`재생 중... (${takeIndex + 1}/${this.takes.length})`, '#4CAF50');
       } else {
-        // 새로운 시스템: 직접 생성 후 테이크에 저장
+        // 캐시되지 않은 경우에만 생성
         this.log(`테이크 ${takeIndex + 1} 실시간 생성 중...`);
         this.updateStatus(`음성 생성 중... (${takeIndex + 1}/${this.takes.length})`, '#FF9800');
         audioUrl = await this.convertToSpeech(take);
-        if (audioUrl) {
-          take.audioUrl = audioUrl;
-          take.isBuffered = true;
-        }
+        this.addToAudioCache(cacheKey, audioUrl);
       }
       
       // 오디오 재생
@@ -8292,14 +8680,51 @@ class TTSManager {
     }
   }
 
-  // 음성 변환 (메인 진입점)
-  async convertToSpeech(take) {
+  // 🎵 통합 TTS 음성 생성 함수 (테이크 선택, 화자 변경, 속도 변경 모두 처리)
+  async generateTTSAudio(take, options = {}) {
     // 플러그인이 비활성화된 경우 변환 중지
     if (!this.isPluginEnabled) {
       return null;
     }
     
-    this.log(`🎵 TTS 음성 생성 시작: ${take.id}`);
+    const {
+      showAnimation = true,      // 생성 애니메이션 표시 여부
+      updateStatus = true,       // 상태 업데이트 여부
+      scrollToElement = true,    // 요소로 스크롤 여부
+      playAfterGenerate = false, // 생성 후 자동 재생 여부
+      context = 'general'        // 호출 컨텍스트 ('selection', 'voice_change', 'speed_change')
+    } = options;
+    
+    // 🚫 이미 생성 중인지 확인 (강화된 체크)
+    if (this.isGenerating) {
+      this.log(`🚫 이미 다른 테이크(${this.currentGeneratingTakeId || 'unknown'})가 생성 중입니다. 생성 중단.`);
+      return null;
+    }
+    
+    // 🚫 추가 안전장치: 생성 상태가 true인 경우 강제 초기화
+    if (this.isGenerating) {
+      this.log('🚫 생성 상태 강제 초기화');
+      this.isGenerating = false;
+      this.currentGeneratingTakeId = null;
+    }
+    
+    // 🚫 순차 재생이 중단되었는지 확인
+    if (this.shouldStopSequentialPlayback) {
+      this.log('🚫 순차 재생이 중단됨 - TTS 생성 중단');
+      return null;
+    }
+    
+    // 🚫 테이크 유효성 검증
+    if (!take || !take.id) {
+      this.error(`❌ 유효하지 않은 테이크:`, take);
+      return null;
+    }
+    
+    // 생성 상태 설정
+    this.isGenerating = true;
+    this.currentGeneratingTakeId = take.id;
+    
+    this.log(`🎵 TTS 음성 생성 시작: ${take.id} (컨텍스트: ${context})`);
     this.log(`📝 텍스트 미리보기: "${take.text.substring(0, 50)}..."`);
     this.log(`🗣️ 선택된 음성: ${this.selectedVoice.name} (${this.selectedVoice.id})`);
     this.log(`🌍 언어: ${take.language}`);
@@ -8321,7 +8746,29 @@ class TTSManager {
         customVoice = this.VOICES.find(v => v.id === voiceCommand);
         this.log(`🎤 Voice ID 감지: ${voiceCommand}`);
     } else {
-        // Voice 이름인지 확인
+        // 특별한 화자 이름 매핑 처리
+        let mappedVoiceId = null;
+        if (voiceCommand === '안경 벗으면 날렵해지는 크림') {
+          mappedVoiceId = 'nNnwdrs9oiSEbJTivQVBXJ';
+          this.log(`🎤 특별 화자 매핑: "${voiceCommand}" → Voice ID: ${mappedVoiceId}`);
+        }
+        
+        if (mappedVoiceId) {
+          // 매핑된 Voice ID로 음성 찾기
+          customVoice = this.VOICES.find(v => v.id === mappedVoiceId);
+          if (customVoice) {
+            this.log(`🎤 매핑된 Voice 찾음: ${customVoice.name} (${mappedVoiceId})`);
+          } else {
+            // VOICES 배열에 없어도 직접 Voice ID 사용
+            customVoice = {
+              id: mappedVoiceId,
+              name: voiceCommand,
+              language: 'ko'
+            };
+            this.log(`🎤 매핑된 Voice ID 직접 사용: ${mappedVoiceId} (배열에 없음)`);
+          }
+        } else {
+          // 기존 Voice 이름 검색 로직
         customVoice = this.VOICES.find(v => v.name === voiceCommand);
         if (!customVoice) {
           // 유사도 검색 (0.75 이상)
@@ -8336,13 +8783,21 @@ class TTSManager {
           }
         } else {
           this.log(`🎤 Voice 이름 감지: ${voiceCommand}`);
+          }
         }
       }
     }
     
+    // 🎯 화자 명령 제거
+    if (voiceCommand) {
+      apiText = apiText.replace(`::${voiceCommand}::`, '');
+      displayText = displayText.replace(`::${voiceCommand}::`, '');
+      this.log(`🎤 화자 명령 제거: "${voiceCommand}"`);
+    }
+    
     // 🎯 단어1::단어2:: 패턴 처리
-    const displayAndSpeech = this.extractDisplayAndSpeechText(take.text);
-    if (displayAndSpeech.displayText !== take.text || displayAndSpeech.speechText !== take.text) {
+    const displayAndSpeech = this.extractDisplayAndSpeechText(apiText);
+    if (displayAndSpeech.displayText !== apiText || displayAndSpeech.speechText !== apiText) {
       displayText = displayAndSpeech.displayText;
       apiText = displayAndSpeech.speechText;
       this.log(`🎯 단어 변환 패턴 감지: "${take.text}" → 표시: "${displayText}", 발화: "${apiText}"`);
@@ -8353,16 +8808,430 @@ class TTSManager {
     
     this.log(`🎵 최종 설정 - 음성: ${targetVoice.name}, API 텍스트: "${apiText.substring(0, 50)}..."`);
     
+    // 상태 업데이트
+    if (updateStatus) {
+      const statusMessages = {
+        'selection': `음성 생성 중...`,
+        'voice_change': `새 목소리로 생성 중...`,
+        'speed_change': `새 속도로 생성 중...`,
+        'general': `음성 생성 중...`
+      };
+      this.updateStatus(statusMessages[context] || statusMessages.general, '#FF9800');
+    }
+    
+    // 🎯 재생을 위한 생성 시 해당 테이크 위치로 자동 스크롤
+    if (scrollToElement && take.element) {
+      this.log(`📜 테이크 위치로 스크롤: <${take.element.tagName.toLowerCase()}>`);
+      take.element.scrollIntoView({ 
+        behavior: 'smooth', 
+        block: 'center',
+        inline: 'nearest'
+      });
+    }
+    
+    // 🎯 생성 애니메이션 적용
+    if (showAnimation && take.element) {
+      this.applyGeneratingAnimation(take.element);
+    }
+    
+    let audioUrl = null;
+    try {
+      // 🚫 순차 재생이 중단되었는지 확인
+      if (this.shouldStopSequentialPlayback) {
+        this.log('🚫 순차 재생이 중단됨 - TTS 생성 중단');
+        return null;
+      }
+    
     // 멀티 청크 필요 여부 확인 (API 텍스트 기준)
     const isMultiChunk = this.needsMultiChunk(apiText, take.language);
+      
+      // 버퍼링 컨텍스트인 경우 버퍼링용 AbortController 사용
+      const abortController = (context === 'buffering') ? this.bufferAbortController : this.abortController;
     
     if (isMultiChunk) {
       this.log(`🔄 멀티청크 TTS 모드: ${apiText.length}자 → 분할 처리`);
-      return await this.generateMultiChunkAudio(take, apiText, targetVoice);
+        audioUrl = await this.generateMultiChunkAudio(take, apiText, targetVoice, abortController);
     } else {
       this.log(`🎵 단일청크 TTS 모드: ${apiText.length}자 → 단일 처리`);
-      return await this.generateSingleChunkAudio(apiText, targetVoice, take.language);
+        audioUrl = await this.generateSingleChunkAudio(apiText, targetVoice, take.language, abortController);
+      }
+      
+      // 생성된 오디오 URL 저장
+      if (audioUrl) {
+        take.audioUrl = audioUrl;
+        this.log(`✅ TTS 음성 생성 완료: ${take.id}`);
+        
+        // 생성 후 자동 재생
+        if (playAfterGenerate) {
+          await this.playAudioWithTracking(audioUrl, take);
+        }
+      }
+      
+    } catch (error) {
+      this.error(`❌ TTS 음성 생성 실패: ${take.id}`, error);
+      throw error;
+    } finally {
+      // 🎯 생성 완료 후 애니메이션 제거
+      if (showAnimation && take.element) {
+        this.removeGeneratingAnimation(take.element);
+      }
+      
+      // 생성 상태 초기화
+      this.isGenerating = false;
+      this.currentGeneratingTakeId = null;
+      this.log(`🎵 TTS 음성 생성 상태 초기화: ${take.id}`);
     }
+    
+    return audioUrl;
+  }
+
+  // 🚫 테이크 변경 시에만 필요한 로직 제거 (비동기 처리)
+  async clearCurrentTakeOperations() {
+    this.log('🚫 테이크 변경: 테이크 변경 전용 로직 제거 시작');
+    
+    // 1. 생성 애니메이션 제거 (모든 요소에서) - 테이크 변경 특화
+    try {
+      const elementsWithAnimation = document.querySelectorAll('[style*="tts-generating"]');
+      this.log(`🚫 생성 애니메이션 제거: ${elementsWithAnimation.length}개 요소`);
+      
+      for (const element of elementsWithAnimation) {
+        this.removeGeneratingAnimation(element);
+      }
+      this.log('🚫 생성 애니메이션 제거 완료');
+    } catch (error) {
+      this.log('🚫 생성 애니메이션 제거 중 오류 (무시):', error);
+    }
+    
+    // 2. 현재 재생 중인 테이크 정보 초기화 - 테이크 변경 특화
+    this.currentPlayingTakeId = null;
+    this.log('🚫 현재 재생 테이크 정보 초기화');
+    
+    // 3. 순차 재생 제거 (값 초기화) - 테이크 변경 특화
+    this.shouldStopSequentialPlayback = true;
+    this.log('🚫 순차 재생 제거 (값 초기화)');
+    
+    // 4. 버퍼링 시스템 정리 - 테이크 변경 시 모든 버퍼링 중단
+    await this.stopAllBuffering();
+    
+    // 5. 모든 비동기 작업 완료 대기 (짧은 지연)
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    this.log('✅ 테이크 변경: 테이크 변경 전용 로직 제거 완료');
+  }
+
+  // 🎯 버퍼링 시스템: 모든 버퍼링 중단 및 정리
+  async stopAllBuffering() {
+    this.log('🎯 버퍼링 시스템: 모든 버퍼링 중단 및 정리 시작');
+    
+    // 1. 버퍼링 AbortController로 진행 중인 요청 중단
+    if (this.bufferAbortController) {
+      this.bufferAbortController.abort();
+      this.log('🎯 버퍼링 진행 중인 요청 중단');
+    }
+    this.bufferAbortController = new AbortController();
+    
+    // 2. 버퍼링 상태 초기화
+    this.isBuffering = false;
+    this.bufferingTakeIds.clear();
+    this.log('🎯 버퍼링 상태 초기화');
+    
+    // 3. 버퍼링 애니메이션 제거
+    try {
+      const bufferElements = document.querySelectorAll('[style*="tts-buffering"]');
+      this.log(`🎯 버퍼링 애니메이션 제거: ${bufferElements.length}개 요소`);
+      
+      for (const element of bufferElements) {
+        this.removeBufferingAnimation(element);
+      }
+      this.log('🎯 버퍼링 애니메이션 제거 완료');
+    } catch (error) {
+      this.log('🎯 버퍼링 애니메이션 제거 중 오류 (무시):', error);
+    }
+    
+    this.log('✅ 버퍼링 시스템: 모든 버퍼링 중단 및 정리 완료');
+  }
+
+  // 🎯 버퍼링 애니메이션 적용
+  applyBufferingAnimation(element) {
+    if (!element) {
+      this.warn('⚠️ 버퍼링 애니메이션 적용 실패: 요소가 없음');
+      return;
+    }
+    
+    this.log(`🎭 버퍼링 애니메이션 적용 시작: <${element.tagName.toLowerCase()}> ${element.className || 'no-class'}`);
+    
+    // 기존 애니메이션 제거
+    element.style.animation = '';
+    
+    // CSS 애니메이션이 없으면 스타일시트에 추가
+    if (!document.querySelector('#tts-buffering-animation')) {
+      this.log('📝 CSS 버퍼링 애니메이션 스타일시트 추가');
+      const style = document.createElement('style');
+      style.id = 'tts-buffering-animation';
+      style.textContent = `
+        @keyframes tts-buffering {
+          0% { opacity: 1; }
+          50% { opacity: 0.3; }
+          100% { opacity: 1; }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+    
+    // 버퍼링 애니메이션 적용
+    element.style.animation = 'tts-buffering 2s infinite';
+    this.log(`✅ 버퍼링 애니메이션 적용 완료: ${element.style.animation}`);
+  }
+
+  // 🎯 버퍼링 애니메이션 제거
+  removeBufferingAnimation(element) {
+    if (!element) {
+      this.warn('⚠️ 버퍼링 애니메이션 제거 실패: 요소가 없음');
+      return;
+    }
+    
+    this.log(`🎭 버퍼링 애니메이션 제거: <${element.tagName.toLowerCase()}> ${element.className || 'no-class'}`);
+    
+    element.style.animation = '';
+    element.style.opacity = '';
+    
+    this.log(`✅ 버퍼링 애니메이션 제거 완료`);
+  }
+
+  // 🎯 버퍼에서 오디오 URL 가져오기
+  getBufferedAudio(takeId) {
+    return this.bufferedTakes.get(takeId);
+  }
+
+  // 🎯 버퍼에 오디오 URL 저장
+  addToBuffer(takeId, audioUrl) {
+    this.bufferedTakes.set(takeId, audioUrl);
+    this.log(`📦 버퍼에 오디오 저장: ${takeId}`);
+  }
+
+  // 🎯 버퍼에서 오디오 URL 제거
+  removeFromBuffer(takeId) {
+    const removed = this.bufferedTakes.delete(takeId);
+    if (removed) {
+      this.log(`🗑️ 버퍼에서 오디오 제거: ${takeId}`);
+    }
+    return removed;
+  }
+
+  // 🎯 특정 테이크 버퍼링
+  async bufferTake(take, context = 'buffering') {
+    if (!take || !take.id) {
+      this.log('⚠️ 유효하지 않은 테이크로 버퍼링 시도');
+      return null;
+    }
+
+    // 이미 버퍼링 중인 경우 스킵
+    if (this.bufferingTakeIds.has(take.id)) {
+      this.log(`⏭️ 버퍼링 스킵: ${take.id} (이미 버퍼링 중)`);
+      return this.bufferedTakes.get(take.id);
+    }
+
+    // 이미 버퍼에 있는 경우 스킵
+    if (this.bufferedTakes.has(take.id)) {
+      this.log(`⏭️ 버퍼링 스킵: ${take.id} (이미 버퍼에 있음)`);
+      return this.bufferedTakes.get(take.id);
+    }
+
+    // 버퍼링 중단 플래그 확인
+    if (this.shouldStopSequentialPlayback) {
+      this.log(`🚫 버퍼링 중단 플래그 감지: ${take.id}`);
+      return null;
+    }
+
+    // 버퍼링 시작
+    this.bufferingTakeIds.add(take.id);
+    this.isBuffering = true;
+    
+    this.log(`🎯 테이크 버퍼링 시작: ${take.id}`);
+    
+    // 버퍼링 애니메이션 적용
+    if (take.element) {
+      this.applyBufferingAnimation(take.element);
+    }
+
+    try {
+      // 버퍼링용 TTS 생성 (재생하지 않고 오디오 URL만 생성)
+      const audioUrl = await this.generateTTSAudio(take, {
+        showAnimation: false,
+        updateStatus: false,
+        scrollToElement: false,
+        playAfterGenerate: false,
+        context: 'buffering'
+      });
+      
+      if (audioUrl && !this.shouldStopSequentialPlayback) {
+        this.addToBuffer(take.id, audioUrl);
+        this.log(`✅ 버퍼링 완료: ${take.id}`);
+        return audioUrl;
+      } else {
+        this.log(`❌ 버퍼링 실패: ${take.id}`);
+        return null;
+      }
+    } catch (error) {
+      this.log(`❌ 버퍼링 오류: ${take.id}`, error);
+      return null;
+    } finally {
+      // 버퍼링 상태 정리
+      this.bufferingTakeIds.delete(take.id);
+      if (take.element) {
+        this.removeBufferingAnimation(take.element);
+      }
+      
+      // 버퍼링 중인 테이크가 없으면 전체 버퍼링 상태 해제
+      if (this.bufferingTakeIds.size === 0) {
+        this.isBuffering = false;
+      }
+    }
+  }
+
+
+
+  // 🎯 순차 버퍼링 시작 (현재 재생 중인 테이크 기준으로 다음 3개)
+  async startSequentialBuffering(currentTakeIndex) {
+    if (!this.currentPlayList || currentTakeIndex >= this.currentPlayList.length) {
+      this.log('🎯 순차 버퍼링: 재생 목록이 없거나 현재 테이크가 마지막입니다.');
+      return;
+    }
+
+    this.log(`🎯 순차 버퍼링 시작: 현재 테이크 ${currentTakeIndex + 1}번째 기준`);
+
+    // 현재 테이크 다음부터 3개 테이크 버퍼링
+    const bufferStartIndex = currentTakeIndex + 1;
+    const bufferEndIndex = Math.min(currentTakeIndex + 3, this.currentPlayList.length - 1);
+
+    if (bufferStartIndex > bufferEndIndex) {
+      this.log('🎯 순차 버퍼링: 버퍼링할 테이크가 없습니다.');
+      return;
+    }
+
+    this.log(`🎯 순차 버퍼링 범위: ${bufferStartIndex + 1}번째 ~ ${bufferEndIndex + 1}번째 테이크`);
+
+    // 순차적으로 버퍼링 (한 번에 하나씩)
+    for (let i = bufferStartIndex; i <= bufferEndIndex; i++) {
+      const take = this.currentPlayList[i];
+      
+      this.log(`🎯 ${i + 1}번째 테이크 버퍼링 시작: ${take.id}`);
+      
+      // 버퍼링 실행 (내부에서 모든 검사 처리)
+      await this.bufferTake(take, 'sequential');
+    }
+
+    this.log('🎯 순차 버퍼링 완료');
+  }
+
+  // 🎯 버퍼링 완료 대기 함수
+  async waitForBuffering(takeId, maxWaitTime = 30000) { // 30초 최대 대기
+    this.log(`⏳ 버퍼링 완료 대기 시작: ${takeId}`);
+    
+    const startTime = Date.now();
+    
+    while (Date.now() - startTime < maxWaitTime) {
+      // 버퍼링이 완료되었는지 확인
+      if (this.bufferedTakes.has(takeId)) {
+        this.log(`✅ 버퍼링 완료 대기 성공: ${takeId}`);
+        return this.bufferedTakes.get(takeId);
+      }
+      
+      // 버퍼링이 중단되었는지 확인
+      if (!this.bufferingTakeIds.has(takeId)) {
+        this.log(`❌ 버퍼링이 중단됨: ${takeId}`);
+        return null;
+      }
+      
+      // 중단 플래그 확인
+      if (this.shouldStopSequentialPlayback) {
+        this.log(`🚫 버퍼링 대기 중단 플래그 감지: ${takeId}`);
+        return null;
+      }
+      
+      // 100ms 대기 후 재확인
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    
+    this.log(`⏰ 버퍼링 대기 시간 초과: ${takeId} (${maxWaitTime}ms)`);
+    return null;
+  }
+
+  // 🎯 첫 단어로 트래킹 UI 이동
+  moveToFirstWord(take) {
+    if (!take || !take.element) {
+      this.log('⚠️ 첫 단어 이동 실패: 테이크 또는 요소가 없음');
+      return;
+    }
+
+    this.log(`🎯 첫 단어로 트래킹 UI 이동: ${take.id}`);
+    
+    // 테이크 요소로 스크롤
+    try {
+      take.element.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+        inline: 'nearest'
+      });
+      this.log(`📜 테이크 요소로 스크롤 완료: ${take.id}`);
+    } catch (error) {
+      this.log(`❌ 테이크 요소 스크롤 실패: ${take.id}`, error);
+    }
+
+    // 단어 트래킹 정보 업데이트 (첫 단어 기준)
+    const words = this.splitIntoWords(take.text, take.language);
+    if (words.length > 0) {
+      this.updateWordInfo(1, words.length, words[0]);
+      this.log(`📊 첫 단어 트래킹 정보 업데이트: "${words[0]}" (1/${words.length})`);
+    }
+
+    // 테이크 정보 업데이트
+    if (this.currentPlayList) {
+      const takeIndex = this.currentPlayList.findIndex(t => t.id === take.id);
+      if (takeIndex !== -1) {
+        this.updateTakeInfo(takeIndex, this.currentPlayList.length);
+        this.log(`📊 테이크 정보 업데이트: ${takeIndex + 1}/${this.currentPlayList.length}`);
+      }
+    }
+
+    // 상태 업데이트
+    this.updateStatus(`생성 중... (${take.id})`, '#FF9800');
+  }
+
+  // 음성 변환 (메인 진입점) - 호환성을 위한 레거시 함수
+  async convertToSpeech(take) {
+    this.log(`🎵 convertToSpeech 호출: ${take.id}`);
+    
+    // 🚫 이미 생성 중인지 확인
+    if (this.isGenerating) {
+      this.log(`🚫 다른 테이크(${this.currentGeneratingTakeId})가 생성 중입니다. 강제 정리 후 새 테이크 처리.`);
+    }
+    
+    // 🚫 테이크 변경 시 기존 테이크 관련 모든 로직 즉시 제거
+    await this.clearCurrentTakeOperations();
+    
+    // 🎯 기존 단어 트래킹 제거
+    this.stopWordTracking();
+    this.unwrapWords();
+    
+    // 🚫 추가 안전장치: 생성 상태가 여전히 true인 경우 강제 초기화
+    if (this.isGenerating) {
+      this.log('🚫 생성 상태 강제 초기화');
+      this.isGenerating = false;
+      this.currentGeneratingTakeId = null;
+    }
+    
+    // 🎯 새로운 테이크의 첫 단어로 단어 트래킹 UI 이동
+    this.prepareWordTracking(take);
+    this.moveToFirstWord(take);
+    
+    return this.generateTTSAudio(take, { 
+      showAnimation: true, 
+      updateStatus: true, 
+      scrollToElement: true,
+      playAfterGenerate: false,
+      context: 'general'
+    });
   }
 
   // 오디오 재생
@@ -8499,6 +9368,20 @@ class TTSManager {
     if (!originalElement) return null;
 
     this.log(`새 컨테이너 탐색 시작. 원본 요소:`, originalElement.tagName, originalElement.className);
+
+    // 🎯 ruliweb 특화 로직
+    if (window.location.href.includes('ruliweb')) {
+      this.log('🎯 ruliweb 사이트 감지: news_content가 포함된 div 하위로 검색 범위 제한');
+      
+      const ruliwebContainer = document.querySelector('div[class*="news_content"]');
+      if (ruliwebContainer) {
+        this.log('✅ ruliweb 컨테이너 발견:', ruliwebContainer.tagName, ruliwebContainer.className);
+        this.cachedContainer = ruliwebContainer;
+        return ruliwebContainer;
+      } else {
+        this.log('⚠️ ruliweb 컨테이너를 찾을 수 없음, 기본 로직 사용');
+      }
+    }
 
     // 1단계: 전체 텍스트가 포함된 가장 가까운 상위 요소 찾기
     let candidate = originalElement;
@@ -9045,28 +9928,6 @@ class TTSManager {
     this.log(`전체 TTS span 개수: ${allTTSSpans.length}`);
   }
 
-  // 🎯 메모리 최적화: 다음 테이크 미리 생성 (새로운 시스템)
-  async prepareNextTake(takeIndex) {
-    if (takeIndex >= this.takes.length || this.takes[takeIndex]?.isBuffered) {
-      return; // 이미 생성됨 또는 범위 초과
-    }
-    
-    try {
-      const take = this.takes[takeIndex];
-      this.log(`테이크 ${takeIndex} 미리 생성 중...`);
-      
-      const audioUrl = await this.convertToSpeech(take);
-      if (audioUrl) {
-        take.audioUrl = audioUrl;
-        take.isBuffered = true;
-      }
-      
-      this.log(`테이크 ${takeIndex} 미리 생성 완료`);
-    } catch (error) {
-      this.error(`테이크 ${takeIndex} 미리 생성 실패:`, error);
-    }
-  }
-
   // 모든 재생 중지 및 초기화
   stopAll() {
     this.log('TTS 모든 재생 중지');
@@ -9099,6 +9960,7 @@ class TTSManager {
     this.isPlaying = false;
     this.isPaused = false;
     this.isGenerating = false;
+    this.currentGeneratingTakeId = null;
     this.currentTakeIndex = 0;
     this.currentTakeWordElements = [];
     this.currentTakeWords = [];
@@ -9107,24 +9969,33 @@ class TTSManager {
     this.lastTakeEndPosition = undefined;
     this.cachedContainer = null;
     
-    // 버퍼 정리
-    // 🎯 메모리 최적화: 새로운 캐시 시스템으로 오디오 URL 해제
-    for (const [key, url] of this.audioBuffer.entries()) {
-      if (url && url.startsWith('blob:')) {
-        URL.revokeObjectURL(url);
-      }
-    }
-    this.audioBuffer.clear();
-    this.audioBufferTTL.clear();
+    // 테이크 배열 초기화
     this.takes = [];
-    
-    // 🎯 메모리 최적화: 캐시 정리 타이머도 정리
-    if (this.cacheCleanupInterval) {
-      clearInterval(this.cacheCleanupInterval);
-    }
     
     // 🤖 Zeta AI 모니터링 중지
     this.stopZetaAIMonitoring();
+    
+    // 🎯 버퍼링 시스템 정리
+    try {
+      if (this.bufferAbortController) {
+        this.bufferAbortController.abort();
+        this.bufferAbortController = new AbortController();
+      }
+      this.isBuffering = false;
+      this.bufferingTakeIds.clear();
+      this.bufferedTakes.clear();
+      
+      // 버퍼링 애니메이션 제거
+      const bufferElements = document.querySelectorAll('[style*="tts-buffering"]');
+      this.log(`🎯 버퍼링 애니메이션 제거: ${bufferElements.length}개 요소`);
+      
+      for (const element of bufferElements) {
+        this.removeBufferingAnimation(element);
+      }
+      this.log('🎯 버퍼링 시스템 정리 완료');
+    } catch (error) {
+      this.log('🎯 버퍼링 시스템 정리 중 오류 (무시):', error);
+    }
     
     // UI 업데이트
     this.updateStatus('중지됨', '#FF5722');
