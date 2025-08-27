@@ -171,6 +171,11 @@ class TTSManager {
     return window.location.hostname.includes('zeta-ai') || window.location.hostname.includes('chatgpt_temp');
   }
 
+  // 🔍 퍼플렉시티 모드 확인 헬퍼
+  isPerplexityMode() {
+    return window.location.hostname.includes('perplexity.ai');
+  }
+
   // 🎥 YouTube 모드 확인 헬퍼
   isYouTubeMode() {
     return window.location.hostname.includes('youtube.com') && window.location.pathname.includes('watch');
@@ -1281,6 +1286,16 @@ class TTSManager {
   // 🎯 페이지 로딩 완료 시 초기화 (다단계 시점 확보)
   async initializeWhenReady() {
     this.log(`📊 페이지 상태: ${document.readyState}`);
+    
+    // 🎯 퍼플렉시티 특화 로직: 2초 후 리프레시
+    if (this.isPerplexityMode()) {
+      this.log('🔍 퍼플렉시티 모드 감지: 2초 후 리프레시 실행');
+      setTimeout(() => {
+        this.log('🔄 퍼플렉시티 리프레시 실행');
+        this.tryInitializeAtOptimalTiming();
+      }, 2000);
+      return;
+    }
     
     // 🎯 1차: 최초 시점 - 본문 텍스트 로드 완료 시점
     if (document.readyState === 'loading') {
@@ -2447,9 +2462,9 @@ class TTSManager {
       line-height: 1rem !important;
     `;
     
-    // 🎯 구분선
-    const divider = document.createElement('div');
-    divider.style.cssText = `
+    // 🎯 구분선 (Console log ON일 때만 표시)
+    this.consoleLogDivider = document.createElement('div');
+    this.consoleLogDivider.style.cssText = `
       height: 1px !important;
       background: ${borderColor} !important;
       margin: 4px 0 8px 0 !important;
@@ -2478,7 +2493,7 @@ class TTSManager {
 
     // 🎯 요소 조립
     this.floatingUI.appendChild(this.consoleLogStatusLabel);
-    this.floatingUI.appendChild(divider);
+    this.floatingUI.appendChild(this.consoleLogDivider);
     this.floatingUI.appendChild(this.takeCountLabel);
     this.floatingUI.appendChild(this.takeListContainer);
 
@@ -2501,9 +2516,17 @@ class TTSManager {
       if (this.DEBUG_MODE) {
         this.consoleLogStatusLabel.textContent = 'Console log: ON\n⚠️ 성능저하 있음 ⚠️';
         this.consoleLogStatusLabel.style.color = this.currentTheme === 'dark' ? 'rgba(255, 255, 255, 0.6)' : '#1d1d1d'; // 기본 색상
+        this.consoleLogStatusLabel.style.display = 'block';
+        // 구분선도 표시
+        if (this.consoleLogDivider) {
+          this.consoleLogDivider.style.display = 'block';
+        }
       } else {
-        this.consoleLogStatusLabel.textContent = 'Console log: OFF';
-        this.consoleLogStatusLabel.style.color = this.currentTheme === 'dark' ? 'rgba(255, 255, 255, 0.6)' : '#1d1d1d'; // 기본 색상
+        // Console log OFF일 때는 상태 표시와 구분선 모두 숨김
+        this.consoleLogStatusLabel.style.display = 'none';
+        if (this.consoleLogDivider) {
+          this.consoleLogDivider.style.display = 'none';
+        }
       }
     }
   }
@@ -5462,7 +5485,7 @@ class TTSManager {
       bottom: 0 !important;
       left: 50% !important;
       transform: translate(-50%, 0) !important;
-      width: 60% !important;
+      width: 15% !important;
       min-height: 40vh !important;
       max-height: 60vh !important;
       background: ${bgColor} !important;
@@ -5514,7 +5537,7 @@ class TTSManager {
       // Typography 컨테이너 (app.js 스타일)
       const typography = document.createElement('div');
       typography.style.cssText = `
-        text-align: left !important;
+        text-align: center !important;
         text-transform: none !important;
       `;
       
@@ -6633,7 +6656,7 @@ class TTSManager {
       bottom: 0 !important;
       left: 50% !important;
       transform: translate(-50%, 0) !important;
-      width: 60% !important;
+      width: 40% !important;
       min-height: 40vh !important;
       max-height: 60vh !important;
       background: ${bgColor} !important;
@@ -6703,7 +6726,7 @@ class TTSManager {
       // Typography 컨테이너 (app.js 스타일)
       const typography = document.createElement('div');
       typography.style.cssText = `
-        text-align: left !important;
+        text-align: center !important;
         text-transform: none !important;
       `;
       
