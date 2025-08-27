@@ -13,54 +13,54 @@ class UnifiedTTSManager {
     this.currentAudio = null;
   }
 
-  // 🎯 통합된 재생 시작 함수 (테이크 선택, 화자 변경, 속도 변경 시 모두 호출)
-  async unifiedPlaybackStart(startTake = null, ttsManager) {
-    ttsManager.log(`🎬 통합 재생 시작 - 테이크: ${startTake ? `${startTake.id} (인덱스: ${startTake.index})` : '현재'}`);
-    
-    // 🎯 테이크 정보 상세 로깅
-    if (startTake) {
-      ttsManager.log(`🎯 선택된 테이크 정보:`, {
-        id: startTake.id,
-        index: startTake.index,
-        text: startTake.text?.substring(0, 50) + '...',
-        element: startTake.element ? `${startTake.element.tagName}.${startTake.element.className}` : 'null'
-      });
-    }
-    
-    ttsManager.log(`🎯 전체 테이크 개수: ${ttsManager.preTakes.length}개`);
-    
-    // 🛑 모든 기존 작업 완전 중단
-    this.stopAll(ttsManager);
-    this.clearAllBuffering(ttsManager);
-    
-    // 🛑 새로운 세션 ID로 기존 작업 무효화
-    this.currentSessionId++;
-    
-    // 🛑 모든 테이크 버퍼링 상태 초기화
-    ttsManager.preTakes.forEach(take => {
-      take.isBuffered = false;
-      take.audioUrl = null;
-    });
-    
-    // 시작 테이크가 지정된 경우 해당 테이크부터, 아니면 현재 선택된 테이크부터
-    let startIndex = 0;
-    if (startTake) {
-      // 🎯 테이크 ID 또는 인덱스로 찾기
-      if (startTake.index !== undefined) {
-        // 인덱스가 있는 경우 (직접 인덱스 사용)
-        startIndex = startTake.index;
-        ttsManager.log(`🎯 인덱스 기반 시작: ${startIndex + 1}번째 테이크`);
-      } else {
-        // ID로 찾기
-        startIndex = ttsManager.preTakes.findIndex(take => take.id === startTake.id);
-        ttsManager.log(`🎯 ID 기반 시작: ${startTake.id} → ${startIndex + 1}번째 테이크`);
+      // 🎯 통합된 재생 시작 함수 (테이크 선택, 화자 변경, 속도 변경 시 모두 호출)
+    async unifiedPlaybackStart(startTake = null, ttsManager) {
+      ttsManager.log(`🎬 통합 재생 시작 - 테이크: ${startTake ? `${startTake.id} (인덱스: ${startTake.index})` : '현재'}`);
+      
+      // 🎯 테이크 정보 상세 로깅
+      if (startTake) {
+        ttsManager.log(`🎯 선택된 테이크 정보:`, {
+          id: startTake.id,
+          index: startTake.index,
+          text: startTake.text?.substring(0, 50) + '...',
+          element: startTake.element ? `${startTake.element.tagName}.${startTake.element.className}` : 'null'
+        });
       }
       
-      if (startIndex === -1) {
-        ttsManager.log(`⚠️ 테이크를 찾을 수 없음, 첫 번째 테이크부터 시작`);
-        startIndex = 0;
+      ttsManager.log(`🎯 전체 테이크 개수: ${ttsManager.preTakes.length}개`);
+      
+      // 🛑 모든 기존 작업 완전 중단
+      this.stopAll(ttsManager);
+      this.clearAllBuffering(ttsManager);
+      
+      // 🛑 새로운 세션 ID로 기존 작업 무효화
+      this.currentSessionId++;
+      
+      // 🛑 모든 테이크 버퍼링 상태 초기화
+      ttsManager.preTakes.forEach(take => {
+        take.isBuffered = false;
+        take.audioUrl = null;
+      });
+      
+      // 시작 테이크가 지정된 경우 해당 테이크부터, 아니면 현재 선택된 테이크부터
+      let startIndex = 0;
+      if (startTake) {
+        // 🎯 테이크 ID 또는 인덱스로 찾기
+        if (startTake.index !== undefined) {
+          // 인덱스가 있는 경우 (직접 인덱스 사용)
+          startIndex = startTake.index;
+          ttsManager.log(`🎯 인덱스 기반 시작: ${startIndex + 1}번째 테이크`);
+        } else {
+          // ID로 찾기
+          startIndex = ttsManager.preTakes.findIndex(take => take.id === startTake.id);
+          ttsManager.log(`🎯 ID 기반 시작: ${startTake.id} → ${startIndex + 1}번째 테이크`);
+        }
+        
+        if (startIndex === -1) {
+          ttsManager.log(`⚠️ 테이크를 찾을 수 없음, 첫 번째 테이크부터 시작`);
+          startIndex = 0;
+        }
       }
-    }
     
     // 재생 목록 설정
     this.currentPlayList = ttsManager.preTakes.slice(startIndex);
