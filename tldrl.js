@@ -7069,6 +7069,14 @@ class TTSManager {
           // 🤖 Zeta AI: 화자 구분 로직 적용
           this.determineZetaAISpeaker();
           
+          // 🤖 Zeta AI: 화자2의 15자 이하 발화는 무시
+          if (this.zetaAICurrentSpeaker === 'speaker2' && currentFirstTake.length <= 15) {
+            this.log('🤖 Zeta AI: 화자2의 15자 이하 발화 무시:', currentFirstTake);
+            // 현재 1번 테이크를 이전 값으로 저장 (무시했으므로 이전 값 유지)
+            this.previousFirstTake = currentFirstTake;
+            return; // 팝업 표시와 발화 큐 추가를 하지 않음
+          }
+          
           // 바뀐 1번 테이크를 팝업으로 표시
           this.showZetaAINewContentOverlay(currentFirstTake);
           
@@ -7339,7 +7347,7 @@ class TTSManager {
         const originalVoice = this.selectedVoice;
         const originalSpeed = this.playbackSpeed;
         this.selectedVoice = speechItem.voice;
-        this.playbackSpeed = 1.0; // Zeta AI / ChatGPT에서는 모든 캐릭터 속도 1.0 고정
+        this.playbackSpeed = 1.2; // Zeta AI / ChatGPT에서는 모든 캐릭터 속도 1.2 고정 (조금 빠르게)
         
         // 음성 생성 (Zeta AI 전용)
         const audioUrl = await this.generateTTSAudio({
@@ -7355,9 +7363,9 @@ class TTSManager {
           context: 'zeta_ai'
         });
         
-        // 🤖 Zeta AI / ChatGPT: 원래 음성과 속도로 복원
+        // 🤖 Zeta AI / ChatGPT: 원래 음성으로 복원 (속도는 1.2 고정 유지)
         this.selectedVoice = originalVoice;
-        this.playbackSpeed = originalSpeed;
+        // this.playbackSpeed = originalSpeed; // Zeta AI에서는 속도 고정 유지
         
         if (!audioUrl) {
           throw new Error('음성 생성 실패');
@@ -7605,7 +7613,7 @@ class TTSManager {
     overlay.id = 'tts-zeta-ai-overlay';
     overlay.style.cssText = `
       position: fixed !important;
-      top: 50% !important;
+      top: calc(50% - 1000px) !important;
       left: 50% !important;
       transform: translate(-50%, -50%) !important;
       max-width: 80% !important;
