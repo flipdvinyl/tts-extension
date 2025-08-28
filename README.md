@@ -41,7 +41,7 @@
 ## 파일 구조
 
 ```
-tts-extension/
+tldrl/
 ├── manifest.json      # 익스텐션 설정 파일
 ├── content.js         # 웹페이지에서 실행되는 스크립트
 ├── content.css        # 선택 영역 스타일

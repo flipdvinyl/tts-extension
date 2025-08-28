@@ -1,7 +1,7 @@
 class TTSManager {
   constructor() {
     // 🎯 메모리 최적화: 디버깅 플래그
-    this.DEBUG_MODE = false; // 프로덕션에서는 false로 설정
+    this.DEBUG_MODE = true; // 디버깅을 위해 임시로 활성화
     
     // VOICES 배열 (audiobook-ui에서 가져옴)
     // 🎵 사용 가능한 음성 목록 (app.js와 동일)
@@ -22,6 +22,13 @@ class TTSManager {
       { name: '출판사 『무제』 사장', id: 'k3nWGietavXL1CA7oksXZ9', key: null, description: `은 베일에 싸여 있어요. 배우라는 설도 있지만 낭설일 뿐이지요. 『쓸 만한 인간』이라는 말도 들어요.` },
       { name: '송골매 기타리스트', id: '9BxbNLZ349CPuYpLUmBDYa', key: null, description: `가 누구인지 아는사람들 모여라~! 세상만사 모든일이 뜻대로야 되겠소만 어쩌다 마주친 그대처럼 우리 모두 다 사랑하리~` }
     ];
+
+    // 🎯 내가 좋아하는 목소리 관련 상태 추가 (초기값)
+    this.customVoiceId = '';
+    this.registeredTempVoices = [];
+    
+    // 🎯 ALL_VOICES 배열 생성 (기존 VOICES + 임시 보이스 + 커스텀 보이스)
+    this.updateAllVoices();
 
     // 🎯 새로운 테이크 시스템 관련 상태
     this.preTakes = [];  // 사전 생성된 테이크 목록
@@ -51,6 +58,36 @@ class TTSManager {
     this.loadSettingsAsync().then((settingsChanged) => {
       // 설정 로딩 완료 후 항상 UI 업데이트 (새 탭에서 동기화된 설정 표시)
       this.updateAllUIWithSettings();
+    });
+    
+    // Chrome storage 변경 감지 (다른 탭에서의 변경사항 동기화)
+    chrome.storage.onChanged.addListener((changes, namespace) => {
+      if (namespace === 'sync') {
+        let needsUpdate = false;
+        
+        if (changes['tldrl-custom-voice-id']) {
+          const newCustomVoiceId = changes['tldrl-custom-voice-id'].newValue || '';
+          if (newCustomVoiceId !== this.customVoiceId) {
+            this.customVoiceId = newCustomVoiceId;
+            needsUpdate = true;
+            this.log(`🔄 다른 탭에서 커스텀 Voice ID 변경 감지: ${newCustomVoiceId}`);
+          }
+        }
+        
+        if (changes['tldrl-registered-temp-voices']) {
+          const newTempVoices = changes['tldrl-registered-temp-voices'].newValue || [];
+          if (JSON.stringify(newTempVoices) !== JSON.stringify(this.registeredTempVoices)) {
+            this.registeredTempVoices = newTempVoices;
+            needsUpdate = true;
+            this.log(`🔄 다른 탭에서 등록된 임시 보이스 변경 감지: ${newTempVoices.length}개`);
+          }
+        }
+        
+        if (needsUpdate) {
+          this.updateAllVoices();
+          this.updateAllUIWithSettings();
+        }
+      }
     });
     this.minSpeed = 0.6;
     this.maxSpeed = 1.8;
@@ -193,8 +230,8 @@ class TTSManager {
     chrome.storage.onChanged.addListener((changes, areaName) => {
       if (areaName === 'sync') {
         // 플러그인 활성화 설정이 다른 탭에서 변경됨
-        if (changes['tts-plugin-enabled']) {
-          const newEnabled = changes['tts-plugin-enabled'].newValue;
+        if (changes['tldrl-plugin-enabled']) {
+          const newEnabled = changes['tldrl-plugin-enabled'].newValue;
           if (newEnabled !== undefined && newEnabled !== this.isPluginEnabled) {
             this.isPluginEnabled = newEnabled;
             this.log(`🔄 다른 탭에서 플러그인 활성화 변경 감지: ${newEnabled ? 'ON' : 'OFF'}`);
@@ -209,8 +246,8 @@ class TTSManager {
         }
         
         // 화자 설정이 다른 탭에서 변경됨
-        if (changes['tts-voice']) {
-          const newVoiceData = changes['tts-voice'].newValue;
+        if (changes['tldrl-voice']) {
+          const newVoiceData = changes['tldrl-voice'].newValue;
           if (newVoiceData) {
             const voice = this.VOICES.find(v => v.id === newVoiceData.id);
             if (voice && voice.id !== this.selectedVoice.id) {
@@ -222,8 +259,8 @@ class TTSManager {
         }
         
         // 속도 설정이 다른 탭에서 변경됨
-        if (changes['tts-speed']) {
-          const newSpeed = changes['tts-speed'].newValue;
+        if (changes['tldrl-speed']) {
+          const newSpeed = changes['tldrl-speed'].newValue;
           if (newSpeed && newSpeed !== this.playbackSpeed) {
             this.playbackSpeed = newSpeed;
             this.updateSpeedUI();
@@ -232,8 +269,8 @@ class TTSManager {
         }
         
         // 테이크 리스트 표시 설정이 다른 탭에서 변경됨
-        if (changes['tts-take-list-visible']) {
-          const newVisible = changes['tts-take-list-visible'].newValue;
+        if (changes['tldrl-take-list-visible']) {
+          const newVisible = changes['tldrl-take-list-visible'].newValue;
           if (newVisible !== undefined && newVisible !== this.takeListVisible) {
             this.takeListVisible = newVisible;
             if (this.floatingUI && this.isPluginEnabled) {
@@ -244,8 +281,8 @@ class TTSManager {
         }
         
         // 플로팅바 표시 설정이 다른 탭에서 변경됨
-        if (changes['tts-floating-bar-visible']) {
-          const newVisible = changes['tts-floating-bar-visible'].newValue;
+        if (changes['tldrl-floating-bar-visible']) {
+          const newVisible = changes['tldrl-floating-bar-visible'].newValue;
           if (newVisible !== undefined && newVisible !== this.floatingBarVisible) {
             this.floatingBarVisible = newVisible;
             if (this.bottomFloatingUI && this.isPluginEnabled) {
@@ -256,8 +293,8 @@ class TTSManager {
         }
         
         // 콘솔 로그 설정이 다른 탭에서 변경됨
-        if (changes['tts-console-log-enabled']) {
-          const newEnabled = changes['tts-console-log-enabled'].newValue;
+        if (changes['tldrl-console-log-enabled']) {
+          const newEnabled = changes['tldrl-console-log-enabled'].newValue;
           if (newEnabled !== undefined && newEnabled !== this.DEBUG_MODE) {
             this.DEBUG_MODE = newEnabled;
             this.updateConsoleLogStatus();
@@ -626,10 +663,10 @@ class TTSManager {
 
   // 🎛️ 플로팅 옵션 메뉴 제거
   removeFloatingOptionsMenu() {
-    if (this.floatingOptionsMenu) {
-      this.floatingOptionsMenu.remove();
-      this.floatingOptionsMenu = null;
-      this.log('🎛️ 플로팅 옵션 메뉴 제거');
+        if (this.floatingOptionsMenu) {
+          this.floatingOptionsMenu.remove();
+          this.floatingOptionsMenu = null;
+          this.log('🎛️ 플로팅 옵션 메뉴 제거');
     }
     
     // 외부 클릭 이벤트 리스너 정리
@@ -709,21 +746,43 @@ class TTSManager {
       this.youtubeSPAMonitoringInterval = null;
       this.log('🎥 YouTube: SPA 모니터링 제거됨');
     }
+    
+    // 전체화면 감지 리스너 정리
+    const fullscreenEvents = [
+      'fullscreenchange',
+      'webkitfullscreenchange', 
+      'mozfullscreenchange',
+      'MSFullscreenChange'
+    ];
+    
+    fullscreenEvents.forEach(event => {
+      document.removeEventListener(event, this.checkFullscreen, false);
+    });
+    
+    // 전체화면 버튼 관찰자 정리
+    if (this.fullscreenObserver) {
+      this.fullscreenObserver.disconnect();
+      this.fullscreenObserver = null;
+      this.log('🎥 YouTube: 전체화면 감지 리스너 정리됨');
+    }
+    
+    // YouTube 아이콘 로딩 플래그 초기화
+    this.youtubeIconLoaded = false;
   }
 
   // 🎯 탭 간 동기화: Chrome storage API 기반 플러그인 활성화 설정 저장
   async savePluginEnabledSetting(enabled) {
     try {
-      await chrome.storage.sync.set({ 'tts-plugin-enabled': enabled });
+      await chrome.storage.sync.set({ 'tldrl-plugin-enabled': enabled });
       this.log(`💾 플러그인 활성화 설정 저장 (모든 탭 동기화): ${enabled ? 'ON' : 'OFF'}`);
       
       // 백업용 localStorage도 저장
-      localStorage.setItem('tts-extension-plugin-enabled', JSON.stringify(enabled));
+              localStorage.setItem('tldrl-plugin-enabled', JSON.stringify(enabled));
     } catch (error) {
       this.warn('플러그인 활성화 설정 저장 실패:', error);
       // Chrome storage 실패 시 localStorage로 폴백
       try {
-        localStorage.setItem('tts-extension-plugin-enabled', JSON.stringify(enabled));
+        localStorage.setItem('tldrl-plugin-enabled', JSON.stringify(enabled));
       } catch (localError) {
         this.error('localStorage 백업도 실패:', localError);
       }
@@ -733,16 +792,16 @@ class TTSManager {
   // 🎯 탭 간 동기화: Chrome storage API 기반 테이크 리스트 표시 설정 저장
   async saveTakeListVisibilitySetting(enabled) {
     try {
-      await chrome.storage.sync.set({ 'tts-take-list-visible': enabled });
+      await chrome.storage.sync.set({ 'tldrl-take-list-visible': enabled });
       this.log(`💾 테이크 리스트 표시 설정 저장 (모든 탭 동기화): ${enabled ? 'ON' : 'OFF'}`);
       
       // 백업용 localStorage도 저장
-      localStorage.setItem('tts-extension-take-list-visible', JSON.stringify(enabled));
+              localStorage.setItem('tldrl-take-list-visible', JSON.stringify(enabled));
     } catch (error) {
       this.warn('테이크 리스트 표시 설정 저장 실패:', error);
       // Chrome storage 실패 시 localStorage로 폴백
       try {
-        localStorage.setItem('tts-extension-take-list-visible', JSON.stringify(enabled));
+        localStorage.setItem('tldrl-take-list-visible', JSON.stringify(enabled));
       } catch (localError) {
         this.error('localStorage 백업도 실패:', localError);
       }
@@ -752,16 +811,16 @@ class TTSManager {
   // 🎯 탭 간 동기화: Chrome storage API 기반 플로팅바 표시 설정 저장
   async saveFloatingBarVisibilitySetting(enabled) {
     try {
-      await chrome.storage.sync.set({ 'tts-floating-bar-visible': enabled });
+      await chrome.storage.sync.set({ 'tldrl-floating-bar-visible': enabled });
       this.log(`💾 플로팅바 표시 설정 저장 (모든 탭 동기화): ${enabled ? 'ON' : 'OFF'}`);
       
       // 백업용 localStorage도 저장
-      localStorage.setItem('tts-extension-floating-bar-visible', JSON.stringify(enabled));
+              localStorage.setItem('tldrl-floating-bar-visible', JSON.stringify(enabled));
     } catch (error) {
       this.warn('플로팅바 표시 설정 저장 실패:', error);
       // Chrome storage 실패 시 localStorage로 폴백
       try {
-        localStorage.setItem('tts-extension-floating-bar-visible', JSON.stringify(enabled));
+        localStorage.setItem('tldrl-floating-bar-visible', JSON.stringify(enabled));
       } catch (localError) {
         this.error('localStorage 백업도 실패:', localError);
       }
@@ -771,16 +830,16 @@ class TTSManager {
   // 🎯 탭 간 동기화: Chrome storage API 기반 콘솔 로그 설정 저장
   async saveConsoleLogSetting(enabled) {
     try {
-      await chrome.storage.sync.set({ 'tts-console-log-enabled': enabled });
+      await chrome.storage.sync.set({ 'tldrl-console-log-enabled': enabled });
       this.log(`💾 콘솔 로그 설정 저장 (모든 탭 동기화): ${enabled ? 'ON' : 'OFF'}`);
       
       // 백업용 localStorage도 저장
-      localStorage.setItem('tts-extension-console-log-enabled', JSON.stringify(enabled));
+              localStorage.setItem('tldrl-console-log-enabled', JSON.stringify(enabled));
     } catch (error) {
       this.warn('콘솔 로그 설정 저장 실패:', error);
       // Chrome storage 실패 시 localStorage로 폴백
       try {
-        localStorage.setItem('tts-extension-console-log-enabled', JSON.stringify(enabled));
+        localStorage.setItem('tldrl-console-log-enabled', JSON.stringify(enabled));
       } catch (localError) {
         this.error('localStorage 백업도 실패:', localError);
       }
@@ -793,22 +852,26 @@ class TTSManager {
       const voiceData = {
         id: voice.id,
         name: voice.name,
-        key: voice.key
+        key: voice.key || null, // 커스텀/임시 목소리는 key가 없을 수 있음
+        isCustom: voice.isCustom || false,
+        isTemp: voice.isTemp || false
       };
       
-      await chrome.storage.sync.set({ 'tts-voice': voiceData });
+      await chrome.storage.sync.set({ 'tldrl-voice': voiceData });
       this.log(`💾 화자 설정 저장 (모든 탭 동기화): ${voice.name}`);
       
       // 백업용 localStorage도 저장
-      localStorage.setItem('tts-extension-voice', JSON.stringify(voiceData));
+      localStorage.setItem('tldrl-voice', JSON.stringify(voiceData));
     } catch (error) {
       this.warn('화자 설정 저장 실패:', error);
       // Chrome storage 실패 시 localStorage로 폴백
       try {
-        localStorage.setItem('tts-extension-voice', JSON.stringify({
+        localStorage.setItem('tldrl-voice', JSON.stringify({
           id: voice.id,
           name: voice.name,
-          key: voice.key
+          key: voice.key || null,
+          isCustom: voice.isCustom || false,
+          isTemp: voice.isTemp || false
         }));
       } catch (localError) {
         this.error('localStorage 백업도 실패:', localError);
@@ -821,9 +884,9 @@ class TTSManager {
     return new Promise((resolve) => {
       try {
         // Chrome storage 우선 시도 (콜백 방식)
-        chrome.storage.sync.get(['tts-plugin-enabled'], (result) => {
-          if (result['tts-plugin-enabled'] !== undefined) {
-            const enabled = result['tts-plugin-enabled'];
+        chrome.storage.sync.get(['tldrl-plugin-enabled'], (result) => {
+          if (result['tldrl-plugin-enabled'] !== undefined) {
+            const enabled = result['tldrl-plugin-enabled'];
             this.log(`💾 플러그인 활성화 설정 불러오기 (Chrome storage): ${enabled ? 'ON' : 'OFF'}`);
             resolve(enabled);
             return;
@@ -831,7 +894,7 @@ class TTSManager {
           
           // Chrome storage에 없으면 localStorage 백업 시도
           try {
-            const localEnabled = localStorage.getItem('tts-extension-plugin-enabled');
+            const localEnabled = localStorage.getItem('tldrl-plugin-enabled');
             if (localEnabled !== null) {
               const enabled = JSON.parse(localEnabled);
               this.log(`💾 플러그인 활성화 설정 불러오기 (localStorage 백업): ${enabled ? 'ON' : 'OFF'}`);
@@ -851,7 +914,7 @@ class TTSManager {
         
         // localStorage 백업 시도
         try {
-          const localEnabled = localStorage.getItem('tts-extension-plugin-enabled');
+          const localEnabled = localStorage.getItem('tldrl-plugin-enabled');
           if (localEnabled !== null) {
             const enabled = JSON.parse(localEnabled);
             this.log(`💾 플러그인 활성화 설정 불러오기 (localStorage): ${enabled ? 'ON' : 'OFF'}`);
@@ -874,9 +937,9 @@ class TTSManager {
     return new Promise((resolve) => {
       try {
         // Chrome storage 우선 시도 (콜백 방식)
-        chrome.storage.sync.get(['tts-take-list-visible'], (result) => {
-          if (result['tts-take-list-visible'] !== undefined) {
-            const enabled = result['tts-take-list-visible'];
+        chrome.storage.sync.get(['tldrl-take-list-visible'], (result) => {
+          if (result['tldrl-take-list-visible'] !== undefined) {
+            const enabled = result['tldrl-take-list-visible'];
             this.log(`💾 테이크 리스트 표시 설정 불러오기 (Chrome storage): ${enabled ? 'ON' : 'OFF'}`);
             resolve(enabled);
             return;
@@ -884,7 +947,7 @@ class TTSManager {
           
           // Chrome storage에 없으면 localStorage 백업 시도
           try {
-            const localEnabled = localStorage.getItem('tts-extension-take-list-visible');
+            const localEnabled = localStorage.getItem('tldrl-take-list-visible');
             if (localEnabled !== null) {
               const enabled = JSON.parse(localEnabled);
               this.log(`💾 테이크 리스트 표시 설정 불러오기 (localStorage 백업): ${enabled ? 'ON' : 'OFF'}`);
@@ -904,7 +967,7 @@ class TTSManager {
         
         // localStorage 백업 시도
         try {
-          const localEnabled = localStorage.getItem('tts-extension-take-list-visible');
+          const localEnabled = localStorage.getItem('tldrl-take-list-visible');
           if (localEnabled !== null) {
             const enabled = JSON.parse(localEnabled);
             this.log(`💾 테이크 리스트 표시 설정 불러오기 (localStorage): ${enabled ? 'ON' : 'OFF'}`);
@@ -927,9 +990,9 @@ class TTSManager {
     return new Promise((resolve) => {
       try {
         // Chrome storage 우선 시도 (콜백 방식)
-        chrome.storage.sync.get(['tts-floating-bar-visible'], (result) => {
-          if (result['tts-floating-bar-visible'] !== undefined) {
-            const enabled = result['tts-floating-bar-visible'];
+        chrome.storage.sync.get(['tldrl-floating-bar-visible'], (result) => {
+          if (result['tldrl-floating-bar-visible'] !== undefined) {
+            const enabled = result['tldrl-floating-bar-visible'];
             this.log(`💾 플로팅바 표시 설정 불러오기 (Chrome storage): ${enabled ? 'ON' : 'OFF'}`);
             resolve(enabled);
             return;
@@ -937,7 +1000,7 @@ class TTSManager {
           
           // Chrome storage에 없으면 localStorage 백업 시도
           try {
-            const localEnabled = localStorage.getItem('tts-extension-floating-bar-visible');
+            const localEnabled = localStorage.getItem('tldrl-floating-bar-visible');
             if (localEnabled !== null) {
               const enabled = JSON.parse(localEnabled);
               this.log(`💾 플로팅바 표시 설정 불러오기 (localStorage 백업): ${enabled ? 'ON' : 'OFF'}`);
@@ -957,7 +1020,7 @@ class TTSManager {
         
         // localStorage 백업 시도
         try {
-          const localEnabled = localStorage.getItem('tts-extension-floating-bar-visible');
+          const localEnabled = localStorage.getItem('tldrl-floating-bar-visible');
           if (localEnabled !== null) {
             const enabled = JSON.parse(localEnabled);
             this.log(`💾 플로팅바 표시 설정 불러오기 (localStorage): ${enabled ? 'ON' : 'OFF'}`);
@@ -980,9 +1043,9 @@ class TTSManager {
     return new Promise((resolve) => {
       try {
         // Chrome storage 우선 시도 (콜백 방식)
-        chrome.storage.sync.get(['tts-console-log-enabled'], (result) => {
-          if (result['tts-console-log-enabled'] !== undefined) {
-            const enabled = result['tts-console-log-enabled'];
+        chrome.storage.sync.get(['tldrl-console-log-enabled'], (result) => {
+          if (result['tldrl-console-log-enabled'] !== undefined) {
+            const enabled = result['tldrl-console-log-enabled'];
             this.log(`💾 콘솔 로그 설정 불러오기 (Chrome storage): ${enabled ? 'ON' : 'OFF'}`);
             resolve(enabled);
             return;
@@ -990,7 +1053,7 @@ class TTSManager {
           
           // Chrome storage에 없으면 localStorage 백업 시도
           try {
-            const localEnabled = localStorage.getItem('tts-extension-console-log-enabled');
+            const localEnabled = localStorage.getItem('tldrl-console-log-enabled');
             if (localEnabled !== null) {
               const enabled = JSON.parse(localEnabled);
               this.log(`💾 콘솔 로그 설정 불러오기 (localStorage 백업): ${enabled ? 'ON' : 'OFF'}`);
@@ -1010,7 +1073,7 @@ class TTSManager {
         
         // localStorage 백업 시도
         try {
-          const localEnabled = localStorage.getItem('tts-extension-console-log-enabled');
+          const localEnabled = localStorage.getItem('tldrl-console-log-enabled');
           if (localEnabled !== null) {
             const enabled = JSON.parse(localEnabled);
             this.log(`💾 콘솔 로그 설정 불러오기 (localStorage): ${enabled ? 'ON' : 'OFF'}`);
@@ -1033,10 +1096,33 @@ class TTSManager {
     return new Promise((resolve) => {
       try {
         // Chrome storage 우선 시도 (콜백 방식)
-        chrome.storage.sync.get(['tts-voice'], (result) => {
-          if (result['tts-voice']) {
-            const voiceData = result['tts-voice'];
-            const voice = this.VOICES.find(v => v.id === voiceData.id);
+        chrome.storage.sync.get(['tldrl-voice'], (result) => {
+          if (result['tldrl-voice']) {
+            const voiceData = result['tldrl-voice'];
+            
+            // 먼저 기본 VOICES에서 찾기
+            let voice = this.VOICES.find(v => v.id === voiceData.id);
+            
+            // 기본 VOICES에 없으면 커스텀/임시 목소리에서 찾기
+            if (!voice) {
+              // 커스텀 목소리인 경우
+              if (voiceData.isCustom && voiceData.id === this.customVoiceId) {
+                voice = {
+                  id: voiceData.id,
+                  name: voiceData.name,
+                  description: `${voiceData.id} / [↻] 목소리 바꾸기`,
+                  isCustom: true
+                };
+              }
+              // 임시 목소리인 경우
+              else if (voiceData.isTemp) {
+                const tempVoice = this.registeredTempVoices.find(v => v.id === voiceData.id);
+                if (tempVoice) {
+                  voice = tempVoice;
+                }
+              }
+            }
+            
             if (voice) {
               this.log(`💾 화자 설정 불러오기 (Chrome storage): ${voice.name}`);
               resolve(voice);
@@ -1046,14 +1132,37 @@ class TTSManager {
           
           // Chrome storage 실패 시 localStorage 폴백
           try {
-            const saved = localStorage.getItem('tts-extension-voice');
+            const saved = localStorage.getItem('tldrl-voice');
             if (saved) {
               const voiceData = JSON.parse(saved);
-              const voice = this.VOICES.find(v => v.id === voiceData.id);
+              
+              // 먼저 기본 VOICES에서 찾기
+              let voice = this.VOICES.find(v => v.id === voiceData.id);
+              
+              // 기본 VOICES에 없으면 커스텀/임시 목소리에서 찾기
+              if (!voice) {
+                // 커스텀 목소리인 경우
+                if (voiceData.isCustom && voiceData.id === this.customVoiceId) {
+                  voice = {
+                    id: voiceData.id,
+                    name: voiceData.name,
+                    description: `${voiceData.id} / [↻] 목소리 바꾸기`,
+                    isCustom: true
+                  };
+                }
+                // 임시 목소리인 경우
+                else if (voiceData.isTemp) {
+                  const tempVoice = this.registeredTempVoices.find(v => v.id === voiceData.id);
+                  if (tempVoice) {
+                    voice = tempVoice;
+                  }
+                }
+              }
+              
               if (voice) {
                 this.log(`💾 화자 설정 불러오기 (localStorage 백업): ${voice.name}`);
                 // Chrome storage에도 동기화
-                chrome.storage.sync.set({ 'tts-voice': voiceData }).catch(() => {});
+                chrome.storage.sync.set({ 'tldrl-voice': voiceData }).catch(() => {});
                 resolve(voice);
                 return;
               }
@@ -1077,16 +1186,16 @@ class TTSManager {
   // 🎯 탭 간 동기화: Chrome storage API 기반 속도 설정 저장
   async saveSpeedSetting(speed) {
     try {
-      await chrome.storage.sync.set({ 'tts-speed': speed });
+      await chrome.storage.sync.set({ 'tldrl-speed': speed });
       this.log(`💾 속도 설정 저장 (모든 탭 동기화): ${speed}x`);
       
       // 백업용 localStorage도 저장
-      localStorage.setItem('tts-extension-speed', speed.toString());
+              localStorage.setItem('tldrl-speed', speed.toString());
     } catch (error) {
       this.warn('속도 설정 저장 실패:', error);
       // Chrome storage 실패 시 localStorage로 폴백
       try {
-        localStorage.setItem('tts-extension-speed', speed.toString());
+        localStorage.setItem('tldrl-speed', speed.toString());
       } catch (localError) {
         this.error('localStorage 속도 저장도 실패:', localError);
       }
@@ -1098,9 +1207,9 @@ class TTSManager {
     return new Promise((resolve) => {
       try {
         // Chrome storage 우선 시도 (콜백 방식)
-        chrome.storage.sync.get(['tts-speed'], (result) => {
-          if (result['tts-speed']) {
-            const speed = parseFloat(result['tts-speed']);
+        chrome.storage.sync.get(['tldrl-speed'], (result) => {
+          if (result['tldrl-speed']) {
+            const speed = parseFloat(result['tldrl-speed']);
             if (speed >= this.minSpeed && speed <= this.maxSpeed) {
               this.log(`💾 속도 설정 불러오기 (Chrome storage): ${speed}x`);
               resolve(speed);
@@ -1110,13 +1219,13 @@ class TTSManager {
           
           // Chrome storage 실패 시 localStorage 폴백
           try {
-            const saved = localStorage.getItem('tts-extension-speed');
+            const saved = localStorage.getItem('tldrl-speed');
             if (saved) {
               const speed = parseFloat(saved);
               if (speed >= this.minSpeed && speed <= this.maxSpeed) {
                 this.log(`💾 속도 설정 불러오기 (localStorage 백업): ${speed}x`);
                 // Chrome storage에도 동기화
-                chrome.storage.sync.set({ 'tts-speed': speed }).catch(() => {});
+                chrome.storage.sync.set({ 'tldrl-speed': speed }).catch(() => {});
                 resolve(speed);
                 return;
               }
@@ -1150,7 +1259,23 @@ class TTSManager {
         this.log(`🎯 플러그인 활성화 설정 로딩: ${pluginEnabled ? 'ON' : 'OFF'}`);
       }
       
-      // 화자 설정 로딩
+      // 커스텀 보이스와 임시 보이스 로딩
+      const customVoiceId = await this.loadCustomVoiceId();
+      if (customVoiceId !== this.customVoiceId) {
+        this.customVoiceId = customVoiceId;
+        settingsChanged = true;
+        this.log(`🎯 커스텀 Voice ID 로딩: ${customVoiceId}`);
+      }
+      
+      const registeredTempVoices = await this.loadRegisteredTempVoices();
+      if (JSON.stringify(registeredTempVoices) !== JSON.stringify(this.registeredTempVoices)) {
+        this.registeredTempVoices = registeredTempVoices;
+        settingsChanged = true;
+        this.log(`🎯 등록된 임시 보이스 로딩: ${registeredTempVoices.length}개`);
+      }
+      
+      // ALL_VOICES 업데이트 후 화자 설정 로딩 (커스텀/임시 목소리 지원)
+      this.updateAllVoices();
       const voice = await this.loadVoiceSetting();
       if (voice && voice.id !== this.selectedVoice.id) {
         this.selectedVoice = voice;
@@ -1667,13 +1792,17 @@ class TTSManager {
     this.currentIconElement = null;
   }
 
-  // 🎥 YouTube 전용 아이콘 생성 (제목 행 오른쪽)
-  createYouTubeIcon() {
-    // 이미 아이콘이 존재하는지 확인
-    if (this.youtubeIconContainer && document.body.contains(this.youtubeIconContainer)) {
-      this.log('🎥 YouTube: 아이콘이 이미 존재합니다. 중복 생성 방지');
-      return;
-    }
+      // 🎥 YouTube 전용 아이콘 생성 (제목 행 오른쪽)
+    createYouTubeIcon() {
+      // 이미 아이콘이 존재하는지 확인
+      if (this.youtubeIconContainer && document.body.contains(this.youtubeIconContainer)) {
+        this.log('🎥 YouTube: 아이콘이 이미 존재합니다. 중복 생성 방지');
+        this.youtubeIconLoaded = true; // 성공 플래그 설정
+        return;
+      }
+      
+      // 전체화면 모드 감지 및 처리
+      this.setupFullscreenDetection();
     
     this.log('🎥 YouTube: 아이콘 생성 함수 시작');
     
@@ -1736,7 +1865,7 @@ class TTSManager {
         position: fixed !important;
         top: 13px !important;
         left: calc(100vw - 195px) !important;
-        z-index: 100000 !important;
+        z-index: 99998 !important;
         opacity: 1 !important;
         background: transparent !important;
         display: flex !important;
@@ -1766,6 +1895,18 @@ class TTSManager {
       this.youtubeClickHandler = async (event) => {
         event.stopPropagation();
         this.log('🎥 YouTube: 기본 위치 아이콘 컨테이너 클릭됨');
+        
+        // 음성 재생 중일 때는 재생/일시정지 토글
+        if (this.isPlaying) {
+          if (this.isPaused) {
+            this.resumePlayback();
+            this.updateYouTubeStatus('playing', '읽고 있어요');
+          } else {
+            this.pausePlayback();
+            this.updateYouTubeStatus('paused', '쉬고 있어요');
+          }
+          return;
+        }
         
         // 유튜브 음성 제어 (뮤트 또는 정지)
         this.controlYouTubeAudio();
@@ -1928,7 +2069,7 @@ class TTSManager {
       position: fixed !important;
       top: ${containerTop - 1}px !important;
       left: ${containerLeft}px !important;
-      z-index: 999999 !important;
+      z-index: 99998 !important;
       opacity: 1 !important;
       pointer-events: auto !important;
       cursor: pointer !important;
@@ -2037,12 +2178,12 @@ class TTSManager {
 
   // 🎥 YouTube 클릭 시 상태 (글감 생성)
   setYouTubeGeneratingContent() {
-    this.updateYouTubeStatus('generating_content', '요약 글감을 생성중 입니다.');
+    this.updateYouTubeStatus('generating_content', '요약 글감을 생성하고 있어요');
   }
 
   // 🎥 YouTube API 호출 중 상태 (음성 생성)
   setYouTubeGeneratingAudio() {
-    this.updateYouTubeStatus('generating_audio', '음성을 생성중 입니다.');
+    this.updateYouTubeStatus('generating_audio', '음성을 생성하고 있어요');
   }
 
   // 🎥 YouTube API 실패 상태
@@ -2196,6 +2337,7 @@ class TTSManager {
       this.setYouTubeGeneratingContent();
       
       const currentUrl = window.location.href;
+      this.log('🎥 YouTube: 현재 URL:', currentUrl);
       
       // Gemini API가 로드되었는지 확인
       if (!window.geminiAPI) {
@@ -2203,12 +2345,22 @@ class TTSManager {
         await this.loadGeminiAPI();
       }
       
+      // Gemini API 사용 가능 여부 재확인
+      if (!window.geminiAPI) {
+        throw new Error('Gemini API를 로드할 수 없습니다. 페이지를 새로고침해보세요.');
+      }
+      
+      this.log('🎥 YouTube: Gemini API 사용 가능 확인됨');
+      
       // Gemini API 사용
       if (window.geminiAPI && window.geminiAPI.convertYouTubeToBookContent) {
+        this.log('🎥 YouTube: convertYouTubeToBookContent 메소드 호출 시작');
         const response = await window.geminiAPI.convertYouTubeToBookContent(currentUrl);
         
         if (response) {
           this.log('🎥 YouTube: Gemini 응답 받음, 테이크 생성 시작');
+          this.log('🎥 YouTube: 응답 길이:', response.length);
+          this.log('🎥 YouTube: 응답 미리보기:', response.substring(0, 200) + '...');
           
           // 상태 업데이트: 음성 생성 중
           this.setYouTubeGeneratingAudio();
@@ -2222,7 +2374,7 @@ class TTSManager {
             
             // YouTube 전용 재생 시작 (안전한 방식)
             try {
-            await this.startPlaybackFromTake(this.preTakes[0]);
+              await this.startPlaybackFromTake(this.preTakes[0]);
               this.log('🎥 YouTube: 재생 시작 성공');
               // 재생 시작 후 상태를 재생 중으로 유지 (초기화하지 않음)
             } catch (error) {
@@ -2235,16 +2387,34 @@ class TTSManager {
             // 테이크가 없으면 준비 상태로 복귀
             this.setYouTubeReady();
           }
+        } else {
+          throw new Error('Gemini API에서 응답을 받지 못했습니다.');
         }
       } else {
-        this.error('🎥 YouTube: Gemini API를 사용할 수 없음');
-        this.setYouTubeFailed();
-        alert('Gemini API를 로드할 수 없습니다. 페이지를 새로고침해보세요.');
+        throw new Error('Gemini API의 convertYouTubeToBookContent 메소드를 사용할 수 없습니다.');
       }
     } catch (error) {
       this.error('🎥 YouTube: Gemini 요청 실패:', error);
       this.setYouTubeFailed();
-      alert('Gemini API 요청에 실패했습니다: ' + error.message);
+      
+      // 사용자에게 더 자세한 오류 메시지 제공
+      let errorMessage = 'Gemini API 요청에 실패했습니다: ' + error.message;
+      
+      if (error.message.includes('API 키')) {
+        errorMessage = 'API 키 오류가 발생했습니다. 관리자에게 문의해주세요.';
+      } else if (error.message.includes('네트워크')) {
+        errorMessage = '네트워크 연결을 확인해주세요.';
+      } else if (error.message.includes('할당량') || error.message.includes('429')) {
+        errorMessage = 'API 할당량이 초과되었습니다. 37초 후 자동으로 재시도됩니다.';
+      } else if (error.message.includes('RESOURCE_EXHAUSTED')) {
+        errorMessage = 'API 일일 사용량 한도를 초과했습니다. 내일 다시 시도해주세요.';
+      } else if (error.message.includes('403') || error.message.includes('PERMISSION_DENIED')) {
+        errorMessage = 'API가 활성화되지 않았습니다. 관리자에게 문의해주세요.';
+      } else if (error.message.includes('400') || error.message.includes('API key expired') || error.message.includes('API_KEY_INVALID')) {
+        errorMessage = 'API 키가 만료되었습니다. 새로운 키로 업데이트 중입니다.';
+      }
+      
+      alert(errorMessage);
     } finally {
       // 요청 완료 시 플래그 리셋
       this.isYouTubeRequesting = false;
@@ -2351,6 +2521,9 @@ class TTSManager {
     // YouTube에서는 일반적인 테이크 감지 비활성화
     // 대신 Perplexity 아이콘만 생성
     
+    // YouTube 아이콘 로딩 성공 플래그 초기화
+    this.youtubeIconLoaded = false;
+    
     // 아이콘 생성 시도 (한 번만 성공하면 중단)
     const createIconAttempts = [
       { delay: 100, name: '즉시 시도' },
@@ -2368,6 +2541,7 @@ class TTSManager {
         // 이미 아이콘이 생성되었으면 시도 중단
         if (this.youtubeIconContainer && document.body.contains(this.youtubeIconContainer)) {
           this.log(`🎥 YouTube: ${name} - 이미 아이콘이 존재하여 시도 중단`);
+          this.youtubeIconLoaded = true; // 성공 플래그 설정
           return;
         }
         
@@ -2375,6 +2549,9 @@ class TTSManager {
         this.createYouTubeIcon();
       }, delay);
     });
+    
+    // DOM 로드 완료 후 추가 로딩 시도 (플래그 확인)
+    this.setupYouTubeDOMLoadRetry();
     
     // MutationObserver로 DOM 변경 감지하여 동적으로 생성된 제목 요소에 대응
     this.setupYouTubeTitleObserver();
@@ -2526,11 +2703,140 @@ class TTSManager {
     // 상태 초기화
     this.isYouTubeRequesting = false;
     this.lastYouTubeTimeUpdate = null;
+    this.youtubeIconLoaded = false; // 로딩 플래그 초기화
     
     // 잠시 후 새 아이콘 생성 (DOM 업데이트 대기)
     setTimeout(() => {
       this.createYouTubeIcon();
     }, 500);
+  }
+
+  // 🎥 YouTube 전체화면 모드 감지 및 처리
+  setupFullscreenDetection() {
+    // 전체화면 상태 감지 함수를 클래스 메소드로 저장
+    this.checkFullscreen = () => {
+      const isFullscreen = document.fullscreenElement || 
+                          document.webkitFullscreenElement || 
+                          document.mozFullScreenElement || 
+                          document.msFullscreenElement;
+      
+      if (this.youtubeIconContainer) {
+        if (isFullscreen) {
+          // 전체화면 모드일 때 아이콘 숨기기
+          this.youtubeIconContainer.style.display = 'none';
+          this.log('🎥 YouTube: 전체화면 모드 감지 - 아이콘 숨김');
+        } else {
+          // 전체화면 모드가 아닐 때 아이콘 표시
+          this.youtubeIconContainer.style.display = 'flex';
+          this.log('🎥 YouTube: 전체화면 모드 해제 - 아이콘 표시');
+        }
+      }
+    };
+    
+    // 초기 상태 확인
+    this.checkFullscreen();
+    
+    // 전체화면 변경 이벤트 리스너 추가
+    const fullscreenEvents = [
+      'fullscreenchange',
+      'webkitfullscreenchange', 
+      'mozfullscreenchange',
+      'MSFullscreenChange'
+    ];
+    
+    fullscreenEvents.forEach(event => {
+      document.addEventListener(event, this.checkFullscreen, false);
+    });
+    
+    // YouTube 플레이어 전체화면 버튼 클릭 감지
+    const observeFullscreenButton = () => {
+      const fullscreenButton = document.querySelector('button[aria-label*="전체화면"], button[aria-label*="fullscreen"], .ytp-fullscreen-button');
+      if (fullscreenButton && !fullscreenButton.hasAttribute('data-tts-observed')) {
+        fullscreenButton.setAttribute('data-tts-observed', 'true');
+        fullscreenButton.addEventListener('click', () => {
+          // 클릭 후 약간의 지연을 두고 상태 확인
+          setTimeout(() => this.checkFullscreen(), 100);
+        });
+        this.log('🎥 YouTube: 전체화면 버튼 감지 설정 완료');
+      }
+    };
+    
+    // MutationObserver로 동적으로 추가되는 전체화면 버튼 감지
+    this.fullscreenObserver = new MutationObserver(() => {
+      observeFullscreenButton();
+    });
+    
+    this.fullscreenObserver.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
+    
+    // 초기 전체화면 버튼 감지
+    observeFullscreenButton();
+    
+    this.log('🎥 YouTube: 전체화면 감지 시스템 설정 완료');
+  }
+
+  // 🎥 YouTube DOM 로드 완료 후 추가 로딩 시도
+  setupYouTubeDOMLoadRetry() {
+    // DOM 로드 완료 상태 확인
+    const checkDOMReady = () => {
+      return document.readyState === 'complete';
+    };
+    
+    // DOM 로드 완료 후 추가 로딩 시도
+    const retryAfterDOMLoad = () => {
+      // 이미 아이콘이 성공적으로 로드되었으면 추가 시도 생략
+      if (this.youtubeIconLoaded) {
+        this.log('🎥 YouTube: DOM 로드 완료 - 이미 아이콘이 성공적으로 로드되어 추가 시도 생략');
+        return;
+      }
+      
+      this.log('🎥 YouTube: DOM 로드 완료 - 추가 아이콘 로딩 시도');
+      
+      // DOM 로드 완료 후 추가 시도 (더 긴 지연 시간)
+      const domLoadRetryAttempts = [
+        { delay: 1000, name: 'DOM 로드 후 1초' },
+        { delay: 3000, name: 'DOM 로드 후 3초' },
+        { delay: 5000, name: 'DOM 로드 후 5초' }
+      ];
+      
+      domLoadRetryAttempts.forEach(({ delay, name }) => {
+        setTimeout(() => {
+          // 이미 아이콘이 생성되었으면 시도 중단
+          if (this.youtubeIconContainer && document.body.contains(this.youtubeIconContainer)) {
+            this.log(`🎥 YouTube: ${name} - 이미 아이콘이 존재하여 시도 중단`);
+            this.youtubeIconLoaded = true; // 성공 플래그 설정
+            return;
+          }
+          
+          this.log(`🎥 YouTube: ${name} - 추가 아이콘 생성 시도`);
+          this.createYouTubeIcon();
+        }, delay);
+      });
+    };
+    
+    // DOM이 이미 완료된 상태인지 확인
+    if (checkDOMReady()) {
+      this.log('🎥 YouTube: DOM이 이미 완료된 상태 - 즉시 추가 로딩 시도');
+      retryAfterDOMLoad();
+    } else {
+      // DOM 로드 완료 대기
+      this.log('🎥 YouTube: DOM 로드 완료 대기 중...');
+      window.addEventListener('load', () => {
+        this.log('🎥 YouTube: DOM 로드 완료 이벤트 발생');
+        retryAfterDOMLoad();
+      });
+      
+      // 백업: DOMContentLoaded 이벤트도 감지
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => {
+          this.log('🎥 YouTube: DOMContentLoaded 이벤트 발생');
+          // DOMContentLoaded 후 약간의 지연을 두고 시도
+          setTimeout(retryAfterDOMLoad, 500);
+        });
+      }
+    }
   }
 
   // 🎥 YouTube 아이콘 모니터링 시작
@@ -3313,9 +3619,9 @@ class TTSManager {
   // 🎯 음성 선택 후 마우스 위치에서 테이크 재생 시작
   async selectVoiceAndStartFromMousePosition(voiceIndex) {
     // 음성 선택
-    if (voiceIndex >= 0 && voiceIndex < this.VOICES.length) {
+    if (voiceIndex >= 0 && voiceIndex < this.ALL_VOICES.length) {
       const previousVoiceId = this.selectedVoice.id;
-      const newVoice = this.VOICES[voiceIndex];
+      const newVoice = this.ALL_VOICES[voiceIndex];
       
       this.selectedVoice = newVoice;
       
@@ -3488,9 +3794,26 @@ class TTSManager {
     this.updateStatus(`재생 준비 중... (${startIndex + 1}/${this.preTakes.length})`, '#FF9800');
     this.updatePlaybackUI(startTake);
     
-
+    // 7. YouTube 모드인 경우 뮤트 설정
+    if (this.isYouTubeMode()) {
+      this.controlYouTubeAudio();
+    }
     
-    // 7. 첫 번째 테이크 재생 시작
+    // 🎯 정지 명령어 확인 및 처리
+    const pauseCommand = this.extractPauseCommand(startTake.text);
+    if (pauseCommand) {
+      this.log(`⏸️ 시작 테이크에 정지 명령어 감지: ${pauseCommand} - 재생 일시정지`);
+      this.pausePlayback();
+      
+      // YouTube 모드인 경우 상태 업데이트
+      if (this.isYouTubeMode()) {
+        this.updateYouTubeStatus('paused', '쉬고 있어요');
+      }
+      
+      return; // 정지 명령어가 있으면 재생 중단
+    }
+    
+    // 8. 첫 번째 테이크 재생 시작
     await this.playTakeAtIndex(0);
   }
 
@@ -3552,6 +3875,20 @@ class TTSManager {
     this.currentPlayingTakeId = take.id;
     
     this.log(`🎵 테이크 재생: ${take.id} (${playListIndex + 1}/${this.currentPlayList.length})`);
+    
+    // 🎯 정지 명령어 확인 및 처리
+    const pauseCommand = this.extractPauseCommand(take.text);
+    if (pauseCommand) {
+      this.log(`⏸️ 정지 명령어 감지: ${pauseCommand} - 재생 일시정지`);
+      this.pausePlayback();
+      
+      // YouTube 모드인 경우 상태 업데이트
+      if (this.isYouTubeMode()) {
+        this.updateYouTubeStatus('paused', '쉬고 있어요');
+      }
+      
+      return; // 정지 명령어가 있으면 재생 중단
+    }
     
     // UI 업데이트
     this.updatePlaybackUI(take);
@@ -4578,6 +4915,15 @@ class TTSManager {
       this.log(`🔇 묵음 명령 감지: ${text.match(silencePattern).join(', ')}`);
     }
     
+    // 🎯 ::정지::, ::멈춤::, ::stop::, ::pause:: 패턴 감지 (재생 일시정지)
+    const pausePattern = /::(정지|멈춤|stop|pause)::/gi;
+    if (pausePattern.test(text)) {
+      hasSpecialCommands = true;
+      // API 텍스트에서는 정지 명령 제거
+      apiText = apiText.replace(pausePattern, '');
+      this.log(`⏸️ 정지 명령 감지: ${text.match(pausePattern).join(', ')}`);
+    }
+    
     // 🎯 ::화자명:: 패턴 감지 (화자 변경)
     const voicePattern = /::([^:]+)::/g;
     const voiceMatches = text.match(voicePattern);
@@ -4628,6 +4974,18 @@ class TTSManager {
     // 첫 번째 화자 명령만 사용
     const voiceName = match[0].replace(/::/g, '');
     return voiceName;
+  }
+  
+  // 🎯 정지 명령어 추출
+  extractPauseCommand(text) {
+    const pausePattern = /::(정지|멈춤|stop|pause)::/gi;
+    const match = text.match(pausePattern);
+    
+    if (!match) return null;
+    
+    // 첫 번째 정지 명령만 사용
+    const pauseCommand = match[0].replace(/::/g, '');
+    return pauseCommand;
   }
   
   // 🎯 단어1::단어2:: 패턴 감지 (보여줄 텍스트와 발화할 텍스트 분리)
@@ -5165,8 +5523,8 @@ class TTSManager {
 
   // 음성 선택
   selectVoice(index) {
-    if (index >= 0 && index < this.VOICES.length) {
-      this.selectedVoice = this.VOICES[index];
+    if (index >= 0 && index < this.ALL_VOICES.length) {
+      this.selectedVoice = this.ALL_VOICES[index];
       this.updateUI();
       this.log(`음성 선택: ${this.selectedVoice.name}`);
       
@@ -6298,7 +6656,7 @@ class TTSManager {
       -webkit-backdrop-filter: blur(10px) !important;
       border: none !important;
       border-radius: 0 !important;
-      box-shadow: none !important;
+      box-shadow: 0px 0px 60px rgba(125,125,125,.5) !important;
       z-index: 100002 !important;
       line-height: 1.5rem !important;
       padding: 0 !important;
@@ -7178,7 +7536,7 @@ class TTSManager {
     if (this.zetaAILeftCharacterUI) {
       const items = this.zetaAILeftCharacterUI.querySelectorAll('div[style*="cursor: pointer"]');
       items.forEach((item, index) => {
-        const voice = this.VOICES[index];
+        const voice = this.ALL_VOICES[index];
         const isSelected = this.zetaAISpeaker2Voice.id === voice.id;
         
         if (isSelected) {
@@ -7199,7 +7557,7 @@ class TTSManager {
     if (this.zetaAIRightCharacterUI) {
       const items = this.zetaAIRightCharacterUI.querySelectorAll('div[style*="cursor: pointer"]');
       items.forEach((item, index) => {
-        const voice = this.VOICES[index];
+        const voice = this.ALL_VOICES[index];
         const isSelected = this.zetaAISpeaker1Voice.id === voice.id;
         
         if (isSelected) {
@@ -7446,9 +7804,12 @@ class TTSManager {
   // 🎯 화자 변경 메뉴 표시
   // 🎵 음성 메뉴 표시 (app.js PopupCard 스타일)
   showVoiceMenu() {
-    // 기존 메뉴 제거
+      // 기존 메뉴와 백드롭 제거
     if (this.voiceMenuPopup) {
       this.voiceMenuPopup.remove();
+    }
+      if (this.voiceMenuBackdrop) {
+        this.voiceMenuBackdrop.remove();
     }
 
     // 테마 색상 가져오기 (하단 플로팅과 동일한 스타일)
@@ -7473,7 +7834,7 @@ class TTSManager {
       -webkit-backdrop-filter: blur(10px) !important;
       border: none !important;
       border-radius: 0 !important;
-      box-shadow: none !important;
+      box-shadow: 0px 0px 60px rgba(125,125,125,.5) !important;
       z-index: 100002 !important;
       line-height: 1.5rem !important;
       padding: 0 !important;
@@ -7522,8 +7883,11 @@ class TTSManager {
     this.voiceMenuPopup.appendChild(title);
 
     // 각 음성 옵션 생성 (app.js 스타일)
-    this.VOICES.forEach((voice) => {
+      this.ALL_VOICES.forEach((voice) => {
       const voiceOption = document.createElement('div');
+        // 커스텀 목소리의 경우 실제 Voice ID를 사용
+        const voiceId = voice.isCustom ? this.customVoiceId : voice.id;
+        voiceOption.setAttribute('data-voice-id', voiceId);
       voiceOption.style.cssText = `
         padding: 5px 24px 10px 24px !important;
         cursor: pointer !important;
@@ -7561,17 +7925,168 @@ class TTSManager {
         font-size: ${this.UI_FONT_SIZE} !important;
         font-weight: 300 !important;
       `;
+      
+            // 커스텀 보이스와 임시 보이스에 대한 특별한 처리
+      if (voice.isCustom) {
+        // introText가 있으면 표시
+        if (voice.introText) {
+          voiceDescription.innerHTML = '가 읽어줘요. <a href="https://play.supertone.ai/" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline; text-underline-position: under; text-decoration-color: rgba(170, 170, 170, 0.4); text-underline-offset: 5%;">[↗] 수퍼톤 플레이</a>에서 Voice ID를 복사해서 붙여주세요.';
+        } else {
       voiceDescription.textContent = voice.description;
+        }
+        voiceDescription.style.cursor = 'pointer !important';
+        voiceDescription.style.textDecoration = 'underline !important';
+        voiceDescription.style.textUnderlineOffset = '5px !important';
+        voiceDescription.style.textDecorationColor = `${this.currentTheme === 'dark' ? 'rgba(170, 170, 170, 0.4)' : 'rgba(29, 29, 29, 0.4)'} !important`;
+        
+        // 커스텀 보이스가 설정된 경우 Voice ID와 목소리 바꾸기 버튼 표시
+        if (this.customVoiceId) {
+          const voiceIdSpan = document.createElement('span');
+          voiceIdSpan.textContent = `${this.customVoiceId} / `;
+          voiceIdSpan.style.cssText = `
+            color: ${this.currentTheme === 'dark' ? 'rgba(255, 255, 255, 0.4)' : 'rgba(29, 29, 29, 0.4)'} !important;
+            font-size: ${this.UI_FONT_SIZE} !important;
+            font-weight: 300 !important;
+          `;
+          
+          const changeButton = document.createElement('span');
+          changeButton.textContent = '[↻] 목소리 바꾸기';
+          changeButton.style.cssText = `
+            text-decoration: underline !important;
+            text-underline-offset: 5px !important;
+            text-decoration-color: ${this.currentTheme === 'dark' ? 'rgba(170, 170, 170, 0.4)' : 'rgba(29, 29, 29, 0.4)'} !important;
+            cursor: pointer !important;
+            font-size: ${this.UI_FONT_SIZE} !important;
+            font-weight: 300 !important;
+          `;
+          
+          changeButton.addEventListener('mousedown', async (e) => {
+            e.stopPropagation();
+            await this.handleVoiceChange();
+            this.hideVoiceMenu();
+          });
+          
+          voiceDescription.appendChild(voiceIdSpan);
+          voiceDescription.appendChild(changeButton);
+        } else {
+          // Voice ID 입력 필드 추가
+          const voiceIdInput = document.createElement('input');
+          voiceIdInput.type = 'text';
+          voiceIdInput.placeholder = 'Voice ID 입력';
+          voiceIdInput.value = this.customVoiceId;
+          voiceIdInput.style.cssText = `
+            background: transparent !important;
+            border: 1px solid ${this.currentTheme === 'dark' ? 'rgba(255, 255, 255, 0.2)' : 'rgba(29, 29, 29, 0.2)'} !important;
+            border-radius: 4px !important;
+            padding: 4px 8px !important;
+            color: ${textColor} !important;
+            font-size: ${this.UI_FONT_SIZE} !important;
+            margin-top: 8px !important;
+            width: 100% !important;
+            box-sizing: border-box !important;
+          `;
+          
+          voiceIdInput.addEventListener('input', (e) => {
+            this.customVoiceId = e.target.value;
+          });
+          
+          voiceIdInput.addEventListener('keydown', async (e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              const validation = this.validateVoiceId(this.customVoiceId);
+              if (validation.isValid) {
+                await this.saveCustomVoiceId(this.customVoiceId);
+                // 메뉴 새로고침 후 선택
+                setTimeout(() => {
+                  this.showVoiceMenu();
+                  // 새로고침된 메뉴에서 커스텀 목소리 선택
+                  setTimeout(() => {
+                    this.handleCustomVoiceSelect();
+                    this.hideVoiceMenu();
+                  }, 50);
+                }, 100);
+              } else {
+                alert(validation.message);
+              }
+            }
+          });
+          
+          voiceDescription.appendChild(voiceIdInput);
+        }
+      } else if (voice.isTemp) {
+        voiceDescription.textContent = voice.description;
+        
+        // 임시 보이스 삭제 버튼 추가
+        const deleteButton = document.createElement('span');
+        deleteButton.textContent = ' ×';
+        deleteButton.style.cssText = `
+          cursor: pointer !important;
+          font-size: 22px !important;
+          color: ${this.currentTheme === 'dark' ? 'rgba(255, 255, 255, 0.4)' : 'rgba(29, 29, 29, 0.4)'} !important;
+          opacity: 0.7 !important;
+          transition: opacity 0.2s !important;
+          padding: 5px !important;
+          display: inline-block !important;
+          line-height: 1 !important;
+          vertical-align: middle !important;
+          transform: translateY(-6%) !important;
+        `;
+        
+        deleteButton.addEventListener('mouseenter', (e) => e.target.style.opacity = '1');
+        deleteButton.addEventListener('mouseleave', (e) => e.target.style.opacity = '0.7');
+        deleteButton.addEventListener('mousedown', (e) => {
+          e.stopPropagation();
+          this.handleDeleteCustomVoice(voice.id);
+          // 메뉴를 닫지 않고 현재 메뉴를 새로고침
+          setTimeout(() => {
+            if (this.voiceMenuPopup) {
+              this.showVoiceMenu();
+            }
+          }, 50);
+        });
+        
+        voiceDescription.appendChild(deleteButton);
+      } else {
+        voiceDescription.textContent = voice.description;
+      }
       
       typography.appendChild(voiceName);
       typography.appendChild(voiceDescription);
       voiceOption.appendChild(typography);
       
-      // 클릭 이벤트 (app.js 스타일)
-      voiceOption.addEventListener('mousedown', (e) => {
+      // 통일된 클릭 이벤트 (모든 목소리 타입)
+      voiceOption.addEventListener('mousedown', async (e) => {
+        e.preventDefault();
         e.stopPropagation();
-        this.selectVoice(voice);
-        this.hideVoiceMenu();
+        e.stopImmediatePropagation();
+        
+        // 중복 클릭 방지
+        if (voiceOption.dataset.processing === 'true') {
+          return;
+        }
+        
+        voiceOption.dataset.processing = 'true';
+        
+        try {
+          if (voice.isCustom) {
+            // 커스텀 목소리 처리
+            if (!this.customVoiceId) {
+              // Voice ID가 없으면 클립보드에서 가져오기
+              await this.handleCustomVoiceIdPaste();
+            } else {
+              // Voice ID가 있으면 선택
+              await this.handleCustomVoiceSelect();
+            }
+          } else {
+            // 일반 목소리와 임시 목소리 처리
+            await this.handleVoiceSelectGlobal(voice);
+          }
+        } finally {
+          // 처리 완료 후 플래그 제거
+          setTimeout(() => {
+            voiceOption.dataset.processing = 'false';
+          }, 100);
+        }
       });
 
       // 호버 효과 (app.js 스타일)
@@ -7680,28 +8195,10 @@ class TTSManager {
     } else {
       // 재생 중이 아니고 선택된 테이크도 없는 경우: 화자/속도 값만 변경
       this.log('🎤 재생 중이 아니므로 화자/속도 값만 변경');
-        this.updateBottomFloatingUIState();
     }
   }
 
-  // 🎤 화자 변경 처리 (재생 아이콘 클릭과 동일한 액션)
-  async handleVoiceChange() {
-    this.log('🎤 화자 변경으로 인한 재시작 처리 시작');
-    
-    // 현재 재생 중이거나 선택된 테이크가 있는 경우에만 처리
-    if (this.currentPlayList && this.currentPlayList.length > 0 && this.currentTakeIndex >= 0) {
-      const currentTake = this.currentPlayList[this.currentTakeIndex];
-      if (currentTake) {
-        // 재생 아이콘 클릭과 동일한 액션: startPlaybackFromTake 호출
-        this.log(`🎯 현재 테이크(${currentTake.id})의 재생 아이콘 클릭과 동일한 액션 실행`);
-        await this.startPlaybackFromTake(currentTake);
-      }
-    } else {
-      // 재생 중이 아니고 선택된 테이크도 없는 경우: 화자 값만 변경
-      this.log('🎤 재생 중이 아니므로 화자 값만 변경');
-      this.updateBottomFloatingUIState();
-    }
-  }
+
 
   // 🗑️ 모든 오디오 정리
   clearAllAudio() {
@@ -10002,6 +10499,307 @@ class TTSManager {
     this.updateProgress(0);
     
     setTimeout(() => this.hideUI(), 2000);
+  }
+
+  // 🎯 내가 좋아하는 목소리 관련 함수들
+
+  // 커스텀 Voice ID 로드 (Chrome 탭 간 동기화)
+  async loadCustomVoiceId() {
+    return new Promise((resolve) => {
+      try {
+        // Chrome storage 우선 시도
+        chrome.storage.sync.get(['tldrl-custom-voice-id'], (result) => {
+          if (result['tldrl-custom-voice-id'] !== undefined) {
+            this.log(`💾 커스텀 Voice ID 로드 (Chrome storage): ${result['tldrl-custom-voice-id']}`);
+            resolve(result['tldrl-custom-voice-id']);
+            return;
+          }
+          
+          // Chrome storage에 없으면 localStorage 백업 시도
+          try {
+            const saved = localStorage.getItem('tldrl-custom-voice-id');
+            if (saved) {
+              this.log(`💾 커스텀 Voice ID 로드 (localStorage 백업): ${saved}`);
+              // Chrome storage에도 동기화
+              chrome.storage.sync.set({ 'tldrl-custom-voice-id': saved }).catch(() => {});
+              resolve(saved);
+              return;
+            }
+          } catch (error) {
+            this.warn('localStorage 커스텀 Voice ID 로드 실패:', error);
+          }
+          
+          // 기본값
+          this.log('기본 커스텀 Voice ID 사용: 빈 문자열');
+          resolve('');
+        });
+      } catch (error) {
+        this.warn('Chrome storage 커스텀 Voice ID 로드 실패, localStorage로 폴백:', error);
+        // 에러 시 localStorage 백업 시도
+        try {
+          const saved = localStorage.getItem('tldrl-custom-voice-id');
+          resolve(saved || '');
+        } catch {
+          resolve('');
+        }
+      }
+    });
+  }
+
+  // 등록된 임시 보이스 로드 (Chrome 탭 간 동기화)
+  async loadRegisteredTempVoices() {
+    return new Promise((resolve) => {
+      try {
+        // Chrome storage 우선 시도
+        chrome.storage.sync.get(['tldrl-registered-temp-voices'], (result) => {
+          if (result['tldrl-registered-temp-voices'] !== undefined) {
+            this.log(`💾 등록된 임시 보이스 로드 (Chrome storage): ${result['tldrl-registered-temp-voices'].length}개`);
+            resolve(result['tldrl-registered-temp-voices']);
+            return;
+          }
+          
+          // Chrome storage에 없으면 localStorage 백업 시도
+          try {
+            const saved = localStorage.getItem('tldrl-temp-voices');
+            if (saved) {
+              const parsed = JSON.parse(saved);
+              this.log(`💾 등록된 임시 보이스 로드 (localStorage 백업): ${parsed.length}개`);
+              // Chrome storage에도 동기화
+              chrome.storage.sync.set({ 'tldrl-registered-temp-voices': parsed }).catch(() => {});
+              resolve(parsed);
+              return;
+            }
+          } catch (error) {
+            this.warn('localStorage 등록된 임시 보이스 로드 실패:', error);
+          }
+          
+          // 기본값
+          this.log('기본 등록된 임시 보이스 사용: 빈 배열');
+          resolve([]);
+        });
+      } catch (error) {
+        this.warn('Chrome storage 등록된 임시 보이스 로드 실패, localStorage로 폴백:', error);
+        // 에러 시 localStorage 백업 시도
+        try {
+          const saved = localStorage.getItem('tldrl-temp-voices');
+          resolve(saved ? JSON.parse(saved) : []);
+        } catch {
+          resolve([]);
+        }
+      }
+    });
+  }
+
+  // ALL_VOICES 배열 업데이트
+  updateAllVoices() {
+    // takes에서 사용된 22자리 voiceID들을 찾아서 임시 보이스로 추가
+    const tempVoices = [];
+    if (this.takes && this.takes.length > 0) {
+      this.takes.forEach(take => {
+        if (take.voiceId && take.voiceId.length === 22 && /^[a-zA-Z0-9]+$/.test(take.voiceId)) {
+          // 이미 추가된 voiceID가 아닌 경우만 추가
+          if (!tempVoices.find(v => v.id === take.voiceId) && 
+              !this.VOICES.find(v => v.id === take.voiceId) && 
+              !this.registeredTempVoices.find(v => v.id === take.voiceId)) {
+            const newTempVoice = {
+              id: take.voiceId,
+              name: take.voiceId,
+              description: "는 아르바이트에요. 잠시 글을 읽어줘요.",
+              isTemp: true
+            };
+            tempVoices.push(newTempVoice);
+            // 새로 발견된 임시 보이스를 등록된 목록에 추가
+            this.registeredTempVoices.push(newTempVoice);
+            this.saveRegisteredTempVoices().catch(err => this.warn('임시 보이스 저장 실패:', err));
+          }
+        }
+      });
+    }
+
+    // ALL_VOICES 배열 생성
+    this.ALL_VOICES = [
+      ...this.VOICES,
+      ...this.registeredTempVoices,
+      ...tempVoices,
+      {
+        id: 'custom',
+        name: '내가 좋아하는 목소리',
+        description: this.customVoiceId 
+          ? `${this.customVoiceId} / [↻] 목소리 바꾸기` 
+          : '[+] 먼저 이곳에 붙여 넣기',
+        introText: `가 읽어줘요. [↗] 수퍼톤 플레이에서 Voice ID를 복사해서 붙여주세요.\nVoice ID: `,
+        isCustom: true
+      }
+    ];
+  }
+
+  // Voice ID 유효성 검사
+  validateVoiceId(text) {
+    // 22자 정확히
+    if (text.length !== 22) {
+      return { isValid: false, message: "Voice ID는 반드시 22자여야 합니다." };
+    }
+    // 100자 미만 (이제 불필요하지만 혹시 몰라 남김)
+    if (text.length >= 100) {
+      return { isValid: false, message: "Voice ID는 100자 미만이어야 합니다." };
+    }
+    // 영문 대소문자와 숫자로만 구성
+    if (!/^[a-zA-Z0-9]+$/.test(text)) {
+      return { isValid: false, message: "Voice ID는 영문자와 숫자로만 구성되어야 합니다." };
+    }
+    // 공백이나 줄바꿈 없는 한 줄 문장
+    if (/\s/.test(text)) {
+      return { isValid: false, message: "Voice ID에는 공백이나 줄바꿈이 포함될 수 없습니다." };
+    }
+    return { isValid: true };
+  }
+
+  // 커스텀 Voice ID 저장 (Chrome 탭 간 동기화)
+  async saveCustomVoiceId(voiceId) {
+    this.customVoiceId = voiceId;
+    try {
+      // Chrome storage에 저장 (모든 탭 동기화)
+      await chrome.storage.sync.set({ 'tldrl-custom-voice-id': voiceId });
+      this.log(`💾 커스텀 Voice ID 저장 (모든 탭 동기화): ${voiceId}`);
+      
+      // 백업용 localStorage도 저장
+      localStorage.setItem('tts-extension-custom-voice-id', voiceId);
+    } catch (error) {
+      this.warn('커스텀 Voice ID 저장 실패:', error);
+      // Chrome storage 실패 시 localStorage로 폴백
+      try {
+        localStorage.setItem('tts-extension-custom-voice-id', voiceId);
+      } catch (localError) {
+        this.error('localStorage 커스텀 Voice ID 저장도 실패:', localError);
+      }
+    }
+    this.updateAllVoices();
+  }
+
+  // 등록된 임시 보이스 저장 (Chrome 탭 간 동기화)
+  async saveRegisteredTempVoices() {
+    try {
+      // Chrome storage에 저장 (모든 탭 동기화)
+      await chrome.storage.sync.set({ 'tldrl-registered-temp-voices': this.registeredTempVoices });
+      this.log(`💾 등록된 임시 보이스 저장 (모든 탭 동기화): ${this.registeredTempVoices.length}개`);
+      
+      // 백업용 localStorage도 저장
+      localStorage.setItem('tts-extension-temp-voices', JSON.stringify(this.registeredTempVoices));
+    } catch (error) {
+      this.warn('등록된 임시 보이스 저장 실패:', error);
+      // Chrome storage 실패 시 localStorage로 폴백
+      try {
+        localStorage.setItem('tts-extension-temp-voices', JSON.stringify(this.registeredTempVoices));
+      } catch (localError) {
+        this.error('localStorage 등록된 임시 보이스 저장도 실패:', localError);
+      }
+    }
+  }
+
+  // 클립보드에서 Voice ID를 가져와 설정하는 핸들러
+  async handleCustomVoiceIdPaste() {
+    try {
+      const text = await navigator.clipboard.readText();
+      const validation = this.validateVoiceId(text);
+      if (!validation.isValid) {
+        alert(validation.message);
+        return;
+      }
+      await this.saveCustomVoiceId(text);
+      this.log(`🎯 커스텀 Voice ID 설정: ${text}`);
+      
+      // Voice ID 설정 후 메뉴 새로고침
+      if (this.voiceMenuPopup) {
+        setTimeout(() => {
+          this.showVoiceMenu();
+        }, 100);
+      }
+    } catch (err) {
+      this.error('Failed to read clipboard:', err);
+      alert('클립보드 내용을 읽을 수 없습니다.');
+    }
+  }
+
+  // 커스텀 목소리 선택 핸들러
+  async handleCustomVoiceSelect() {
+    if (!this.customVoiceId) {
+      alert('Voice ID 미 입력');
+      return;
+    }
+
+    // Voice ID 유효성 검증
+    const validation = this.validateVoiceId(this.customVoiceId);
+    if (!validation.isValid) {
+      alert(validation.message);
+      return;
+    }
+
+    try {
+      // 유효한 경우 목소리 선택 처리
+      await this.handleVoiceSelectGlobal({
+        id: this.customVoiceId,
+        name: '내가 좋아하는 목소리',
+        description: `${this.customVoiceId} / [↻] 목소리 바꾸기`,
+        isCustom: true
+      });
+      
+      // 유효한 voiceID를 임시 목소리로 추가 (중복 체크)
+      const isDuplicate = this.registeredTempVoices.find(v => v.id === this.customVoiceId) ||
+                         this.VOICES.find(v => v.id === this.customVoiceId);
+      
+      if (!isDuplicate) {
+        const newTempVoice = {
+          id: this.customVoiceId,
+          name: this.customVoiceId,
+          description: "는 아르바이트에요. 잠시 글을 읽어줘요.",
+          isTemp: true
+        };
+        
+        this.registeredTempVoices.push(newTempVoice);
+        await this.saveRegisteredTempVoices();
+        this.updateAllVoices();
+      }
+      
+      this.log(`🎯 커스텀 목소리 선택 완료: ${this.customVoiceId}`);
+    } catch (err) {
+      this.error('Failed to validate voice ID:', err);
+      alert('잘못된 Voice ID 입력');
+    }
+  }
+
+  // 목소리 바꾸기 클릭 핸들러
+  async handleVoiceChange() {
+    await this.handleCustomVoiceIdPaste(); // 클립보드에서 새 Voice ID 가져오기
+  }
+
+  // 커스텀 보이스 삭제 핸들러
+  async handleDeleteCustomVoice(voiceId) {
+    this.registeredTempVoices = this.registeredTempVoices.filter(v => v.id !== voiceId);
+    await this.saveRegisteredTempVoices();
+    this.updateAllVoices();
+    this.log(`🎯 커스텀 보이스 삭제: ${voiceId}`);
+  }
+
+  // 목소리 선택 전역 핸들러 (기존 함수와 통합)
+  async handleVoiceSelectGlobal(voice) {
+    const previousVoiceId = this.selectedVoice.id;
+    this.selectedVoice = voice;
+    
+    // 화자 설정 저장
+    await this.saveVoiceSetting(voice);
+    
+    this.log(`🎵 화자 선택: ${voice.name} (ID: ${voice.id})`);
+    
+    // 메뉴 숨기기
+    this.hideVoiceMenu();
+    
+    // UI 업데이트
+    this.updateBottomFloatingUIState();
+    
+    // 화자가 실제로 변경된 경우에만 재생성
+    if (previousVoiceId !== this.selectedVoice.id) {
+      this.handleVoiceOrSpeedChange();
+    }
   }
 
 
