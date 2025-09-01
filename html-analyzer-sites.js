@@ -78,8 +78,8 @@ class HTMLAnalyzerSites {
     if (hostname.includes('musicbusinessworldwide.com')) {
       console.log('🎼 Music Business Worldwide 사이트 감지');
       
-      // MBW 로딩 후 2초 뒤 테이크 리프레시 1회 요청
-      this.setupMBWAutoRefresh();
+      // MBW 로딩 후 2초 뒤 테이크 리프레시 1회 요청 - 제거됨
+      // this.setupMBWAutoRefresh();
       
       const mbwSelectors = [
         '.mb-article__body',      // MBW 기사 본문 (실제 클래스)
@@ -652,30 +652,6 @@ class HTMLAnalyzerSites {
     
     // 사이트별 판단 결과가 없으면 null 반환 (일반 로직 적용)
     return null;
-  }
-
-  // 🎼 MBW 자동 리프레시 설정
-  setupMBWAutoRefresh() {
-    console.log('🎼 MBW 자동 리프레시 설정 시작');
-    
-    // 이미 설정되었는지 확인
-    if (this.mbwRefreshTimeout) {
-      clearTimeout(this.mbwRefreshTimeout);
-    }
-    
-    // 2초 후 테이크 리프레시 1회 요청
-    this.mbwRefreshTimeout = setTimeout(() => {
-      console.log('🎼 MBW 2초 후 테이크 리프레시 요청');
-      
-      // TTS 매니저가 존재하는지 확인하고 리프레시 요청
-      if (window.ttsManager && typeof window.ttsManager.requestRefresh === 'function') {
-        window.ttsManager.requestRefresh();
-      } else {
-        console.log('🎼 MBW: TTS 매니저를 찾을 수 없음');
-      }
-    }, 2000);
-    
-    console.log('🎼 MBW 자동 리프레시 설정 완료 (2초 후 실행)');
   }
 }
 
